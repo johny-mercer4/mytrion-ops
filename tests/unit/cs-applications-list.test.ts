@@ -110,7 +110,7 @@ describe('lovesStatusOf', () => {
 
   it('uses the real value when set', () => {
     expect(lovesStatusOf(mkRow({ Loves_Verification: 'Approved' }))).toBe('Approved');
-    expect(lovesStatusOf(mkRow({ Loves_Verification: 'Declined' }))).toBe('Declined');
+    expect(lovesStatusOf(mkRow({ Loves_Verification: 'Not Approved' }))).toBe('Not Approved');
   });
 });
 
@@ -188,8 +188,8 @@ describe('matchesFilters', () => {
   it("Love's status filter matches the Pending sentinel for a blank field, and the real value otherwise", () => {
     const pending = mkRow({ id: 'p', Loves_Verification: null });
     const approved = mkRow({ id: 'a', Loves_Verification: 'Approved' });
-    const declined = mkRow({ id: 'd', Loves_Verification: 'Declined' });
-    const all = [pending, approved, declined];
+    const notApproved = mkRow({ id: 'd', Loves_Verification: 'Not Approved' });
+    const all = [pending, approved, notApproved];
     expect(all.filter((r) => matchesFilters(r, { ...baseParams(), loves: LOVES_PENDING })).map((r) => r.id)).toEqual(['p']);
     expect(all.filter((r) => matchesFilters(r, { ...baseParams(), loves: 'Approved' })).map((r) => r.id)).toEqual(['a']);
     expect(all.filter((r) => matchesFilters(r, baseParams()))).toHaveLength(3); // no loves filter active
@@ -207,10 +207,10 @@ describe('computeFacets', () => {
     expect(computeFacets(rows).agent).toEqual(['Jane', NOT_ASSIGNED]);
   });
 
-  it("loves facet is always the field's fixed vocabulary, not derived from the data — legacy junk values ('0', 'FALSE', 'Not Approved') must never appear as options", () => {
-    const rows = [mkRow({ Loves_Verification: '0' }), mkRow({ Loves_Verification: 'Not Approved' })];
-    expect(computeFacets(rows).loves).toEqual(['Approved', 'Declined', LOVES_PENDING]);
-    expect(computeFacets([]).loves).toEqual(['Approved', 'Declined', LOVES_PENDING]); // even with zero rows
+  it("loves facet is always the field's fixed live-picklist vocabulary, not derived from the data — legacy junk values ('0', 'FALSE') must never appear as options", () => {
+    const rows = [mkRow({ Loves_Verification: '0' }), mkRow({ Loves_Verification: 'FALSE' })];
+    expect(computeFacets(rows).loves).toEqual(['Approved', 'Not Approved', LOVES_PENDING]);
+    expect(computeFacets([]).loves).toEqual(['Approved', 'Not Approved', LOVES_PENDING]); // even with zero rows
   });
 });
 

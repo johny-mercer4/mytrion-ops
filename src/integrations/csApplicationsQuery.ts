@@ -185,6 +185,36 @@ export async function matchDealsByName(names: string[]): Promise<Map<string, Dea
 }
 
 /**
+ * Single-record Deal lookup for a write path that needs an actual Deal record id to write to —
+ * NOT the Zoho `Related_Deal`/`Deal_Name` lookup fields on the Application (documented above:
+ * `Related_Deal` is empty on every record checked live). Same two-phase match as the read side
+ * (Application_ID first, company-name fallback), just scoped to one record instead of draining the
+ * whole Deals module — this is for a save that needs one Deal id, not the full list enrichment.
+ */
+export async function findDealIdForApplication(
+  applicationId: number | null,
+  companyName: string | null,
+): Promise<string | null> {
+  if (applicationId !== null) {
+    const res = await zohoCrm.runCoql(
+      `select id from Deals where Application_ID = ${applicationId} limit 0,1`,
+    );
+    const id = res.rows[0]?.id;
+    if (id != null) return String(id);
+  }
+  // Same apostrophe restriction as matchDealsByName — neither side of this ports COQL
+  // string-literal escaping.
+  if (companyName && !companyName.includes("'")) {
+    const res = await zohoCrm.runCoql(
+      `select id from Deals where Deal_Name = '${companyName}' limit 0,1`,
+    );
+    const id = res.rows[0]?.id;
+    if (id != null) return String(id);
+  }
+  return null;
+}
+
+/**
  * A Deal's raw `Owner.name` can be a bare last name, or entirely missing once its owner is
  * deactivated (verified live: one deal returned `Owner: {id, name: null}` for a departed agent) —
  * overlay `listUsersForNameResolution()` (active + deactivated) to get the same full name the old

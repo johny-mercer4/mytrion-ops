@@ -60,7 +60,7 @@ export function toggleOnboarding(
   }) as Promise<SaveApplicationResult>;
 }
 
-export type LovesVerificationValue = 'Approved' | 'Declined';
+export type LovesVerificationValue = 'Approved' | 'Not Approved';
 
 export interface BulkLovesVerificationResult {
   results: Array<{ id: string; ok: boolean; error?: string }>;

@@ -63,7 +63,7 @@ const CLIENT_COLUMNS: AppColumn[] = [
   { key: 'stage', label: 'Stage', thStyle: { minWidth: 150 } },
   { key: 'wex_status', label: 'WEX Status', thStyle: { minWidth: 160 } },
   // No minWidth — breakpoints.test.ts's inline-minWidth budget only ever goes down; "Approved" /
-  // "Declined" / "Pending" is short enough that the table's own auto-layout sizes this fine.
+  // "Not Approved" / "Pending" is short enough that the table's own auto-layout sizes this fine.
   { key: 'picklist', label: "Love's", field: 'Loves_Verification' },
   { key: 'contact', label: 'Contact', thStyle: { minWidth: 140 } },
   { key: 'generic', label: 'MC', field: 'emc', thStyle: { minWidth: 100 } },
@@ -100,7 +100,7 @@ const APPS_COLUMNS: AppColumn[] = [
   { key: 'stage', label: 'Stage', thStyle: { minWidth: 150 } },
   { key: 'wex_status', label: 'WEX Status', thStyle: { minWidth: 160 } },
   // No minWidth — breakpoints.test.ts's inline-minWidth budget only ever goes down; "Approved" /
-  // "Declined" / "Pending" is short enough that the table's own auto-layout sizes this fine.
+  // "Not Approved" / "Pending" is short enough that the table's own auto-layout sizes this fine.
   { key: 'picklist', label: "Love's", field: 'Loves_Verification' },
   { key: 'generic', label: 'MC', field: 'emc', thStyle: { minWidth: 100 } },
   { key: 'generic', label: 'DOT', field: 'DOT', thStyle: { minWidth: 100 } },

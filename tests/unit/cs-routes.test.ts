@@ -463,13 +463,18 @@ describe('bulk Love\'s clearance push', () => {
       City: 'Chicago',
       Zip_Code: '60612',
       Edit_History: [],
-      Related_Deal: null,
+      // Loves_Verification only exists on the Deal (confirmed live 2026-08-17) — every fixture
+      // needs a linked Deal by default, or the write is correctly rejected (see the dedicated
+      // 'no linked Deal' test below for that case).
+      Related_Deal: { id: 'deal-1' },
       ...overrides,
     };
   }
 
-  it('pushes Loves_Verification for every id and reports them all ok', async () => {
-    records.getRecord.mockImplementation(async (_module: string, id: string) => fullRecord({ id }));
+  it('pushes Loves_Verification to the linked DEAL, never the Application, and reports them all ok', async () => {
+    records.getRecord.mockImplementation(async (_module: string, id: string) =>
+      fullRecord({ id, Related_Deal: { id: `deal-${id}` } }),
+    );
     const res = await app.inject({
       method: 'POST',
       url: '/v1/cs/applications/loves-verification/bulk',
@@ -481,9 +486,13 @@ describe('bulk Love\'s clearance push', () => {
       { id: '111', ok: true },
       { id: '222', ok: true },
     ]);
-    const calls = records.updateRecord.mock.calls.filter((c) => c[0] === 'Applications');
-    expect(calls).toHaveLength(2);
-    expect((calls[0]?.[2] as Record<string, unknown>).Loves_Verification).toBe('Approved');
+    // Loves_Verification isn't a real Applications field — a pure Love's push must never touch
+    // the Application record at all (no Modified_Time bump for a field it doesn't have).
+    expect(records.updateRecord.mock.calls.filter((c) => c[0] === 'Applications')).toHaveLength(0);
+    const dealCalls = records.updateRecord.mock.calls.filter((c) => c[0] === 'Deals');
+    expect(dealCalls).toHaveLength(2);
+    expect(dealCalls.map((c) => c[1]).sort()).toEqual(['deal-111', 'deal-222']);
+    expect((dealCalls[0]?.[2] as Record<string, unknown>).Loves_Verification).toBe('Approved');
     expect(auditFromContext).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: 'cs.application.loves_bulk_update', status: 'ok' }),
@@ -492,13 +501,13 @@ describe('bulk Love\'s clearance push', () => {
 
   it('reports one bad id as failed without dropping the rest of the batch', async () => {
     records.getRecord.mockImplementation(async (_module: string, id: string) =>
-      id === '222' ? fullRecord({ id, City: '' }) : fullRecord({ id }),
+      fullRecord({ id, City: id === '222' ? '' : 'Chicago', Related_Deal: { id: `deal-${id}` } }),
     );
     const res = await app.inject({
       method: 'POST',
       url: '/v1/cs/applications/loves-verification/bulk',
       headers: bearer(await csAgent()),
-      payload: { ids: ['111', '222', '333'], value: 'Declined' },
+      payload: { ids: ['111', '222', '333'], value: 'Not Approved' },
     });
     expect(res.statusCode).toBe(200);
     const results = res.json().results as Array<{ id: string; ok: boolean; error?: string }>;
@@ -507,14 +516,49 @@ describe('bulk Love\'s clearance push', () => {
     const failed = results.find((r) => r.id === '222');
     expect(failed?.ok).toBe(false);
     expect(failed?.error).toContain('City');
-    const applicationCalls = records.updateRecord.mock.calls.filter(
-      (c) => c[0] === 'Applications' && c[1] === '222',
+    const dealCallsFor222 = records.updateRecord.mock.calls.filter(
+      (c) => c[0] === 'Deals' && c[1] === 'deal-222',
     );
-    expect(applicationCalls).toHaveLength(0);
+    expect(dealCallsFor222).toHaveLength(0);
     expect(auditFromContext).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: 'cs.application.loves_bulk_update', status: 'error' }),
     );
+  });
+
+  it('rejects (per id) a push for an Application with no linked Deal', async () => {
+    records.getRecord.mockImplementation(async (_module: string, id: string) =>
+      fullRecord({ id, Related_Deal: null }),
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/loves-verification/bulk',
+      headers: bearer(await csAgent()),
+      payload: { ids: ['111'], value: 'Approved' },
+    });
+    expect(res.statusCode).toBe(200);
+    const results = res.json().results as Array<{ id: string; ok: boolean; error?: string }>;
+    expect(results).toEqual([{ id: '111', ok: false, error: expect.stringContaining('linked Deal') }]);
+    expect(records.updateRecord).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the real match key (Application_ID, then company name) when Related_Deal/Deal_Name are both empty — the bug this whole describe block exists for: 'Khan Trans Inc' had neither lookup field set live", async () => {
+    records.getRecord.mockImplementation(async (_module: string, id: string) =>
+      fullRecord({ id, Related_Deal: null, Application_ID: 902673, Name: 'Khan Trans Inc' }),
+    );
+    runCoql.mockResolvedValueOnce({ rows: [{ id: 'deal-found-by-appid' }], count: 1, moreRecords: false });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/loves-verification/bulk',
+      headers: bearer(await csAgent()),
+      payload: { ids: ['111'], value: 'Approved' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().results).toEqual([{ id: '111', ok: true }]);
+    expect(runCoql).toHaveBeenCalledWith(expect.stringContaining('Application_ID = 902673'));
+    const dealCall = records.updateRecord.mock.calls.find((c) => c[0] === 'Deals');
+    expect(dealCall?.[1]).toBe('deal-found-by-appid');
+    expect((dealCall?.[2] as Record<string, unknown>).Loves_Verification).toBe('Approved');
   });
 
   it('is gated the same as every other CS route (sales worker refused)', async () => {

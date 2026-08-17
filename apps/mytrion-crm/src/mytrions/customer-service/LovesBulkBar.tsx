@@ -66,9 +66,9 @@ export function LovesBulkBar({
         type="button"
         className="cs-btn cs-btn-ghost"
         disabled={pushing}
-        onClick={() => setConfirmValue('Declined')}
+        onClick={() => setConfirmValue('Not Approved')}
       >
-        Declined
+        Not Approved
       </button>
       <button type="button" className="cs-btn cs-btn-ghost" disabled={pushing} onClick={onClear}>
         Clear selection
@@ -77,7 +77,7 @@ export function LovesBulkBar({
       {confirmValue ? (
         <ConfirmDialog
           open
-          tone={confirmValue === 'Declined' ? 'danger' : 'default'}
+          tone={confirmValue === 'Not Approved' ? 'danger' : 'default'}
           title={`Mark ${selected.length} ${selected.length === 1 ? 'record' : 'records'} as ${confirmValue}?`}
           body={`This sets Love's Verification = "${confirmValue}" in Zoho on ${
             selected.length === 1 ? 'this record' : `all ${selected.length} selected records`

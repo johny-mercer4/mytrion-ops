@@ -97,9 +97,9 @@ describe('LovesBulkBar', () => {
       </div>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Declined' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Not Approved' }));
     const dialog = screen.getByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Declined' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Not Approved' }));
 
     await waitFor(() =>
       expect(onDone).toHaveBeenCalledWith({

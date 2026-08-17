@@ -39,11 +39,12 @@ export function agentNameOf(row: RawApplicationRow): string {
 }
 
 /**
- * `Loves_Verification` is only ever written as 'Approved'/'Declined' (the picklist has no third
- * option) — blank means nobody has decided yet. QA feedback (Dina Carter, 2026-08-07): new
- * Applications graduate to a Carrier_ID (the Clients tab) the moment WEX produces cards, with
- * nothing here gating that on Love's clearance — so this sentinel is what turns "Clients" into a
- * worklist: filter to Pending to find everyone still owed a Love's decision.
+ * `Loves_Verification`'s live Zoho picklist (Deals module, confirmed 2026-08-17) is
+ * '-None-'/'Approved'/'Not Approved' — blank/'-None-' means nobody has decided yet. QA feedback
+ * (Dina Carter, 2026-08-07): new Applications graduate to a Carrier_ID (the Clients tab) the
+ * moment WEX produces cards, with nothing here gating that on Love's clearance — so this
+ * sentinel is what turns "Clients" into a worklist: filter to Pending to find everyone still
+ * owed a Love's decision.
  */
 export const LOVES_PENDING = 'Pending';
 
@@ -52,13 +53,13 @@ export function lovesStatusOf(row: RawApplicationRow): string {
 }
 
 /**
- * The field's actual designed vocabulary — NOT derived from the raw data's distinct values like
- * every other facet below. Some legacy records carry junk from a prior field type ('0', 'FALSE',
- * 'Not Approved'), which would otherwise surface in this dropdown as selectable noise (QA feedback,
+ * The field's actual live picklist vocabulary — NOT derived from the raw data's distinct values
+ * like every other facet below. Some legacy records carry junk from a prior field type ('0',
+ * 'FALSE'), which would otherwise surface in this dropdown as selectable noise (QA feedback,
  * 2026-08-17). Always offered regardless of what's actually present in the current result set —
  * a status filter should show every valid state, not just the ones with a current match.
  */
-const LOVES_FACET_OPTIONS = ['Approved', 'Declined', LOVES_PENDING];
+const LOVES_FACET_OPTIONS = ['Approved', 'Not Approved', LOVES_PENDING];
 
 function digitsOf(v: string | null): string {
   return v ? v.replace(/\D/g, '') : '';

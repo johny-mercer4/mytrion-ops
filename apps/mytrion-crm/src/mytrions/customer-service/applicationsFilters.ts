@@ -22,7 +22,7 @@ export interface AppFilters {
   agent: string;
   /** Empty set = no WEX Status filter. Multi-select — QA asked for "wex statuses", plural. */
   wex: Set<string>;
-  /** '' = no filter; otherwise 'Approved' | 'Declined' | the backend's Pending sentinel — the
+  /** '' = no filter; otherwise 'Approved' | 'Not Approved' | the backend's Pending sentinel — the
    *  worklist for QA feedback (Dina Carter, 2026-08-07): filter Clients to Pending to find every
    *  record that graduated to a Carrier_ID without a Love's decision yet. */
   loves: string;

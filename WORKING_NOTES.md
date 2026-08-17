@@ -18016,3 +18016,63 @@ Tests updated (not added — this removes surface area): `cs-applications-list.t
 `applicationsFilters.test.ts` dropped their `company`-specific cases, `computeFacets`'s loves test
 rewritten to assert the fixed list survives garbage input. Full suites green. Bundle rebuilt and
 committed.
+
+## 2026-08-18 — Love's bulk push: real Zoho found what unit tests couldn't
+
+A real bulk-push attempt in production surfaced: **"Pushed 0, 1 failed: Khan Trans Inc: Unknown
+Applications field(s): Loves_Verification — write rejected to avoid a silent no-op."** Two genuine
+bugs, both from an assumption made without checking live Zoho metadata directly (the mocked unit
+tests all passed because their fixtures encoded the same wrong assumption):
+
+**Bug 1 — `Loves_Verification` doesn't exist on the `Applications` module at all.** Queried live
+Zoho metadata directly (`getModuleFields('Applications')` vs `('Deals')`): Applications has zero
+fields matching "love"; Deals has exactly one. The read side already knew this
+(`csApplicationsQuery.ts`'s `applyDeal` reads it from the Deal) — the write side didn't, and
+`saveApplication` tried `resolveWritePayload('Applications', {Loves_Verification: ...})`, which
+correctly rejected an unknown field rather than silently dropping it (exactly what that guard is
+for — it just surfaced a design mistake, not a bug in itself).
+
+**Bug 2 — the real picklist values are `Approved`/`Not Approved`, not `Approved`/`Declined`.**
+Confirmed via the same metadata query. "Declined" was carried over from the legacy widget's
+hardcoded option list without checking whether it still matched Zoho's actual configured picklist.
+Fixed everywhere: the bulk-push button label, the zod enum, the `LovesVerificationValue` type, the
+facet list, and every test/comment that said "Declined."
+
+**Fix, `applicationsSave.ts`:** `Loves_Verification` moved to a new `DEAL_ONLY_FIELDS` map — it's
+now written straight to the linked Deal, never touching the Application record (which also means a
+pure Love's push no longer bumps the Application's `Modified_Time` for a field it doesn't have).
+Unlike the existing Application→Deal mirror (`DEAL_FIELD_MAP`, best-effort — a failure there just
+warns, since the Application write already succeeded), a deal-only field has no Application-side
+write backing it up: if `Loves_Verification` was part of the request and the Deal write fails, the
+whole save now fails too, instead of silently reporting success.
+
+**Bug 3, found while verifying bug 1's fix live (not by a test) — the Deal-id resolution itself is
+unreliable.** `saveApplication` resolves "which Deal does this Application mirror to" via
+`full.Related_Deal.id ?? full.Deal_Name.id` (two Zoho lookup fields on the Application). But
+`csApplicationsQuery.ts`'s own header comment already documented, from the 2026-08-13 work, that
+`Related_Deal` is **empty on every record checked live** — the actual working match key the read
+side uses is `Applications.Application_ID = Deals.Application_ID`, with a company-name fallback.
+"Khan Trans Inc" (the exact record from the bug report) has neither lookup field set, so the fixed
+write path still failed — with a clear "no linked Deal" error this time instead of a confusing one,
+but still failed, and this specific record is on `Apps in Process` (no Carrier_ID yet), which
+matches the original complaint's premise (Applications reach this stage before a Deal necessarily
+exists). Fixed by adding `findDealIdForApplication()` (`csApplicationsQuery.ts`) — a single-record,
+on-demand version of the same two-phase match `drainDeals()`/`matchDealsByName()` already do for the
+full list — as a fallback only exercised when a deal-only field is being written and the cheap
+lookup-field path came back empty. The existing Application-field mirror's own dealId resolution is
+untouched (lower stakes, best-effort already, out of scope for this fix).
+
+**Verified fully end-to-end against real Zoho** on the exact reported record (App ID 902673, Khan
+Trans Inc): pushed "Not Approved," confirmed the cell changed, then pushed "Approved" to restore its
+original value — both went through via the fallback-resolved Deal id, confirmed via the actual
+network response (`{"id": "...", "ok": true}"`), not just a green test suite. Note for next time:
+a deal-only push now costs several sequential live Zoho round-trips (fetch full record, the
+fallback COQL lookup(s), the Deals write) — a 3s wait in a verification script isn't enough to see
+it resolve; budget 8-10s.
+
+New/updated tests: `cs-routes.test.ts`'s whole "bulk Love's clearance push" describe block rewritten
+around the corrected model (fixtures now default to a linked Deal, since that's the common case;
+asserts writes land on `Deals` not `Applications`; a dedicated case for "no linked Deal at all," and
+a dedicated case for the Application_ID-fallback resolution actually being invoked and used). Full
+suites green (2,700+ backend, 1,046 frontend), same two pre-existing unrelated failures as every
+other entry this week.

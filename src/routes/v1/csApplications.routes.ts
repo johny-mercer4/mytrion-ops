@@ -44,7 +44,8 @@ const lovesVerificationBulkBody = z.object({
   // Cap of 50 is well above the reported 10-20/batch — high enough to never pinch real usage,
   // low enough to keep a bad selection from queuing an enormous sequential Zoho write burst.
   ids: z.array(z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60)).min(1).max(50),
-  value: z.enum(['Approved', 'Declined']),
+  // The Deal's live picklist (confirmed 2026-08-17) is 'Approved'/'Not Approved' — NOT 'Declined'.
+  value: z.enum(['Approved', 'Not Approved']),
 });
 
 export async function csApplicationsRoutes(app: FastifyInstance): Promise<void> {
