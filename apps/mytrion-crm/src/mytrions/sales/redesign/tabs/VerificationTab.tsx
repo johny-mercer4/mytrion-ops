@@ -17,6 +17,8 @@ import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead } from '../SalesPa
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
 import { s } from '../dc';
 import { ApplicationIntake } from '../applicationIntake';
+import { getImpersonation } from '@/api/impersonation';
+import { getSession } from '@/api/session';
 import { listApplications, type VerificationCaseRow } from '@/api/verificationFlow';
 
 const PAGE_SIZE = 24;
@@ -113,9 +115,30 @@ function progressLine(row: VerificationCaseRow): string {
   return `Phase ${phase.order} of 10 · ${phase.label}`;
 }
 
-function ApplicationCard({ row, onOpen }: { row: VerificationCaseRow; onOpen: () => void }) {
+/**
+ * Whose list this is — the View-as target when one is picked, else the signed-in worker.
+ *
+ * Used for one thing: deciding whether the owner is worth naming on a card. A case reaches an agent
+ * three ways (they submitted it, they were assigned it, or they own the Zoho Deal), so a card in
+ * your list can belong to a DIFFERENT agent — on live data three of eighteen do. That is exactly
+ * when you need the name, and naming yourself on the other fifteen would be noise.
+ */
+function viewerZohoId(): string | null {
+  return getImpersonation()?.zohoUserId ?? getSession()?.worker.zohoUserId ?? null;
+}
+
+function ApplicationCard({
+  row,
+  viewer,
+  onOpen,
+}: {
+  row: VerificationCaseRow;
+  viewer: string | null;
+  onOpen: () => void;
+}) {
   const tone = toneFor(row);
   const outstanding = row.intakeMissing?.length ?? 0;
+  const someoneElsesCase = Boolean(row.ownerZohoUserId) && row.ownerZohoUserId !== viewer;
   return (
     <button
       type="button"
@@ -163,6 +186,7 @@ function ApplicationCard({ row, onOpen }: { row: VerificationCaseRow; onOpen: ()
         <Fact label="Cards" value={row.fuelCardsRequested == null ? '—' : String(row.fuelCardsRequested)} />
         {row.underwritingRoute === 'wex' ? <Fact label="Route" value="WEX" /> : null}
         {row.approvedLimitAmount ? <Fact label="Approved" value={`$${row.approvedLimitAmount}`} /> : null}
+        {someoneElsesCase ? <Fact label="Owner" value={row.ownerName} /> : null}
       </div>
     </button>
   );
@@ -192,6 +216,7 @@ export function VerificationTab() {
 
   const rows = data?.items ?? [];
   const visible = rows.filter((r) => matchesFilter(r, filter));
+  const viewer = viewerZohoId();
 
   if (openId) {
     return (
@@ -266,7 +291,12 @@ export function VerificationTab() {
           )}
         >
           {visible.map((row) => (
-            <ApplicationCard key={row.id} row={row} onOpen={() => setOpenId(row.id)} />
+            <ApplicationCard
+              key={row.id}
+              row={row}
+              viewer={viewer}
+              onOpen={() => setOpenId(row.id)}
+            />
           ))}
         </div>
       )}

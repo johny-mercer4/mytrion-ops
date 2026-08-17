@@ -32,8 +32,17 @@
   align-items: stretch;
   gap: 6px;
 }
+/* The floor belongs to the month LABEL, in the label's own character box — not to the field as a
+   fixed track. `min-width: 156px` here made the pair a width the row could not shrink below, which
+   is what `styles/breakpoints.test.ts` counts; measured, it only ever governed the short months
+   ("May 2026"), since a 156px field leaves the label 87px and "September 2026" needs 112. 9ch is the
+   same 82px budget at this face and size, so nothing that fits today starts truncating, and the
+   field can now give way when the action row runs out of room instead of forcing an overflow. */
 .mg-root .mg-rf-range .mg-rf-month {
-  min-width: 156px;
+  min-width: 0;
+}
+.mg-root .mg-rf-range .mg-rf-month-copy strong {
+  min-width: 9ch;
 }
 .mg-root .mg-rf-month {
   position: relative;

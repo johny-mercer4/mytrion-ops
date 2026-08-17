@@ -27,6 +27,7 @@ import {
   VERIFICATION_DOC_TYPES,
 } from '../../db/schema/verification_flow.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { buildCallerContext } from './callerIdentity.js';
 import { requireDepartment } from './helpers.js';
 
 /** Sales owns intake; the Verification desk reads these same rows through its own routes. */
@@ -127,7 +128,17 @@ const listQuery = z.object({
 export async function verificationApplicationsRoutes(app: FastifyInstance): Promise<void> {
   const auth = { onRequest: [app.authenticate] };
 
+  /**
+   * The agent's own applications. OWNER-SCOPED, so View-as has to be resolved first.
+   *
+   * `requireSales` reads the raw session, so without this the list ran as whoever was doing the
+   * viewing. An admin checking an agent's Verification tab owns no applications, so the tab said
+   * "No applications yet" while that agent's cases sat in the desk queue with their name on them —
+   * and there is no other way for anyone to see what an agent sees. Same order as the Call Hub:
+   * apply the impersonation, THEN gate, so the effective agent must have Sales access themselves.
+   */
   app.get('/verification/applications', auth, async (request) => {
+    request.ctx = await buildCallerContext(request, {});
     const ctx = requireSales(request);
     const query = listQuery.parse(request.query);
     return applicationService.listForAgent(ctx, query);

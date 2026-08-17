@@ -52,6 +52,7 @@ function row(over: Partial<VerificationCaseRow> & { id: string }): VerificationC
     intakeMissing: [],
     submittedAt: daysAgo(1),
     ownerName: 'Daniel Okoye',
+    ownerZohoUserId: null,
     closedAt: null,
     createdAt: daysAgo(1),
     updatedAt: daysAgo(1),

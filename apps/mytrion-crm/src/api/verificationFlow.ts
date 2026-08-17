@@ -81,6 +81,13 @@ export interface VerificationCaseRow {
   intakeMissing: string[];
   submittedAt: string | null;
   ownerName: string;
+  /**
+   * The owner's Zoho id. Already on the wire (`VERIFICATION_FLOW_LIST_COLUMNS`) — typed here so a
+   * surface can tell "this is mine" from "this reached me because I own the Deal": the ingest sets
+   * `zoho_owner_id` from the Deal and `owner_zoho_user_id` from the case, and on live data those
+   * disagree on some cases.
+   */
+  ownerZohoUserId: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;

@@ -23,6 +23,10 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../dcCache', () => ({ useCachedLoad: () => state.current }));
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
+/** The signed-in agent, so a card can tell "mine" from "reached me via the Deal". */
+vi.mock('@/api/session', () => ({
+  getSession: () => ({ worker: { zohoUserId: 'agent-self' } }),
+}));
 vi.mock('@/context/UserContextProvider', () => ({
   useUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
 }));
@@ -58,6 +62,7 @@ function row(over: Partial<VerificationCaseRow> = {}): VerificationCaseRow {
     intakeMissing: ['ein', 'businessAddress', 'bankStatements'],
     submittedAt: null,
     ownerName: 'Test Agent',
+    ownerZohoUserId: 'agent-self',
     closedAt: null,
     createdAt: '2026-08-14T10:00:00.000Z',
     updatedAt: '2026-08-14T10:00:00.000Z',
@@ -124,6 +129,33 @@ describe('the red state', () => {
     ready([row({ intakeMissing: [] })]);
     render(<VerificationTab />);
     expect(screen.getByText('Not submitted yet')).toBeInTheDocument();
+  });
+});
+
+/**
+ * A case reaches an agent three ways — they submitted it, they were assigned it, or they own the
+ * Zoho Deal — so a card in this list can be OWNED by someone else. On live data three of eighteen
+ * are. The name is what tells the agent whether they are the one who has to fill it in.
+ */
+describe('whose case it is', () => {
+  it('names the owner when the case belongs to another agent', () => {
+    ready([row({ ownerZohoUserId: 'other-agent', ownerName: 'Sarvar Asqarov' })]);
+    render(<VerificationTab />);
+    expect(screen.getByText('Owner')).toBeInTheDocument();
+    expect(screen.getByText('Sarvar Asqarov')).toBeInTheDocument();
+  });
+
+  it('stays quiet on your own cases rather than naming you on every card', () => {
+    ready([row()]);
+    render(<VerificationTab />);
+    expect(screen.queryByText('Owner')).not.toBeInTheDocument();
+    expect(screen.queryByText('Test Agent')).not.toBeInTheDocument();
+  });
+
+  it('says nothing when the row carries no owner id — a blank chip is worse than none', () => {
+    ready([row({ ownerZohoUserId: null })]);
+    render(<VerificationTab />);
+    expect(screen.queryByText('Owner')).not.toBeInTheDocument();
   });
 });
 
