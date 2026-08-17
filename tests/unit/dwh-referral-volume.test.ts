@@ -47,4 +47,12 @@ describe('batched referral volume', () => {
     });
     expect(result.get('new')?.get(123)?.gallons).toBe(125);
   });
+
+  it('counts distinct in-month cards, not lifetime first-cards or transactions', async () => {
+    dwhQueryMock.mockResolvedValue([]);
+    await fetchReferralVolumeSets([1], '2026-08-01', [{ key: 'legacy', fuelCodes: ['ULSD'] }]);
+    const sql = String(dwhQueryMock.mock.calls[0]?.[0]);
+    expect(sql).toContain('count(distinct e.card_number)');
+    expect(sql).not.toMatch(/new_cards|first_dt|transaction_id/);
+  });
 });

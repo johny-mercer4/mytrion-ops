@@ -16,6 +16,7 @@ import {
 } from '@/api/inbox';
 import { getClients, type AgentClient } from '@/api/dataCenter';
 import { dedupedFetch, invalidateDeduped } from './fetchDedupe';
+import { afterHomeSnapshot, withHomeSnapshotGate } from './homeLoadGate';
 import { loadDebtorsHomeSummary } from './dashDebtorsData';
 import { ICO } from './salesData';
 import type { IconName } from './icons';
@@ -157,11 +158,14 @@ export function mapHomeSnapshot(
 
 export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
   // Parallel: home DWH snapshot + Billing-aligned debtors summary (5-min cache; Refresh forces).
-  const [raw, debtSummary] = await Promise.all([
-    callTouchpoint('dashboard.home_snapshot', {}),
-    loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
-  ]);
-  return mapHomeSnapshot(raw, debtSummary);
+  // Held in the Home first-wave gate so activity/announcements/inbox do not join this HTTP/2 burst.
+  return withHomeSnapshotGate(async () => {
+    const [raw, debtSummary] = await Promise.all([
+      callTouchpoint('dashboard.home_snapshot', {}),
+      loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
+    ]);
+    return mapHomeSnapshot(raw, debtSummary);
+  });
 }
 
 // ---- Home: announcements (inbox.announcements) → ANN shape ----
@@ -202,7 +206,7 @@ export function mapAnnouncements(raw: unknown): AnnVM[] {
 }
 
 export async function loadAnnouncements(): Promise<AnnVM[]> {
-  return mapAnnouncements(await callTouchpoint('inbox.announcements', {}));
+  return afterHomeSnapshot(async () => mapAnnouncements(await callTouchpoint('inbox.announcements', {})));
 }
 
 // ---- Inbox (inbox.list) → INBOX shape ----
@@ -261,11 +265,12 @@ function mapInboxMessages(messages: Awaited<ReturnType<typeof listInboxMessages>
 export async function loadInbox(fresh = false): Promise<InboxVM[]> {
   return dedupedFetch(
     `inbox:${effUserId()}`,
-    async () => {
-      const actAsId = getImpersonation()?.zohoUserId;
-      const res = await listInboxMessages({ ...(actAsId ? { actAsId } : {}), limit: 6 });
-      return mapInboxMessages(res.messages);
-    },
+    () =>
+      afterHomeSnapshot(async () => {
+        const actAsId = getImpersonation()?.zohoUserId;
+        const res = await listInboxMessages({ ...(actAsId ? { actAsId } : {}), limit: 6 });
+        return mapInboxMessages(res.messages);
+      }),
     { ttlMs: INBOX_TTL_MS, fresh },
   );
 }
@@ -333,9 +338,7 @@ export interface ActivityCounts {
 }
 export async function loadActivity(range: 'today' | 'week' | 'month', fresh = false): Promise<ActivityCounts> {
   void fresh; // in-flight share only (no TTL): concurrent equal calls collapse; sequential calls refetch
-  return dedupedFetch(`activity:${effUserId()}:${range}`, async () => {
-    return fetchActivity(range);
-  });
+  return dedupedFetch(`activity:${effUserId()}:${range}`, () => afterHomeSnapshot(() => fetchActivity(range)));
 }
 
 async function fetchActivity(range: 'today' | 'week' | 'month'): Promise<ActivityCounts> {

@@ -32,6 +32,11 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
   email: verificationCases.email,
   phone: verificationCases.phone,
   applicantType: verificationCases.applicantType,
+  // The desk queue's search box offers EIN / MC / USDOT, and `listWhere` already matches mc and dot
+  // server-side — without them in the projection a client-side search over the page could not.
+  ein: verificationCases.ein,
+  mc: verificationCases.mc,
+  dot: verificationCases.dot,
   underwritingRoute: verificationCases.underwritingRoute,
   verificationProcess: verificationCases.verificationProcess,
   phaseCode: verificationCases.phaseCode,
@@ -58,7 +63,8 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
 export const VERIFICATION_FLOW_LIST_COLUMN_SQL = sql.raw(
   [
     'id', 'company_name', 'first_name', 'last_name', 'email', 'phone',
-    'applicant_type', 'underwriting_route', 'verification_process', 'phase_code', 'status_code',
+    'applicant_type', 'ein', 'mc', 'dot',
+    'underwriting_route', 'verification_process', 'phase_code', 'status_code',
     'trucks_count', 'fuel_cards_requested', 'requested_limit', 'approved_limit_amount',
     'intake_missing', 'submitted_at', 'submitted_by_zoho_user_id', 'owner_zoho_user_id',
     'owner_name', 'closed_at', 'created_at', 'updated_at',

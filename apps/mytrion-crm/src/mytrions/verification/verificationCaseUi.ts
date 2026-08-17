@@ -20,8 +20,18 @@ export function isClosedCaseStatus(status: VerificationCaseStatus | ''): boolean
   return (CLOSED_CASE_STATUSES as readonly string[]).includes(status);
 }
 
+/**
+ * The case id an inbox message points at.
+ *
+ * FOUR shapes are live, and matching one of them left the link dead on the message the desk gets
+ * most: `caseNotify` writes `/verification/applicants/{id}` for the verification owner and
+ * `/sales/verification/{id}` for the Sales owner, the older `verification.case.created` writes
+ * `/verification/cases/{id}`, and `verificationFlow/notify` writes `/verification/flow/cases/{id}`.
+ */
 export function caseIdFromInboxSource(sourceUrl: string | null | undefined): string | null {
-  const match = (sourceUrl ?? '').match(/\/verification\/cases\/([A-Za-z0-9_-]{8,})/);
+  const match = (sourceUrl ?? '').match(
+    /\/(?:verification\/(?:applicants|cases|flow\/cases)|sales\/verification)\/([A-Za-z0-9_-]{8,})/,
+  );
   return match?.[1] ?? null;
 }
 

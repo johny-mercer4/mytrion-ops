@@ -6,6 +6,11 @@
  * Absent a session we fall back to the dev API key (cross-origin local backend) — production
  * same-origin sends neither and relies on the session. On a 401 we transparently refresh the token
  * once and retry, so a 15-minute access-token expiry never surfaces to the user mid-session.
+ *
+ * HTTP/2: Render's edge speaks HTTP/2 to the browser. Telegram WebView (and a shell that opens
+ * Home + badges + presence together) can have streams refused (`ERR_HTTP2_SERVER_REFUSED_STREAM`)
+ * before the origin ever sees the request. Those never get a status code, so the GET 502/503 retry
+ * does not help. We cap in-flight fetches and retry a network miss once — the origin did not see it.
  */
 import { devApiKey, resolveApiConfig, v1Url } from './config';
 import { clearSession, getSession, setSession, type SessionWorker } from './session';
@@ -37,13 +42,32 @@ export interface RequestOptions {
   signal?: AbortSignal | undefined;
   /** Per-request timeout. Defaults to 20s; expensive exports should opt into a larger value. */
   timeoutMs?: number | undefined;
-  /** Disable the one controlled retry for idempotent GET requests. */
+  /** Disable the one controlled retry (GET 429/5xx, and a single network miss on any method). */
   retry?: boolean | undefined;
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const READ_RETRY_STATUSES = new Set([429, 502, 503, 504]);
+/** Below Telegram WebView / Render HTTP/2 stream caps. A Sales Home open used to fire ~10 at once. */
+const MAX_INFLIGHT_FETCHES = 6;
 const getInflight = new Map<string, Promise<unknown>>();
+let inflightFetches = 0;
+const fetchWaiters: Array<() => void> = [];
+
+async function acquireFetchSlot(): Promise<void> {
+  if (inflightFetches >= MAX_INFLIGHT_FETCHES) {
+    await new Promise<void>((resolve) => {
+      fetchWaiters.push(resolve);
+    });
+  }
+  inflightFetches += 1;
+}
+
+function releaseFetchSlot(): void {
+  inflightFetches -= 1;
+  const next = fetchWaiters.shift();
+  if (next) next();
+}
 
 function retryAfterMs(response: Response): number | null {
   const raw = response.headers.get('retry-after');
@@ -58,12 +82,24 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  );
+}
+
+function asNetworkError(error: unknown): ApiError {
+  return new ApiError(`Could not reach the backend. ${(error as Error)?.message ?? ''}`, 'NETWORK', 0);
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number,
   externalSignal?: AbortSignal,
 ): Promise<Response> {
+  await acquireFetchSlot();
   const controller = new AbortController();
   let timedOut = false;
   const onAbort = (): void => controller.abort(externalSignal?.reason);
@@ -81,6 +117,32 @@ async function fetchWithTimeout(
   } finally {
     window.clearTimeout(timer);
     externalSignal?.removeEventListener('abort', onAbort);
+    releaseFetchSlot();
+  }
+}
+
+/**
+ * `ERR_HTTP2_SERVER_REFUSED_STREAM` / `Failed to fetch` never become an HTTP status — the origin
+ * did not accept the stream. One retry is safe for POST as well as GET.
+ */
+async function fetchRetryingNetwork(
+  doFetch: () => Promise<Response>,
+  retry: boolean,
+): Promise<Response> {
+  try {
+    return await doFetch();
+  } catch (error) {
+    if (error instanceof ApiError || isAbortError(error) || !retry) {
+      if (error instanceof ApiError || isAbortError(error)) throw error;
+      throw asNetworkError(error);
+    }
+    await wait(200 + Math.floor(Math.random() * 250));
+    try {
+      return await doFetch();
+    } catch (second) {
+      if (second instanceof ApiError || isAbortError(second)) throw second;
+      throw asNetworkError(second);
+    }
   }
 }
 
@@ -198,17 +260,14 @@ export async function requestMultipart(
     }, opts.timeoutMs ?? 45_000, opts.signal);
   let res: Response;
   try {
-    res = await doFetch();
-    if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
+    res = await fetchRetryingNetwork(doFetch, true);
+    if (res.status === 401 && getSession() && (await refreshBearer())) {
+      res = await fetchRetryingNetwork(doFetch, true);
+    }
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    if (
-      (e instanceof DOMException && e.name === 'AbortError') ||
-      (e instanceof Error && e.name === 'AbortError')
-    ) {
-      throw e;
-    }
-    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+    if (isAbortError(e)) throw e;
+    throw asNetworkError(e);
   }
   const raw = await res.text();
   let json: unknown = null;
@@ -251,17 +310,14 @@ export async function requestBlob(
     );
   let res: Response;
   try {
-    res = await doFetch();
-    if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
+    res = await fetchRetryingNetwork(doFetch, true);
+    if (res.status === 401 && getSession() && (await refreshBearer())) {
+      res = await fetchRetryingNetwork(doFetch, true);
+    }
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    if (
-      (e instanceof DOMException && e.name === 'AbortError') ||
-      (e instanceof Error && e.name === 'AbortError')
-    ) {
-      throw e;
-    }
-    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+    if (isAbortError(e)) throw e;
+    throw asNetworkError(e);
   }
   if (!res.ok) {
     throw new ApiError(
@@ -319,33 +375,29 @@ async function requestOnce(
     }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, opts.signal);
   };
 
+  const retryNetwork = opts.retry !== false;
   let res: Response;
   try {
-    res = await doFetch();
+    res = await fetchRetryingNetwork(doFetch, retryNetwork);
     // Session expired mid-use: refresh once and retry (only when we actually hold a session).
     if (res.status === 401 && getSession() && (await refreshBearer())) {
-      res = await doFetch();
+      res = await fetchRetryingNetwork(doFetch, retryNetwork);
     }
     if (
       method === 'GET' &&
-      opts.retry !== false &&
+      retryNetwork &&
       !opts.signal &&
       READ_RETRY_STATUSES.has(res.status)
     ) {
       const vendorDelay = retryAfterMs(res);
       await wait(Math.min(5_000, vendorDelay ?? 450 + Math.floor(Math.random() * 250)));
-      res = await doFetch();
+      res = await fetchRetryingNetwork(doFetch, retryNetwork);
     }
   } catch (e) {
     if (e instanceof ApiError) throw e;
     // Preserve abort so callers (search-as-you-type) can ignore cancelled requests.
-    if (
-      (e instanceof DOMException && e.name === 'AbortError') ||
-      (e instanceof Error && e.name === 'AbortError')
-    ) {
-      throw e;
-    }
-    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+    if (isAbortError(e)) throw e;
+    throw asNetworkError(e);
   }
 
   const raw = await res.text();

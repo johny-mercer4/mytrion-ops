@@ -115,12 +115,10 @@
 .region {
   display: contents;
 }
-/* `display: contents` removes the box from layout, which is what a transparent wrapper should do —
-   but a box with no box cannot be given a cursor, so the busy hint goes on the children. Only while
-   busy, and only progress: the region is not disabled, it is not finished. */
-.region[data-busy='true'] > * {
-  cursor: progress;
-}
+/* NO `cursor: progress` HERE. It used to sit on the busy region's children, and it was a second
+   loader: the skeleton is already the signal, in place and at the right size, and a progress cursor
+   over it says "this page is blocked" about a page that is not. One loading affordance per region
+   (modern-web-guidance §5) counts the cursor. `aria-busy` on the region is the non-visual half. */
 
 /* The live region. Removed from paint, kept in the accessibility tree, and never `display: none` —
    a region hidden that way is not announced at all, which would silently undo the entire point of

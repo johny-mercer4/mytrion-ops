@@ -63,6 +63,10 @@ export interface VerificationCaseRow {
   email: string | null;
   phone: string | null;
   applicantType: VerificationApplicantType | null;
+  /** Projected by the list endpoint so the queue's EIN / MC / USDOT search can actually match. */
+  ein: string | null;
+  mc: string | null;
+  dot: string | null;
   underwritingRoute: VerificationRoute | null;
   /** THE GATE. false = red, Sales still owes intake. */
   verificationProcess: boolean;
@@ -77,6 +81,13 @@ export interface VerificationCaseRow {
   intakeMissing: string[];
   submittedAt: string | null;
   ownerName: string;
+  /**
+   * The owner's Zoho id. Already on the wire (`VERIFICATION_FLOW_LIST_COLUMNS`) — typed here so a
+   * surface can tell "this is mine" from "this reached me because I own the Deal": the ingest sets
+   * `zoho_owner_id` from the Deal and `owner_zoho_user_id` from the case, and on live data those
+   * disagree on some cases.
+   */
+  ownerZohoUserId: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -444,6 +455,22 @@ export async function listDeskCases(query: {
 
 export async function getDeskCase(id: string): Promise<VerificationDeskDetail> {
   return (await request('GET', `/verification/flow/cases/${id}`)) as VerificationDeskDetail;
+}
+
+/**
+ * Correct the application FROM THE DESK.
+ *
+ * Same columns as `patchApplication`, different door: that one is Sales-gated and refuses once
+ * underwriting starts, this one is verification-gated and allows a correction at any phase short of
+ * a decided case. Returns the full desk detail, so the caller never refetches.
+ */
+export async function patchDeskIntake(
+  id: string,
+  body: Record<string, unknown>,
+): Promise<VerificationDeskDetail> {
+  return (await request('POST', `/verification/flow/cases/${id}/intake`, {
+    body,
+  })) as VerificationDeskDetail;
 }
 
 export async function decidePhase(

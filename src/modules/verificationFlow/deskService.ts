@@ -25,7 +25,12 @@ import {
   type VerificationScreeningVerdict,
 } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { withFlowSchemaGuard, zohoFromCtx } from './applicationService.js';
+import {
+  applicationService,
+  withFlowSchemaGuard,
+  zohoFromCtx,
+  type IntakePatch,
+} from './applicationService.js';
 import { isTierPriceable } from './capacity.js';
 import {
   saveBankingReview,
@@ -202,6 +207,55 @@ export const deskService = {
           },
         },
       };
+    });
+  },
+
+  /**
+   * Correct the application from the desk.
+   *
+   * WHY THE DESK HAS ITS OWN PATCH. `applicationService.patch` is Sales' door and carries Sales'
+   * rule — `assertSalesMayEdit` refuses once underwriting starts, so Sales cannot rewrite a file
+   * out from under a reviewer. The desk's rule is the opposite and narrower: a credit agent on the
+   * phone with the applicant is the person most likely to learn the EIN was mistyped, and they may
+   * fix it at ANY phase, right up until the case is decided. Routing the desk through Sales' door
+   * gave a verification-only user a 403 (that route is `requireSales`) and gave everyone else a 409
+   * on every case past intake — so the desk's editable application pane could not save at all.
+   *
+   * `refreshGate` re-evaluates completeness on the way out, which is what lets a correction made
+   * here be the thing that finally unlocks a red case.
+   */
+  async patchIntake(ctx: TenantContext, caseId: string, patch: IntakePatch) {
+    return withFlowSchemaGuard(async () => {
+      const row = await verificationFlowRepo.findById(ctx, caseId);
+      if (!row) throw new NotFoundError('Verification case not found');
+      // Deliberately NOT `loadWorkable`: a red case is exactly the one worth correcting. Only a
+      // decided case is off limits — its file is the evidence for a decision already made.
+      if (row.closedAt) {
+        throw new AppError('This application has already been decided and can no longer be edited.', {
+          statusCode: 409,
+          code: 'VERIFICATION_CASE_CLOSED',
+          expose: true,
+        });
+      }
+      await verificationFlowRepo.patchIntake(ctx, caseId, patch);
+      /**
+       * `submitting: true` — and this asymmetry with Sales is the point.
+       *
+       * `refreshGate` only opens the gate when the verdict is complete AND either it was already
+       * open or the caller says it is submitting, because for SALES "releasing work to another
+       * department is a decision the agent makes, not a side-effect of typing the last field".
+       * There is no such decision here: the case is ALREADY the desk's work, and a closed gate only
+       * means Sales still owes intake. Without this flag the desk's correction was accepted, the
+       * gate stayed shut however complete the file became, and `intake_missing` was rewritten to
+       * `[]` — so the banner degraded from "1 item outstanding" to the false "intake not started"
+       * and nobody was told what to do next.
+       */
+      await applicationService.refreshGate(ctx, caseId, {
+        submitting: true,
+        actor: zohoFromCtx(ctx),
+        actorName: ctx.userName || ctx.userId,
+      });
+      return this.detail(ctx, caseId);
     });
   },
 

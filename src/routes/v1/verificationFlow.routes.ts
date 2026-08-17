@@ -24,7 +24,9 @@ import {
   VERIFICATION_VOLATILITY,
   VERIFICATION_CREDIT_OUTCOMES,
 } from '../../db/schema/verification_flow.js';
+import type { IntakePatch } from '../../modules/verificationFlow/applicationService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { patchBody as intakePatchBody } from './verificationApplications.routes.js';
 import { requireDepartment, requireMytrionWrite } from './helpers.js';
 
 function requireVerificationRead(request: FastifyRequest): TenantContext {
@@ -205,6 +207,33 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
         detail: { documentId, fileName: link.fileName },
       });
       return link;
+    },
+  );
+
+  /**
+   * Correct the application from the desk.
+   *
+   * The Sales twin is `POST /verification/applications/:id` and shares this exact body — see the
+   * export note on `patchBody`. What differs is the door: this one is verification-write-gated and
+   * carries the desk's own rule (`deskService.patchIntake`), which allows a correction at any phase
+   * short of a decided case rather than refusing once underwriting starts.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/verification/flow/cases/:id/intake',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id } = idParams.parse(request.params);
+      const body = intakePatchBody.parse(request.body ?? {});
+      const detail = await deskService.patchIntake(ctx, id, body as IntakePatch);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.intake.corrected',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { fields: Object.keys(body) },
+      });
+      return detail;
     },
   );
 
