@@ -32,6 +32,14 @@ export interface ModuleTab {
   /** Extra sidebar-search terms; the label is always searched. */
   keywords?: string[];
   /**
+   * Right-aligned count on the sidebar row — an unread inbox, a queue depth.
+   *
+   * Deliberately per-tab and opt-in rather than derived: a count on every row turns the rail into a
+   * dashboard, and most of these tabs have nothing a single number honestly summarises. Hidden when
+   * the rail is collapsed (MytrionShell owns that).
+   */
+  trailing?: number | undefined;
+  /**
    * Sidebar section label. Consecutive tabs that share a group become one NavSection.
    * A tab without a group starts an unlabelled section — no heading. Main sits above
    * Queue / Policy / Roster that way, instead of inheriting `navLabel`.
@@ -85,6 +93,21 @@ export interface ModuleShellProps {
    * its own launchers without reaching around the access layer to rebuild the list.
    */
   renderMain?: (api: { open: (tabId: string) => void; launchers: ModuleTab[] }) => ReactNode;
+  /**
+   * Controlled active tab. Omit BOTH of these for the shell's own state — which is every module
+   * but Verification.
+   *
+   * Verification controls it because two of its surfaces navigate INTO a third: Main's "Needs you
+   * today" and the Inbox's "Open case" both open a case in the New applicants workspace, and a tab
+   * cannot switch a sibling from inside `content`. The alternative was a one-shot "requested tab"
+   * prop, which cannot express "open case A, come back, open case B" — the second request carries
+   * the same value as the first and nothing changes.
+   *
+   * `open()` still re-checks the Layer-2 predicate before calling `onViewChange`, so control does
+   * not become a way around the access gate.
+   */
+  view?: string;
+  onViewChange?: (tabId: string) => void;
 }
 
 /** Consecutive `group` values become one labelled section. Missing group → no heading. */
@@ -118,16 +141,21 @@ export function ModuleShell({
   navLabel,
   tabs,
   renderMain,
+  view: controlledView,
+  onViewChange,
 }: ModuleShellProps) {
   const user = useUserContext();
   // Layer-2 access predicate AND the permission-set tab grant. One line covers Verification and
   // Trailhead entirely — nav, launcher grid and the open() re-check all read `visible`.
   const visible = tabs.filter((t) => (t.access?.(user) ?? true) && canSeeTab(user, id, t.id));
-  const [view, setView] = useState<string>(visible[0]?.id ?? tabs[0]!.id);
+  const [innerView, setInnerView] = useState<string>(visible[0]?.id ?? tabs[0]!.id);
+  const view = controlledView ?? innerView;
 
   const open = (tabId: string): void => {
     // Re-check the Layer-2 predicate on switch so stale state can't reach a tab the user lost.
-    if (visible.some((t) => t.id === tabId)) setView(tabId);
+    if (!visible.some((t) => t.id === tabId)) return;
+    if (onViewChange) onViewChange(tabId);
+    else setInnerView(tabId);
   };
 
   const active = visible.find((t) => t.id === view) ?? visible[0];
@@ -141,6 +169,7 @@ export function ModuleShell({
     items: section.items.map((tab) => ({
       key: tab.id,
       label: tab.label,
+      ...(tab.trailing === undefined ? {} : { trailing: tab.trailing }),
       // ModuleTab.soon is the ComingSoon panel's config; the rail only needs the fact.
       soon: Boolean(tab.soon),
       icon: <tab.icon size={19} />,

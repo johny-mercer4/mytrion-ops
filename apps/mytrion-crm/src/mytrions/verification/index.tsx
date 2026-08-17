@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { Activity, Building2, ClipboardCheck, Home, Ticket } from 'lucide-react';
+import { Activity, Building2, ClipboardCheck, Home, Inbox, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
 import { ApplicantsList } from './applicants/ApplicantsList';
+import { VerificationInbox } from './inbox/VerificationInbox';
+import { isUnread } from './inbox/inboxModel';
 import { VerificationMain } from './main/VerificationMain';
+import { useVerificationInbox } from './verificationData';
 import { MytrionWatch } from './watch/MytrionWatch';
 import './verification.css';
 import './verificationModal.css';
@@ -21,7 +24,11 @@ import './verificationRuleset.css';
  * behaviour (`src/modules/mytrionWatch/`). Both live under Queue because they answer the same
  * question — who deserves credit — at different points in the relationship.
  *
- * The credit-platform desk (Inbox, Verification cases, Decision rules) is QUARANTINED — see
+ * Inbox is the desk's own notifications — `mytrion_inbox_messages` tagged `verification`, owner-
+ * scoped server-side, live over `/v1/realtime`. It is the ONE tab with a sidebar count, because
+ * "how many unread" is the only number on this rail a single figure honestly summarises.
+ *
+ * The rest of the credit-platform desk (Verification cases, Decision rules) is QUARANTINED — see
  * `legacyDesk.ts` and `src/modules/verification/killSwitches.ts`. Its components are still on disk
  * and its tests still pass; it is undeclared here so `tabRegistry.test.ts` cannot grant a permission
  * set for a tab that will not mount.
@@ -34,7 +41,12 @@ import './verificationRuleset.css';
  * hero + launcher grid — a decisioning desk's first screen is the queue's state, not a menu. It is
  * the only module that passes `renderMain`.
  */
-function tabsFor(pendingCase: string | null, clearPendingCase: () => void): ModuleTab[] {
+function tabsFor(
+  pendingCase: string | null,
+  clearPendingCase: () => void,
+  openCase: (caseId: string) => void,
+  inboxUnread: number,
+): ModuleTab[] {
   return [
   {
     id: 'main',
@@ -44,6 +56,21 @@ function tabsFor(pendingCase: string | null, clearPendingCase: () => void): Modu
     tone: 'var(--tone-violet)',
     keywords: ['home', 'overview', 'queue', 'throughput'],
     // No group — Main sits above Queue / Policy / Roster without a section heading.
+  },
+  {
+    id: 'inbox',
+    label: 'Inbox',
+    description: 'New cases, documents, escalations and breaches, each linked to its case.',
+    icon: Inbox,
+    tone: 'var(--tone-cyan)',
+    group: 'Queue',
+    hideKicker: true,
+    keywords: ['inbox', 'messages', 'notifications', 'alerts', 'unread', 'escalation'],
+    // The only counted row on the rail. `undefined` rather than 0 — a zero badge is noise.
+    trailing: inboxUnread || undefined,
+    // Renders its own PageHead: the unread count and "Mark all read" sit on the title's baseline.
+    ownHead: true,
+    content: <VerificationInbox onOpenCase={openCase} />,
   },
   {
     id: 'applicants',
@@ -109,7 +136,22 @@ export default function VerificationMytrion() {
    * inactive tabs, so a value left here WOULD be re-consumed on the next mount.
    */
   const [pendingCase, setPendingCase] = useState<string | null>(null);
-  const tabs = tabsFor(pendingCase, () => setPendingCase(null));
+  // The active tab lives here, not in the shell, because Main and the Inbox both open a case in the
+  // New applicants workspace — see ModuleShell's `view` / `onViewChange`.
+  const [view, setView] = useState('main');
+
+  /** Hand a case to New applicants and go there. Used by Main's queue and the Inbox's linked case. */
+  const openCase = (caseId: string): void => {
+    setPendingCase(caseId);
+    setView('applicants');
+  };
+
+  // The same SWR key the Inbox tab reads, so the rail's badge costs no extra round trip and can
+  // never disagree with the list behind it.
+  const inbox = useVerificationInbox();
+  const inboxUnread = (inbox.data?.messages ?? []).filter(isUnread).length;
+
+  const tabs = tabsFor(pendingCase, () => setPendingCase(null), openCase, inboxUnread);
 
   return (
     <ModuleShell
@@ -120,15 +162,10 @@ export default function VerificationMytrion() {
       heroBlurb="Credit and compliance decisioning — new applicants through the ten underwriting phases, and re-verification for clients already on the books."
       navLabel="Verification"
       tabs={tabs}
+      view={view}
+      onViewChange={setView}
       renderMain={({ open, launchers }) => (
-        <VerificationMain
-          open={open}
-          launchers={launchers}
-          onOpenCase={(caseId) => {
-            setPendingCase(caseId);
-            open('applicants');
-          }}
-        />
+        <VerificationMain open={open} launchers={launchers} onOpenCase={openCase} />
       )}
     />
   );
