@@ -60,25 +60,6 @@ export function toggleOnboarding(
   }) as Promise<SaveApplicationResult>;
 }
 
-export type LovesVerificationValue = 'Approved' | 'Not Approved';
-
-export interface BulkLovesVerificationResult {
-  results: Array<{ id: string; ok: boolean; error?: string }>;
-}
-
-/** Bulk Love's clearance push — one call for up to 50 selected records (QA feedback, Dina Carter
- *  2026-08-07: agents could only push one at a time). See csApplications.routes.ts for the
- *  per-id partial-failure semantics. */
-export function bulkSetLovesVerification(
-  ids: string[],
-  value: LovesVerificationValue,
-): Promise<BulkLovesVerificationResult> {
-  return request('POST', '/cs/applications/loves-verification/bulk', {
-    headers: CS_HEADERS,
-    body: { ids, value },
-  }) as Promise<BulkLovesVerificationResult>;
-}
-
 // ---- Card tracking (additional card orders — QA 2026-08-07) ----
 
 /**

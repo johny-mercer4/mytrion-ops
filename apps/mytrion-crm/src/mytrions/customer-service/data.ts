@@ -210,21 +210,6 @@ export function fullName(app: Application): string {
   return `${app.first} ${app.last}`.trim();
 }
 
-/**
- * First/Last Name, City, Zip Code — the fields the backend hard-blocks a save on if blank
- * (applicationsSave.ts's REQUIRED_ON_SAVE; keep both lists in sync). Exposed here so the table
- * can disable a row's Love's-clearance checkbox and explain why *before* the agent selects it,
- * rather than letting the bulk push reject it after the fact.
- */
-export function missingRequiredFieldLabels(app: Application): string[] {
-  const missing: string[] = [];
-  if (!app.first.trim()) missing.push('First Name');
-  if (!app.last.trim()) missing.push('Last Name');
-  if (!app.city.trim()) missing.push('City');
-  if (!app.zip.trim()) missing.push('Zip Code');
-  return missing;
-}
-
 export function greeting(): string {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';

@@ -5,13 +5,15 @@
  *   1) fetch the full record (Edit_History subform + linked Deal id),
  *   2) validate + allowlist the requested changes, resolve exact field casing,
  *   3) APPEND Edit_History audit rows (Who_Edited is session-authoritative),
- *   4) update the Application (skipped if every requested field is deal-only),
- *   5) write to the linked Deal — Application-field mirrors via DEAL_FIELD_MAP (best-effort)
- *      plus any DEAL_ONLY_FIELDS (required — Loves_Verification only exists on Deals; a failed
- *      write there is a failed save, not a warning, since there's no Application-side fallback).
+ *   4) update the Application,
+ *   5) mirror changed fields to the linked Deal via DEAL_FIELD_MAP (best-effort).
+ *
+ * Loves_Verification is NOT writable from here — it's read-only in this module (the CS
+ * Applications/Clients list shows it, drained from the linked Deal — applicationsList.ts's
+ * applyDeal). Changing it is out of scope for CS Applications; that'll come from the Maintenance/
+ * Love's-API integration instead (2026-08-18 decision).
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
-import { findDealIdForApplication } from '../../integrations/csApplicationsQuery.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { invalidateTouchpointReadCache } from '../../lib/touchpointReadCache.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -89,7 +91,6 @@ const EDITABLE_FIELDS: Readonly<Record<string, FieldKind>> = {
   WEX_Status: 'text',
   Type_of_Business: 'text',
   Payment_Type_Billing: 'text',
-  Loves_Verification: 'text',
   Billing_Cycle: 'text',
   Billing_Form_Y_N: 'text',
   Credit_Score: 'number',
@@ -107,25 +108,6 @@ const EDITABLE_FIELDS: Readonly<Record<string, FieldKind>> = {
 
 const editableByLower = new Map(
   Object.entries(EDITABLE_FIELDS).map(([k, v]) => [k.toLowerCase(), { name: k, kind: v }]),
-);
-
-/**
- * Fields that live ONLY on the linked Deal, never the Application — confirmed live against Zoho
- * (2026-08-17): `Applications` has no field matching "love" at all; `Deals` has exactly one,
- * `Loves_Verification`. The read side already knew this (applicationsList.ts's `applyDeal` reads
- * it from the Deal), but the write side didn't — `saveApplication` tried to write it to the
- * Application first via `resolveWritePayload('Applications', ...)`, which correctly rejected it
- * as an unknown field. Written straight to the Deal instead. Unlike DEAL_FIELD_MAP's
- * Application-field mirrors below (best-effort — the Application write already succeeded, so a
- * mirror failure is just a warning), a failure writing one of THESE fields is not best-effort:
- * there is no Application-side write backing it up, so a failure here must fail the whole save.
- */
-const DEAL_ONLY_FIELDS: Readonly<Record<string, FieldKind>> = {
-  Loves_Verification: 'text',
-};
-
-const dealOnlyByLower = new Map(
-  Object.entries(DEAL_ONLY_FIELDS).map(([k, v]) => [k.toLowerCase(), { name: k, kind: v }]),
 );
 
 function reject(message: string): never {
@@ -231,16 +213,9 @@ export async function saveApplication(
   if (entries.length === 0) reject('No changes supplied');
   if (entries.length > 40) reject('Too many fields in one save');
 
-  // 1) Allowlist + validate (logical names) — deal-only fields (Loves_Verification) are split
-  // out here; they never go anywhere near the Application-side allowlist/resolver below. --------
+  // 1) Allowlist + validate (logical names) --------------------------------------------
   const validated: Record<string, unknown> = {};
-  const dealOnlyValidated: Record<string, unknown> = {};
   for (const [rawKey, rawValue] of entries) {
-    const dealOnlyMatch = dealOnlyByLower.get(rawKey.toLowerCase());
-    if (dealOnlyMatch) {
-      dealOnlyValidated[dealOnlyMatch.name] = validateFieldValue(dealOnlyMatch.name, dealOnlyMatch.kind, rawValue);
-      continue;
-    }
     const match = editableByLower.get(rawKey.toLowerCase());
     if (!match) reject(`Field '${rawKey}' is not editable from the CS panel`);
     validated[match.name] = validateFieldValue(match.name, match.kind, rawValue);
@@ -249,24 +224,6 @@ export async function saveApplication(
   // 2) Full record: Edit_History must be APPENDED and the Deal id discovered ----------
   const full = await zohoCrmRecords.getRecord('Applications', appId);
   if (!full) throw new NotFoundError(`Application ${appId} not found`);
-
-  const relatedDeal = full.Related_Deal as { id?: string } | null | undefined;
-  const dealName = full.Deal_Name as { id?: string } | null | undefined;
-  let dealId = relatedDeal?.id ?? dealName?.id ?? null;
-
-  // Those two lookup fields are unreliable (Related_Deal is empty on every record checked live —
-  // see csApplicationsQuery.ts's header comment); a deal-only field (e.g. Loves_Verification) has
-  // no Application-side fallback, so it's worth the extra COQL round-trip to try the ACTUAL match
-  // key (Application_ID, then company name) before concluding there's genuinely no linked Deal.
-  if (Object.keys(dealOnlyValidated).length > 0 && !dealId) {
-    const applicationId = typeof full.Application_ID === 'number' ? full.Application_ID : null;
-    const companyName = typeof full.Name === 'string' ? full.Name : null;
-    dealId = await findDealIdForApplication(applicationId, companyName);
-  }
-
-  if (Object.keys(dealOnlyValidated).length > 0 && !dealId) {
-    reject('This Application has no linked Deal, so Love\'s Verification cannot be set');
-  }
 
   // enforceRequiredFields defaults to true — the modal save and the Love's bulk push both
   // want the hard block. The onboarding tick-box route opts out: a checkbox toggle isn't the
@@ -283,57 +240,50 @@ export async function saveApplication(
   // 3) Exact-casing resolution against live metadata (silent-no-op guard) --------------
   const resolved = await resolveWritePayload('Applications', validated);
 
-  // 4) Application update — skipped entirely when this save is deal-only (e.g. the Love's-
-  // clearance bulk push), so it doesn't bump the Application's Modified_Time for a field it
-  // never actually touches. ------------------------------------------------------------
-  if (Object.keys(resolved).length > 0) {
-    const history = Array.isArray(full.Edit_History)
-      ? (JSON.parse(JSON.stringify(full.Edit_History)) as Array<Record<string, unknown>>)
-      : [];
-    const who = ctx.userName ?? 'Unknown';
-    const editedOn = editedOnStamp();
-    for (const [field, value] of Object.entries(resolved)) {
-      history.push({
-        Column_Name: field,
-        Who_Edited: who,
-        New_Value: String(value ?? ''),
-        Edited_On: editedOn,
-      });
-    }
-    await zohoCrmRecords.updateRecord('Applications', appId, {
-      ...resolved,
-      Edit_History: history,
+  const history = Array.isArray(full.Edit_History)
+    ? (JSON.parse(JSON.stringify(full.Edit_History)) as Array<Record<string, unknown>>)
+    : [];
+  const who = ctx.userName ?? 'Unknown';
+  const editedOn = editedOnStamp();
+  for (const [field, value] of Object.entries(resolved)) {
+    history.push({
+      Column_Name: field,
+      Who_Edited: who,
+      New_Value: String(value ?? ''),
+      Edited_On: editedOn,
     });
   }
+
+  // 4) Application update ---------------------------------------------------------------
+  await zohoCrmRecords.updateRecord('Applications', appId, {
+    ...resolved,
+    Edit_History: history,
+  });
   // cs.applications.list caches reads for up to 90s (touchpoints.routes.ts) — without this, a
   // save can look successful yet reopen with the pre-save value for up to that long.
   invalidateTouchpointReadCache(ctx.tenantId);
   // Patches the cached Applications+Deals snapshot in place (applicationsSnapshotCache.ts) rather
   // than invalidating it — a full re-drain costs ~10 COQL calls, wasteful for a single-field save.
-  // Includes dealOnlyValidated too (e.g. Loves_Verification) — that field is drained from the Deal
-  // side (applicationsList.ts's applyDeal), but the cached row carries it under the same key.
-  patchApplicationSnapshotRow(ctx.tenantId, appId, { ...resolved, ...dealOnlyValidated });
+  patchApplicationSnapshotRow(ctx.tenantId, appId, resolved);
 
-  // 5) Deal write: Application-field mirrors (best-effort — the widget warns, never fails the
-  // save) PLUS any deal-only fields from this save. A deal-only field has no Application-side
-  // write backing it up, so if one was requested, a failure here must fail the whole save rather
-  // than degrade to a warning — "pushed Love's Verification" cannot silently mean "did nothing".
+  // 5) Deal mirror (best-effort — the widget warns, never fails the save) ---------------
+  const relatedDeal = full.Related_Deal as { id?: string } | null | undefined;
+  const dealName = full.Deal_Name as { id?: string } | null | undefined;
+  const dealId = relatedDeal?.id ?? dealName?.id ?? null;
   let dealSyncedFields = 0;
   let warning: string | undefined;
   if (dealId) {
-    const dealChanges: Record<string, unknown> = { ...dealOnlyValidated };
+    const dealChanges: Record<string, unknown> = {};
     for (const [field, value] of Object.entries(validated)) {
       const dealField = dealFieldByLower.get(field.toLowerCase());
       if (dealField) dealChanges[dealField] = value;
     }
     if (Object.keys(dealChanges).length > 0) {
-      const dealWriteRequired = Object.keys(dealOnlyValidated).length > 0;
       try {
         const dealResolved = await resolveWritePayload('Deals', dealChanges);
         await zohoCrmRecords.updateRecord('Deals', dealId, dealResolved);
         dealSyncedFields = Object.keys(dealResolved).length;
       } catch (err) {
-        if (dealWriteRequired) throw err;
         warning = `Application saved, but the Deal mirror failed: ${
           err instanceof Error ? err.message : String(err)
         }`;
@@ -343,7 +293,7 @@ export async function saveApplication(
 
   return {
     id: appId,
-    updatedFields: [...Object.keys(resolved), ...Object.keys(dealOnlyValidated)],
+    updatedFields: Object.keys(resolved),
     dealId,
     dealSyncedFields,
     ...(warning ? { warning } : {}),

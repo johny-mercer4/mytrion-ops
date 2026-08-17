@@ -33,9 +33,8 @@ import {
   type AppColumn,
   type SubTab,
 } from './ApplicationsTable';
-import { LovesBulkBar } from './LovesBulkBar';
 import { Toast, type ToastState } from './Toast';
-import { missingRequiredFieldLabels, type Application } from './data';
+import type { Application } from './data';
 import { invalidateApplicationsCache, loadApplications, useLoad } from './live';
 
 /** Widget parity: search fires debounced (App ID / Carrier ID / name / phone, server-side). */
@@ -86,9 +85,6 @@ export function Applications() {
   const [filters, setFilters] = useState<AppFilters>(emptyFilters);
   const [queryFilters, setQueryFilters] = useState<AppFilters>(emptyFilters);
   const [facets, setFacets] = useState<CsApplicationsFacets>({ stage: [], biz: [], agent: [], wex: [], loves: [] });
-  // Bulk Love's-clearance selection (QA feedback 2026-08-07) — ids only, resolved back to rows via
-  // `rows` below so the bar always reflects the currently loaded page's data.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -115,11 +111,6 @@ export function Applications() {
     [queryFilters, sortKey, sortDir],
   );
   const queryKey = applicationsQueryKey(queryParams);
-
-  // A Love's-clearance selection only makes sense against the page it was made on — clear it
-  // whenever the tab, page, search, or filters/sort change so it can't silently reference rows no
-  // longer shown.
-  useEffect(() => setSelectedIds(new Set()), [subTab, page, query, queryKey]);
 
   const pageData = useLoad(
     (fresh) => loadApplications(subTab, query, page, queryParams, fresh),
@@ -176,22 +167,6 @@ export function Applications() {
   const rows = merged;
   const filterCount = activeFilterCount(filters);
 
-  // Bulk Love's-clearance selection, resolved against the currently loaded rows (not just ids) so
-  // the bar always shows the real company names/current data, not a stale snapshot.
-  const selectedApps = useMemo(
-    () => rows.filter((r) => selectedIds.has(r.id)),
-    [rows, selectedIds],
-  );
-  const toggleSelect = useCallback((app: Application) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(app.id)) next.delete(app.id);
-      else next.add(app.id);
-      return next;
-    });
-  }, []);
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-
   const hasMore = pageData.data?.moreRecords === true;
   const total = pageData.data?.total ?? rows.length;
   // Memoised: AppRow is memo'd on prop identity, and columnsFor returns a module-level constant
@@ -202,25 +177,6 @@ export function Applications() {
   const notify = useCallback((kind: ToastState['kind'], message: string) => {
     setToast({ id: Date.now(), kind, message });
   }, []);
-
-  const onLovesBulkDone = useCallback(
-    (summary: { succeeded: number; failed: number; errors: string[] }) => {
-      clearSelection();
-      invalidateApplicationsCache();
-      pageData.reload();
-      if (summary.failed === 0) {
-        notify('success', `Pushed ${summary.succeeded} to Love's`);
-      } else {
-        notify(
-          'error',
-          `Pushed ${summary.succeeded}, ${summary.failed} failed: ${summary.errors.slice(0, 3).join('; ')}${
-            summary.errors.length > 3 ? '…' : ''
-          }`,
-        );
-      }
-    },
-    [clearSelection, notify, pageData],
-  );
 
   // Widget parity: load failures surface as an error toast.
   useEffect(() => {
@@ -276,15 +232,6 @@ export function Applications() {
         }
         return;
       }
-      if (col.key === 'select') {
-        const missing = missingRequiredFieldLabels(app);
-        if (missing.length > 0) {
-          notify('error', `Can't select — missing ${missing.join(', ')}`);
-          return;
-        }
-        toggleSelect(app);
-        return;
-      }
       const copyText = copyableValue(col, app, subTab);
       if (copyText) {
         copyWithToast(copyText, ev);
@@ -292,7 +239,7 @@ export function Applications() {
       }
       setOpenApp(app);
     },
-    [subTab, onToggle, notify, toggleSelect],
+    [subTab, onToggle],
   );
 
   const onOpenRow = useCallback((app: Application) => setOpenApp(app), []);
@@ -441,11 +388,6 @@ export function Applications() {
         <ApplicationsFilterPanel filters={filters} setFilters={setFilters} facets={facets} filterCount={filterCount} />
       ) : null}
 
-      {/* ── Bulk Love's clearance bar — only when something's selected ── */}
-      {activeTab !== 'tracking' && selectedApps.length > 0 ? (
-        <LovesBulkBar selected={selectedApps} onDone={onLovesBulkDone} onClear={clearSelection} />
-      ) : null}
-
       {activeTab === 'tracking' ? (
         <CardTracking />
       ) : loading ? (
@@ -510,7 +452,6 @@ export function Applications() {
                   busyField={
                     pendingToggle?.startsWith(`${app.id}|`) ? pendingToggle.slice(app.id.length + 1) : null
                   }
-                  selected={selectedIds.has(app.id)}
                   onCellClick={onCellClick}
                   onOpen={onOpenRow}
                 />

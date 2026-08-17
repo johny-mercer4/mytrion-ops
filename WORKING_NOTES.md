@@ -18076,3 +18076,43 @@ asserts writes land on `Deals` not `Applications`; a dedicated case for "no link
 a dedicated case for the Application_ID-fallback resolution actually being invoked and used). Full
 suites green (2,700+ backend, 1,046 frontend), same two pre-existing unrelated failures as every
 other entry this week.
+
+## 2026-08-18 (later) — Love's Verification: write path removed from Applications entirely
+
+Direction changed: Love's clearance will be driven by the Maintenance/Love's-API integration
+instead, not by CS agents manually flipping status from Applications. Removed everything about
+*changing* Love's Verification from this module — kept the parts that only *show* it, since those
+are still useful and don't touch Zoho:
+
+**Kept:** the read-only "Love's" column on both tabs, the Love's Verification filter dropdown
+(Approved/Not Approved/Pending), and the modal's read-only display. All three just render whatever
+`Loves_Verification` already is on the linked Deal — no write path behind any of them.
+
+**Removed:**
+- Bulk-select checkboxes + the whole `LovesBulkBar` action bar (component + its CSS + its tests).
+- `POST /cs/applications/loves-verification/bulk` and its zod schema.
+- `applicationsSave.ts`'s entire deal-only-field mechanism (`DEAL_ONLY_FIELDS`, the dual
+  validated/dealOnlyValidated split, the "deal write is required, not best-effort" branch) — back
+  to the simple single-path Application-save + best-effort Deal-mirror it was before any of this
+  shipped. `Loves_Verification` is gone from `EDITABLE_FIELDS` too (it was still listed there,
+  dead code since the deal-only branch always matched first — caught while removing the rest).
+- `findDealIdForApplication()` (`csApplicationsQuery.ts`) — the Application_ID/name-match fallback
+  that existed solely to support the deal-only write; nothing else calls it.
+- `missingRequiredFieldLabels()` (`data.ts`) and its test file — existed solely to disable the
+  bulk-select checkbox for incomplete records; with the checkbox gone, this had no remaining caller.
+
+**Kept as-is (unrelated to Love's):** the required-fields hard block (First/Last Name, City, Zip
+Code) on the modal save — that's a separate fix for a separate report and stays exactly as shipped.
+
+**Isolation note for next time:** this session shares the main `mytrion-ops` checkout with another
+active session doing unrelated billing/payment-delete-grant work directly on `build`. Did the whole
+rollback in a separate `git worktree` (`mytrion-ops-loves-rollback`, on this same feature branch)
+so neither session's uncommitted state was ever at risk — full `pnpm install` in the worktree, dev
+servers on non-default ports (3011/5183) with `CORS_ORIGINS` extended in a worktree-local `.env`
+copy, torn down cleanly afterward. The other session's ports (3001/5173) were never touched.
+
+Full suites green in the worktree (backend 3106 passed, same known `comms-admin-routes.test.ts` DB
+flake as always; frontend 1046 passed). Verified live: no bulk-select checkboxes anywhere, Love's
+column/filter still present and correctly populated, modal still shows the real value read-only.
+Bundle rebuilt — confirmed "Push to Love's" / the bulk route string are gone from the built JS,
+"Love's Verification" (the filter label) still there.
