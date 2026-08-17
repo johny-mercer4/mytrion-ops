@@ -27,6 +27,14 @@
   color: var(--text-muted);
   box-shadow: var(--hz-glass-inset);
 }
+.mg-root .mg-rf-range {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.mg-root .mg-rf-range .mg-rf-month {
+  min-width: 156px;
+}
 .mg-root .mg-rf-month {
   position: relative;
   min-width: 184px;
@@ -665,8 +673,13 @@
   .mg-root .mg-rf-grid {
     grid-template-columns: 1fr;
   }
-  .mg-root .mg-rf-month {
+  .mg-root .mg-rf-range {
     order: 3;
+    width: 100%;
+  }
+  .mg-root .mg-rf-range .mg-rf-month {
+    flex: 1;
+    min-width: 0;
   }
   .mg-root .mg-rf-export {
     width: 100%;

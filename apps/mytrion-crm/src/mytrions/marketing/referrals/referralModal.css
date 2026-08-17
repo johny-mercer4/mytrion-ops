@@ -359,6 +359,29 @@
   font-weight: var(--fw-bold);
   line-height: 1;
 }
+.mg-root .mg-rf-month-rows {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mg-root .mg-rf-month-rows li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-sm);
+  background: var(--hz-pane);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.mg-root .mg-rf-month-rows strong {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
 .mg-root .mg-rf-progress {
   margin-top: 11px;
 }

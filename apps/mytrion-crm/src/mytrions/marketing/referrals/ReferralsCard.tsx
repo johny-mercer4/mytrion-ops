@@ -4,7 +4,6 @@ import {
   BadgeDollarSign,
   Building2,
   Calculator,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -23,8 +22,10 @@ import { getReferralWorkspace } from '../../../api/referrals';
 import { ReferralsSkeleton } from '../MarketingSkeletons';
 import { useCachedLoad, formatCachedAt } from '../../_shared/swrCache';
 import { ReferralDetailModal } from './ReferralDetailModal';
+import { ReferralMonthField } from './ReferralMonthField';
 import { downloadReferralCsv, downloadReferralExcel } from './referralExport';
 import { buildReferralCards, cardMatchesFilter, type ReferralCardModel } from './referralModel';
+import { clampReferralRange, currentPeriod } from './referralPeriod';
 import './referrals.css';
 
 const PAGE_SIZE = 24;
@@ -66,19 +67,6 @@ const TYPE_META: Record<
     caption: '$50 once · 1,000 gallons',
   },
 };
-
-function currentPeriod(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function periodLabel(periodMonth: string): string {
-  return new Date(`${periodMonth}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
 
 function money(value: number | string): string {
   return Number(value || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -224,22 +212,22 @@ function ReferralCard({
 }
 
 export function ReferralsCard({ onBack }: { onBack?: () => void }) {
-  const [periodMonth, setPeriodMonth] = useState(currentPeriod);
+  const [periodFrom, setPeriodFrom] = useState(currentPeriod);
+  const [periodTo, setPeriodTo] = useState(currentPeriod);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<ReferralCardModel | null>(null);
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
   const [exportError, setExportError] = useState('');
-  const monthInputRef = useRef<HTMLInputElement>(null);
   const forceRefreshRef = useRef(false);
 
   const { data, loading, revalidating, error, reload, cachedAt } = useCachedLoad(
-    `manager:referrals:workspace:${periodMonth}`,
+    `manager:referrals:workspace:${periodFrom}:${periodTo}`,
     () => {
       const refresh = forceRefreshRef.current;
       forceRefreshRef.current = false;
-      return getReferralWorkspace(periodMonth, { refresh });
+      return getReferralWorkspace(periodFrom, { refresh, periodTo });
     },
     { staleMs: 120_000 },
   );
@@ -258,10 +246,12 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const rangeStart = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
   const rangeEnd = Math.min(page * PAGE_SIZE, filtered.length);
-  const exportReady =
-    Boolean(data && model && data.periodMonth === periodMonth) && !loading && !revalidating;
+  const rangeReady =
+    (data?.periodFrom ?? data?.periodMonth) === periodFrom &&
+    (data?.periodTo ?? data?.periodMonth) === periodTo;
+  const exportReady = Boolean(data && model && rangeReady) && !loading && !revalidating;
 
-  useEffect(() => setPage(1), [filter, normalizedQuery, periodMonth]);
+  useEffect(() => setPage(1), [filter, normalizedQuery, periodFrom, periodTo]);
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
@@ -281,8 +271,8 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
     setExporting(format);
     setExportError('');
     try {
-      if (format === 'csv') await downloadReferralCsv(model.cards, periodMonth);
-      else await downloadReferralExcel(model.cards, periodMonth);
+      if (format === 'csv') await downloadReferralCsv(model.cards, periodFrom, periodTo);
+      else await downloadReferralExcel(model.cards, periodFrom, periodTo);
     } catch (reason) {
       setExportError(reason instanceof Error ? reason.message : 'Could not create the export.');
     } finally {
@@ -332,45 +322,35 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           */}
           <span
             className="mg-rf-live-badge"
-            data-pending={data && data.periodMonth === periodMonth ? undefined : 'true'}
-            aria-hidden={data && data.periodMonth === periodMonth ? undefined : true}
+            data-pending={data && rangeReady ? undefined : 'true'}
+            aria-hidden={data && rangeReady ? undefined : true}
           >
             <Calculator size={13} />
             {revalidating ? 'Calculating…' : 'Live calculation'}
           </span>
-          <div className="mg-rf-month" data-focus-shell>
-            <button
-              type="button"
-              onClick={() => {
-                const input = monthInputRef.current;
-                if (!input) return;
-                try {
-                  input.showPicker();
-                } catch {
-                  input.focus();
-                  input.click();
-                }
+          <div className="mg-rf-range">
+            <ReferralMonthField
+              label="From"
+              value={periodFrom}
+              max={periodTo}
+              onChange={(next) => {
+                const nextRange = clampReferralRange(next, periodTo < next ? next : periodTo);
+                setPeriodFrom(nextRange.from);
+                setPeriodTo(nextRange.to);
               }}
-              aria-label={`Choose calculation month, currently ${periodLabel(periodMonth)}`}
-              aria-haspopup="dialog"
-            >
-              <CalendarDays size={15} />
-              <span className="mg-rf-month-copy">
-                <small>Month</small>
-                <strong>{periodLabel(periodMonth)}</strong>
-              </span>
-              <ChevronRight className="mg-rf-month-chevron" size={14} aria-hidden="true" />
-            </button>
-            <input
-              ref={monthInputRef}
-              type="month"
-              value={periodMonth.slice(0, 7)}
-              max={currentPeriod().slice(0, 7)}
-              onChange={(event) =>
-                setPeriodMonth(event.target.value ? `${event.target.value}-01` : currentPeriod())
-              }
-              aria-label="Calculation month"
-              tabIndex={-1}
+            />
+            <ReferralMonthField
+              label="To"
+              value={periodTo}
+              min={periodFrom}
+              onChange={(next) => {
+                const nextRange = clampReferralRange(
+                  periodFrom > next ? next : periodFrom,
+                  next,
+                );
+                setPeriodFrom(nextRange.from);
+                setPeriodTo(nextRange.to);
+              }}
             />
           </div>
           <button
@@ -446,7 +426,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
             <span className="is-emerald">
               <BadgeDollarSign size={17} />
             </span>
-            <small>Payable selected month</small>
+            <small>{periodFrom === periodTo ? 'Payable selected month' : 'Payable selected range'}</small>
             <strong>{money(data.summary.payableAmountUsd)}</strong>
             <em>{data.summary.earned} earned awards</em>
           </div>
@@ -574,7 +554,9 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           parentFields={data.parents.fields}
           childFields={data.children.fields}
           dealFields={data.associations.deals.fields}
-          periodMonth={periodMonth}
+          periodMonth={periodTo}
+          periodFrom={periodFrom}
+          periodTo={periodTo}
           onClose={() => setSelected(null)}
         />
       ) : null}

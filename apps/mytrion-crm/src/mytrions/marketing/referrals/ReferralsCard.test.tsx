@@ -25,7 +25,7 @@ vi.mock('../../_shared/swrCache', () => ({
   useCachedLoad: () => useCachedLoadSpy(),
 }));
 
-describe('Referrals calculation month control', () => {
+describe('Referrals calculation month range', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('renders against the mocked cache rather than the network', () => {
@@ -41,10 +41,11 @@ describe('Referrals calculation month control', () => {
     });
     const { container } = render(<ReferralsCard />);
 
-    fireEvent.click(screen.getByRole('button', { name: /choose calculation month/i }));
+    fireEvent.click(screen.getByRole('button', { name: /choose from month/i }));
 
     expect(showPicker).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText('Calculation month')).toHaveAttribute('type', 'month');
+    expect(screen.getByLabelText('From month')).toHaveAttribute('type', 'month');
+    expect(screen.getByLabelText('To month')).toHaveAttribute('type', 'month');
     expect(screen.getByRole('status', { name: 'Loading referrals' })).toBeInTheDocument();
     // The cold-open placeholder is Referrals' OWN shape — the KPI row, the controls panel and the
     // 290px card grid — not the 380px-track Loyalty grid it used to borrow, which relaid the whole

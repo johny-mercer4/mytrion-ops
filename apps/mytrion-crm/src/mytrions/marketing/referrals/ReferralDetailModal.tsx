@@ -18,6 +18,7 @@ import {
 import type { CrmRow, ReferralCalculationPreview, ReferralField } from '../../../api/referrals';
 import { useModalFocus } from '../../_shared/useModalFocus';
 import { displayValue, str, type ReferralCardModel } from './referralModel';
+import { periodLabel, periodRangeLabel } from './referralPeriod';
 import './referralModal.css';
 // After referralModal.css: these are cross-file finishes that must win at equal specificity.
 import './referralPolish.css';
@@ -153,6 +154,21 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
             <span>{formula(preview)}</span>
             <strong>{money(preview.amountUsd)}</strong>
           </div>
+          {preview.months && preview.months.length > 1 ? (
+            <ol className="mg-rf-month-rows">
+              {preview.months.map((row) => (
+                <li key={row.periodMonth}>
+                  <span>{periodLabel(row.periodMonth)}</span>
+                  <span>
+                    {preview.bonusType === 'swipes_legacy'
+                      ? `${number(row.periodSwipes)} cards`
+                      : `${number(row.periodGallons)} gal`}
+                  </span>
+                  <strong>{money(row.amountUsd)}</strong>
+                </li>
+              ))}
+            </ol>
+          ) : null}
           {!preview.recurring ? (
             <div className="mg-rf-progress">
               <div>
@@ -266,6 +282,8 @@ export function ReferralDetailModal({
   childFields,
   dealFields,
   periodMonth,
+  periodFrom,
+  periodTo,
   onClose,
 }: {
   card: ReferralCardModel;
@@ -273,6 +291,8 @@ export function ReferralDetailModal({
   childFields: ReferralField[];
   dealFields: ReferralField[];
   periodMonth: string;
+  periodFrom?: string;
+  periodTo?: string;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('overview');
@@ -285,11 +305,7 @@ export function ReferralDetailModal({
   );
   const periodCards = card.previews.reduce((sum, preview) => sum + preview.periodSwipes, 0);
   const carriers = new Set(card.previews.map((preview) => preview.carrierId)).size;
-  const month = new Date(`${periodMonth}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  const month = periodRangeLabel(periodFrom ?? periodMonth, periodTo ?? periodMonth);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
