@@ -243,6 +243,41 @@
     border-bottom: 1px solid var(--border-light);
 }
 
+/* ─────────────────────────────────────────────────────────────
+   3d. Bulk Love's-clearance bar — a normal flex sibling above the table (never
+   position: fixed for chrome, per the modern-web-guidance responsive rules).
+   ───────────────────────────────────────────────────────────── */
+.cs-root .cs-loves-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    margin-bottom: 0.5rem;
+    background: var(--cs-accent-soft);
+    border: 1px solid var(--cs-accent);
+    border-radius: var(--radius-md);
+    flex-wrap: wrap;
+}
+
+.cs-root .cs-loves-bulk-count {
+    font-weight: 650;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-loves-bulk-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.cs-root .cs-loves-bulk-bar .cs-btn {
+    margin-left: 0;
+}
+
+.cs-root .cs-loves-bulk-bar .cs-btn:last-child {
+    margin-left: auto;
+}
+
 .cs-root .cs-app-filter-row {
     display: flex;
     align-items: flex-end;
@@ -542,6 +577,56 @@
 .cs-root .cs-cell-check.is-busy {
     opacity: 0.45;
     pointer-events: none;
+}
+
+/* ─── Bulk Love's-clearance row-select checkbox — same shape as the onboarding tick box above,
+   kept as a separate class since it's a different concept (row selection vs. a milestone field). */
+.cs-root td:has(> .cs-row-select) {
+    text-align: center;
+    cursor: pointer;
+}
+
+.cs-root .cs-row-select {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.125rem;
+}
+
+.cs-root .cs-row-select-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1.5px var(--check-border);
+    color: transparent;
+    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.cs-root .cs-app-row td:hover .cs-row-select:not(.is-on):not(.is-disabled) .cs-row-select-box {
+    box-shadow: inset 0 0 0 1.5px var(--cs-accent);
+    color: color-mix(in srgb, var(--cs-accent) 35%, transparent);
+}
+
+.cs-root .cs-row-select.is-on .cs-row-select-box {
+    background: var(--cs-accent);
+    box-shadow: inset 0 0 0 1.5px var(--cs-accent);
+    color: #FFFFFF;
+}
+
+.cs-root .cs-row-select.is-disabled {
+    cursor: not-allowed;
+}
+
+.cs-root .cs-row-select.is-disabled .cs-row-select-box {
+    opacity: 0.35;
+}
+
+.cs-root td:has(> .cs-row-select.is-disabled) {
+    cursor: not-allowed;
 }
 
 /* Verified check */

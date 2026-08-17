@@ -81,6 +81,20 @@ const MODAL_FIELDS: ModalField[] = [
   { field: 'Modified_By', label: 'Modified By', type: 'readonly', get: () => null },
 ];
 
+/**
+ * Fields that must be non-blank before ANY save goes through (QA feedback, Dina Carter
+ * 2026-08-07: client profiles routinely missing these). Checked against the full current form
+ * state, not just the diff, so an edit to an unrelated field (e.g. a note) still surfaces a
+ * pre-existing gap instead of letting it slide through untouched. Mirrored server-side in
+ * applicationsSave.ts — keep both lists in sync if this changes.
+ */
+const REQUIRED_FIELDS: ReadonlyArray<{ field: string; label: string }> = [
+  { field: 'First_Name', label: 'First Name' },
+  { field: 'Last_Name', label: 'Last Name' },
+  { field: 'City', label: 'City' },
+  { field: 'Zip_Code', label: 'Zip Code' },
+];
+
 const SPINNER_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
 
@@ -182,6 +196,14 @@ export function ApplicationModal({
       if (f.type === 'boolean') changes[f.field] = current === true;
       else if (f.type === 'number') changes[f.field] = current === '' ? null : Number(current);
       else changes[f.field] = current === '' ? null : String(current);
+    }
+
+    for (const { field, label } of REQUIRED_FIELDS) {
+      if (errors[field]) continue; // digits-only/number errors above already flagged this field
+      const current = values[field];
+      if (current === undefined || String(current).trim() === '') {
+        errors[field] = `${label} is required`;
+      }
     }
 
     if (Object.keys(errors).length > 0) {

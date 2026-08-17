@@ -9,7 +9,7 @@ import { memo, type CSSProperties, type MouseEvent, type ReactElement } from 're
 
 import type { OnboardingField } from '@/api/cs';
 import { dotStyle } from './colors';
-import { type Application, fullName } from './data';
+import { type Application, fullName, missingRequiredFieldLabels } from './data';
 
 export type SubTab = 'apps' | 'clients';
 
@@ -30,7 +30,8 @@ export type ColKey =
   | 'boolean'
   | 'check'
   | 'verified'
-  | 'tracking';
+  | 'tracking'
+  | 'select';
 
 export interface AppColumn {
   key: ColKey;
@@ -117,8 +118,14 @@ const APPS_COLUMNS: AppColumn[] = [
      (CLIENT_COLUMNS), which is where onboarding is actually worked. */
 ];
 
+/** Row-select checkbox for bulk Love's clearance (QA feedback, Dina Carter 2026-08-07) — prepended
+ *  to both tabs, since the underlying push isn't tab-specific. No minWidth: unlike a text column
+ *  this one only ever holds a fixed-size checkbox, so the th's own padding already floors its
+ *  width (breakpoints.test.ts budgets inline minWidth usage down, not up). */
+const SELECT_COLUMN: AppColumn = { key: 'select', label: '', thStyle: { textAlign: CENTER } };
+
 export function columnsFor(tab: SubTab): AppColumn[] {
-  return tab === 'clients' ? CLIENT_COLUMNS : APPS_COLUMNS;
+  return [SELECT_COLUMN, ...(tab === 'clients' ? CLIENT_COLUMNS : APPS_COLUMNS)];
 }
 
 /* ─── Formatters (widget parity) ─────────────────────────────────────────── */
@@ -202,6 +209,7 @@ export function AppCell({
   app,
   subTab,
   busyField,
+  selected,
 }: {
   col: AppColumn;
   app: Application;
@@ -209,8 +217,32 @@ export function AppCell({
   /** The onboarding field saving on THIS row, or null. Row-scoped so a toggle can't mark the same
    *  column busy on all 200 rows — and so an unaffected row's props never change (see AppRow). */
   busyField: string | null;
+  /** Bulk Love's-clearance selection state for THIS row — undefined/false when unselected. */
+  selected: boolean;
 }): ReactElement {
   switch (col.key) {
+    /* Bulk-select checkbox (Love's clearance) — same click-on-<td> pattern as 'check' below.
+       Disabled + explained when the record is missing a field the eventual push would reject. */
+    case 'select': {
+      const missing = missingRequiredFieldLabels(app);
+      const disabled = missing.length > 0;
+      return (
+        <span
+          className={`cs-row-select${selected ? ' is-on' : ''}${disabled ? ' is-disabled' : ''}`}
+          role="checkbox"
+          aria-checked={selected ? 'true' : 'false'}
+          aria-disabled={disabled ? 'true' : undefined}
+          aria-label="Select for Love's clearance"
+          title={disabled ? `Missing ${missing.join(', ')} — fix the record before pushing to Love's` : "Select for Love's clearance"}
+        >
+          <span className="cs-row-select-box">
+            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.5" d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+        </span>
+      );
+    }
     /* Company name */
     case 'name':
       return <div className="cs-app-row-name">{app.company || '—'}</div>;
@@ -395,6 +427,7 @@ export const AppRow = memo(function AppRow({
   columns,
   subTab,
   busyField,
+  selected,
   onCellClick,
   onOpen,
 }: {
@@ -402,6 +435,8 @@ export const AppRow = memo(function AppRow({
   columns: AppColumn[];
   subTab: SubTab;
   busyField: string | null;
+  /** Bulk Love's-clearance selection state for THIS row. */
+  selected: boolean;
   onCellClick: (col: AppColumn, app: Application, ev: MouseEvent<HTMLTableCellElement>) => void;
   onOpen: (app: Application) => void;
 }) {
@@ -425,7 +460,7 @@ export const AppRow = memo(function AppRow({
             onCellClick(col, app, e);
           }}
         >
-          <AppCell col={col} app={app} subTab={subTab} busyField={busyField} />
+          <AppCell col={col} app={app} subTab={subTab} busyField={busyField} selected={selected} />
         </td>
       ))}
     </tr>

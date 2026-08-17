@@ -123,6 +123,11 @@ beforeEach(() => {
     { api_name: 'Billing_Cycle' },
     { api_name: 'Billing_Verification' },
     { api_name: 'Name' },
+    { api_name: 'First_Name' },
+    { api_name: 'Last_Name' },
+    { api_name: 'City' },
+    { api_name: 'Zip_Code' },
+    { api_name: 'Loves_Verification' },
     { api_name: 'Status_of_App', pick_list_values: [{ actual_value: 'In process' }] },
   ]);
   activeUsers.mockResolvedValue([]);
@@ -312,6 +317,13 @@ describe('applications save orchestration', () => {
   function fullRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       id: '123',
+      // Required-fields hard block (QA feedback, Dina Carter 2026-08-07) needs these non-blank on
+      // every fixture that isn't specifically testing the block itself — see the dedicated
+      // 'required fields on save' describe block below.
+      First_Name: 'Jane',
+      Last_Name: 'Doe',
+      City: 'Chicago',
+      Zip_Code: '60612',
       Edit_History: [{ Column_Name: 'Stage', Who_Edited: 'Old Agent', New_Value: 'x', Edited_On: 'earlier' }],
       Related_Deal: { id: '777' },
       ...overrides,
@@ -388,6 +400,144 @@ describe('applications save orchestration', () => {
       payload: { changes: { Tracking_Number: 'TRK-1' } },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  describe('required fields on save (QA feedback, Dina Carter 2026-08-07)', () => {
+    it('rejects the modal save when a required field is already blank on file, even though it was never touched', async () => {
+      records.getRecord.mockResolvedValue(fullRecord({ City: '' }));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/cs/applications/123',
+        headers: bearer(await csAgent()),
+        payload: { changes: { Customer_Service_Notes: 'called back' } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toContain('City');
+      expect(records.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('rejects clearing a required field to blank in the same save', async () => {
+      records.getRecord.mockResolvedValue(fullRecord());
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/cs/applications/123',
+        headers: bearer(await csAgent()),
+        payload: { changes: { First_Name: '' } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(records.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('allows the save once the missing field is filled in the same request', async () => {
+      records.getRecord.mockResolvedValue(fullRecord({ Zip_Code: '' }));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/cs/applications/123',
+        headers: bearer(await csAgent()),
+        payload: { changes: { Zip_Code: '60612' } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(records.updateRecord).toHaveBeenCalled();
+    });
+
+    it('onboarding tick-box toggles are NOT blocked by an incomplete profile', async () => {
+      records.getRecord.mockResolvedValue(fullRecord({ First_Name: '', Last_Name: '' }));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/cs/applications/123/onboarding',
+        headers: bearer(await csAgent()),
+        payload: { field: 'TA_EFS_Added', value: true },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(records.updateRecord).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('bulk Love\'s clearance push', () => {
+  function fullRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: '123',
+      First_Name: 'Jane',
+      Last_Name: 'Doe',
+      City: 'Chicago',
+      Zip_Code: '60612',
+      Edit_History: [],
+      Related_Deal: null,
+      ...overrides,
+    };
+  }
+
+  it('pushes Loves_Verification for every id and reports them all ok', async () => {
+    records.getRecord.mockImplementation(async (_module: string, id: string) => fullRecord({ id }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/loves-verification/bulk',
+      headers: bearer(await csAgent()),
+      payload: { ids: ['111', '222'], value: 'Approved' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().results).toEqual([
+      { id: '111', ok: true },
+      { id: '222', ok: true },
+    ]);
+    const calls = records.updateRecord.mock.calls.filter((c) => c[0] === 'Applications');
+    expect(calls).toHaveLength(2);
+    expect((calls[0]?.[2] as Record<string, unknown>).Loves_Verification).toBe('Approved');
+    expect(auditFromContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'cs.application.loves_bulk_update', status: 'ok' }),
+    );
+  });
+
+  it('reports one bad id as failed without dropping the rest of the batch', async () => {
+    records.getRecord.mockImplementation(async (_module: string, id: string) =>
+      id === '222' ? fullRecord({ id, City: '' }) : fullRecord({ id }),
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/loves-verification/bulk',
+      headers: bearer(await csAgent()),
+      payload: { ids: ['111', '222', '333'], value: 'Declined' },
+    });
+    expect(res.statusCode).toBe(200);
+    const results = res.json().results as Array<{ id: string; ok: boolean; error?: string }>;
+    expect(results.find((r) => r.id === '111')?.ok).toBe(true);
+    expect(results.find((r) => r.id === '333')?.ok).toBe(true);
+    const failed = results.find((r) => r.id === '222');
+    expect(failed?.ok).toBe(false);
+    expect(failed?.error).toContain('City');
+    const applicationCalls = records.updateRecord.mock.calls.filter(
+      (c) => c[0] === 'Applications' && c[1] === '222',
+    );
+    expect(applicationCalls).toHaveLength(0);
+    expect(auditFromContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'cs.application.loves_bulk_update', status: 'error' }),
+    );
+  });
+
+  it('is gated the same as every other CS route (sales worker refused)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/loves-verification/bulk',
+      headers: bearer(await salesAgent()),
+      payload: { ids: ['111'], value: 'Approved' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(records.updateRecord).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty or oversized id list before touching Zoho', async () => {
+    const tooMany = Array.from({ length: 51 }, (_, i) => String(i + 1));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/loves-verification/bulk',
+      headers: bearer(await csAgent()),
+      payload: { ids: tooMany, value: 'Approved' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(records.updateRecord).not.toHaveBeenCalled();
   });
 });
 

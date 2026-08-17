@@ -17860,3 +17860,69 @@ actually being "which database am I reading":
 
 Consequence to know: `pnpm db:migrate` now always targets a remote host, so it needs
 `ALLOW_REMOTE_DB_MIGRATE=1`. That guard stays — it is a deliberate confirmation, not an obstacle.
+
+## 2026-08-17 — CS Applications: required-fields hard block + bulk Love's clearance
+
+QA feedback (Dina Carter, reported 7 Aug 2026) reopened four Mytrion issues. Checked each against
+current `build`/`main` before touching anything, since two turned out to already be resolved or not
+real:
+
+- **Phone lookup during a live call** — already fixed and live in prod. The "company lookup" screen
+  is the Applications/Clients search box; digit-normalized phone-substring matching shipped in PR
+  #193 (2026-08-13), six days after this report was filed. No action.
+- **No new maintenance cases since 7 Aug** — not reproducible. Queried prod Postgres directly: cases
+  have been created continuously through today by multiple agents. There is no automated intake
+  pipeline to have broken in the first place — case creation is a manual form submit. Likely
+  explanation: the reporter was checking Zoho CRM's own `Maintenance` module, frozen by design since
+  the one-time 2026-07-30 migration to Postgres. Flagged back to the reporter, not coded.
+- **Blank First/Last Name, City, Zip on client profiles** — real, fixed here (below).
+- **Bulk-push to Love's clearance** — real, fixed here (below). Lives in the legacy `zoho-octane`
+  widget today (`applications-panel.js`'s editable `Loves_Verification` picklist, one row at a time,
+  no multi-select anywhere in that panel) — rebuilt into this repo's modern Applications table
+  instead of extending the legacy widget further.
+
+### Required-fields hard block
+
+`ApplicationModal` had zero required-field validation, client or server side —
+`applicationsSave.ts`'s `validateFieldValue` explicitly allowed clearing any field to blank. Added a
+hard block on First Name, Last Name, City, Zip Code: checked against the RESULTING record (the
+incoming change where one was made, `full[field]` on file otherwise), so an edit to an unrelated
+field (e.g. a note) still surfaces a pre-existing gap. Client-side mirror in `ApplicationModal.tsx`
+for instant feedback; server-side in `applicationsSave.ts` as the real backstop
+(`findMissingRequiredFields`, `REQUIRED_ON_SAVE`).
+
+**Deliberately scoped to skip the onboarding tick-box route.** `saveApplication` gained an
+`enforceRequiredFields` option (default true) rather than making the block unconditional, because
+routing the tick-box toggle route through it too would have frozen onboarding work on every
+already-incomplete legacy record — the reported gap was about the profile-completion modal, not
+every write path that happens to reuse the same save function.
+
+### Bulk Love's clearance
+
+New `POST /cs/applications/loves-verification/bulk` (`{ ids: string[1..50], value: 'Approved' |
+'Declined' }`) loops `saveApplication` per id — reusing the exact single-record path, including its
+required-fields hard block, rather than a separate bulk-specific validation rule. A bad id fails
+individually (`{id, ok: false, error}`) without dropping the rest of the batch, mirroring the
+per-chunk catch pattern already used elsewhere (`salesCrmActions.ts`).
+
+Frontend: new `select` column prepended to both Apps/Clients tabs (`ApplicationsTable.tsx`), a
+`missingRequiredFieldLabels()` helper (`data.ts`) disables + explains ineligible rows before they can
+even be selected (not just rejected after), and a new `LovesBulkBar.tsx` (extracted rather than
+inlined — `Applications.tsx` was already near the 600-line cap) renders the count + Approved/Declined
+actions + a `ConfirmDialog`, reporting a success/failure summary back through the existing toast.
+
+Caught by `breakpoints.test.ts`'s inline-`minWidth` ratchet budget (64 → 65) on the first pass — the
+new select column doesn't need one (a fixed-size checkbox floors its own width via `th` padding,
+unlike a text column that needs a minimum to resist truncation), so it was dropped rather than
+raising the budget.
+
+Verified live (`localhost:5173/main/csmytrion`, mock auth): selecting rows shows the bulk bar with
+the right count, Approved/Declined opens the correctly-worded confirm dialog, Clear selection
+dismisses it; opening a record with a blank City and trying to save with an unrelated field changed
+produces "Please fix: City is required" and does not call the save API. 2,700+ backend / 1,044
+frontend tests pass (two pre-existing, unrelated failures confirmed present on unmodified `build`:
+`sales-golive-contract.test.ts`'s known CEO-marker gap, and a flaky `comms-admin-routes.test.ts` 503).
+Rebuilt and committed `apps/mytrion-crm/app/` per the vendored-bundle rule; confirmed "Push to Love's"
+and the loves-verification/bulk route string are both present in the rebuilt JS.
+
+Branch: `fix/cs-applications-required-fields-loves-bulk`, off `build`. Committed locally, not pushed.
