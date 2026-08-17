@@ -4,6 +4,7 @@
  * shapes AutoTab renders. Run dispatch lives in autoRunners.ts.
  */
 import { callTouchpoint } from '@/api/touchpoints';
+import { moneyExact } from './live';
 import type { MoneyCodePreview, WexApplicationResult } from '@/api/touchpointTypes';
 import { loadDeals as loadCrmDeals } from './dataCenterLive';
 import type { IconName } from './icons';
@@ -73,6 +74,43 @@ export interface LimitUpdateResult {
   delta: number;
   direction: 'increase' | 'decrease';
 }
+/**
+ * C-8 / Q-8 Balance Check blocks — the three figures CRM Mytrion showed, in that order.
+ * `availableLimit` is `credit_remaining`, `weeklyLimit` is `credit_limit` (CMP bills weekly);
+ * both are '—' on a prepay account that has no line. Amounts arrive pre-formatted.
+ */
+export interface BalanceCheckResult {
+  companyName: string;
+  efsBalance: string;
+  availableLimit: string;
+  weeklyLimit: string;
+  creditUsed: string;
+  accountType: string;
+  paymentTerms: string;
+  billingCycle: string;
+  /** EFS leg failed while DWH answered — the balance figure may be stale. */
+  efsError: string;
+}
+/** Q-7 / C-28 Account Status Check — carrier overview split into blocks. */
+export interface AccountStatusResult {
+  companyName: string;
+  isActive: boolean;
+  accountType: string;
+  paymentTerms: string;
+  efsBalance: string;
+  weeklyLimit: string;
+  totalDebt: string;
+  debtInvoiceCount: string;
+  maxDebtDays: string;
+  worstStatus: string;
+  isHardDebtor: boolean;
+  activeCards: number;
+  totalCards: number;
+  /** Card counts came from the live EFS roster, not the lagged overview. */
+  cardsLive: boolean;
+  /** Per-source failures (EFS, CMP debt, cards) worth showing next to the numbers. */
+  notices: string[];
+}
 export interface WexResult { company: string; appId: string; contact: string; status: string; group: string; }
 export interface InvRow { id: string; inv: string; date: string; amount: string; status: string; }
 /** Lightweight on-screen txn list row (full report lives in TxnReportState). */
@@ -95,7 +133,6 @@ export interface PaymentsSummary {
   totalPaid: string;
   openBalance: string;
   paymentCount: string;
-  paymentsTotal: string;
 }
 export interface CmpInvoiceRow {
   id: string;
@@ -111,6 +148,8 @@ export type DonePayload =
   | { kind: 'transactions' }
   | { kind: 'card-lookup'; carrierId: string; companyName: string; rows: CardLookupRow[] }
   | { kind: 'message'; message: string }
+  | { kind: 'balance'; result: BalanceCheckResult }
+  | { kind: 'account-status'; result: AccountStatusResult }
   | { kind: 'table'; title: string; columns: string[]; rows: string[][] }
   | { kind: 'card-last-used'; rows: CardLastUsedRow[] }
   | { kind: 'limit-update'; result: LimitUpdateResult }
@@ -252,7 +291,29 @@ export const PHASE_MAP: Record<string, string[]> = {
 
 export const str = (v: unknown): string => (v == null ? '' : String(v));
 export const gal = (v: unknown): string => { const nn = Number(v); return Number.isFinite(nn) ? nn.toFixed(1) : '—'; };
-export const shortCard = (v: unknown): string => { const c = str(v); return c ? `••${c.slice(-4)}` : '—'; };
+/**
+ * Card masking standard for Sales Mytrion: the last SIX digits, everywhere.
+ *
+ * EFS card numbers share a long BIN and an account prefix, so a fleet's cards routinely differ only
+ * in the 5th-from-last digit — a `•••• 1111` label matched several physical cards and agents could
+ * not tell which one an action had touched. Card Lookup (C-30) already showed six; every other card
+ * surface goes through the two helpers below so they cannot drift apart again.
+ */
+export const CARD_MASK_DIGITS = 6;
+const cardTail = (v: unknown): string => str(v).replace(/\D/g, '').slice(-CARD_MASK_DIGITS);
+/** `•••• 001111` — the canonical label for a card in a list, tile, or picker. */
+export const maskCard = (v: unknown): string => { const t = cardTail(v); return t ? `•••• ${t}` : '—'; };
+/** `••001111` — compact variant for inline result sentences. */
+export const shortCard = (v: unknown): string => { const t = cardTail(v); return t ? `••${t}` : '—'; };
+/**
+ * Money for a balance block, cents included. A missing figure stays a dash: a prepay account has
+ * no credit line at all, and rendering that as `$0.00` reads as "line exhausted".
+ */
+export const moneyOrDash = (v: unknown): string => {
+  if (v == null || v === '') return '—';
+  const num = Number(v);
+  return Number.isFinite(num) ? moneyExact(num) : '—';
+};
 export const fmtDate = (v: unknown): string => {
   const raw = str(v); if (!raw) return '—';
   const d = new Date(raw);
@@ -270,6 +331,76 @@ export const titleStatus = (v: unknown): string => {
   if (x.includes('OVERDUE') || x.includes('PAST')) return 'Overdue';
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase().replace(/_/g, ' ');
 };
+/**
+ * Invoice status as CMP's own numbers tell it.
+ *
+ * CMP invoices carry both a status string and the money. When they disagree — the string says PAID
+ * while the invoice still has a balance — the money is the source of record and the string is what
+ * the carrier disputes (5815660: partially paid in CMP, "Paid" in Mytrion). Only that contradiction
+ * is corrected; every other status is passed through as CMP sent it, so a Cancelled or Overdue
+ * invoice keeps its own word.
+ */
+export function cmpInvoiceStatus(raw: unknown, paid: unknown, remaining: unknown): string {
+  const label = titleStatus(raw);
+  if (label !== 'Paid') return label;
+  const owed = Number(remaining ?? 0) || 0;
+  // A cent of float noise is not a debt.
+  if (owed <= 0.005) return label;
+  return (Number(paid ?? 0) || 0) > 0.005 ? 'Partially Paid' : 'Pending';
+}
+
+type Rec = Record<string, unknown>;
+const pick = (r: Rec, keys: readonly string[]): unknown => {
+  for (const k of keys) if (r[k] != null && r[k] !== '') return r[k];
+  return undefined;
+};
+const INV_NUMBER = ['invoiceNumber', 'invoice_number', 'invoice_ref', 'number', 'name'] as const;
+const INV_TOTAL = ['totalAmount', 'total_amount', 'amount', 'grandTotal'] as const;
+const INV_PAID = ['totalPaid', 'total_paid', 'paid', 'amount_paid'] as const;
+const INV_REMAINING = ['remainingAmount', 'remaining_amount', 'remaining', 'balance', 'due'] as const;
+const INV_STATUS = ['status', 'invoiceStatus', 'invoice_status'] as const;
+
+/**
+ * One invoice list for C-18, from the two sources that both claim to be CMP.
+ *
+ * `carrier.check_payment` (Deluge) is the only one that carries paid/remaining per invoice, but its
+ * status string is what shows a part-paid invoice as Paid. `clients.invoices` is the CMP-first route
+ * C-20 already trusts for status. So: match on invoice number, take every field CMP-first answers
+ * for, and fall back to the Deluge for the columns it alone provides. Either source may be empty —
+ * whichever answered is used on its own.
+ */
+export function mergeCmpInvoices(deluge: Rec[], live: Rec[]): CmpInvoiceRow[] {
+  const byNumber = new Map<string, Rec>();
+  for (const row of deluge) {
+    const key = str(pick(row, INV_NUMBER) ?? row.id);
+    if (key) byNumber.set(key, row);
+  }
+  const ordered: Array<{ key: string; live?: Rec; deluge?: Rec }> = live.map((row, i) => {
+    const key = str(pick(row, INV_NUMBER) ?? row.id) || `live-${i}`;
+    const match = byNumber.get(key);
+    byNumber.delete(key);
+    return match ? { key, live: row, deluge: match } : { key, live: row };
+  });
+  // Anything the CMP-first route did not return still deserves a row — it is what the panel showed
+  // before, and dropping it would read as "this invoice disappeared".
+  for (const [key, row] of byNumber) ordered.push({ key, deluge: row });
+
+  return ordered.map(({ key, live: l, deluge: d }, i) => {
+    const from = (keys: readonly string[]): unknown =>
+      (l ? pick(l, keys) : undefined) ?? (d ? pick(d, keys) : undefined);
+    const paid = from(INV_PAID);
+    const remaining = from(INV_REMAINING);
+    return {
+      id: str((l ?? d ?? {}).id) || key || `cmp-${i}`,
+      invoiceNumber: key || `#${i + 1}`,
+      status: cmpInvoiceStatus(from(INV_STATUS), paid, remaining),
+      total: moneyExact(from(INV_TOTAL)),
+      paid: moneyExact(paid),
+      remaining: moneyExact(remaining),
+    };
+  });
+}
+
 const normCardStatus = (raw: string): string => {
   const x = raw.toLowerCase();
   if (/fraud|hold/.test(x)) return 'fraud';

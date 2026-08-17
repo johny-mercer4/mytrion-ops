@@ -4,6 +4,9 @@
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
+import { maskCard } from './autoLive';
+import { isMiniAppPilotAgent } from './miniAppPilot';
+
 import {
   createCarrierInvitation,
   getCarrierRegistrations,
@@ -210,6 +213,10 @@ export function ClientManagePanel({
   const companyType =
     cardCount === null || cardCount === 0 ? null : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
 
+  // Rollout gate, not a permission: the mini-app is live for the pilot agents only, and the
+  // `/carrier-invitations` route says the same thing. Rendering the form for everyone else would
+  // offer a link that comes back 403.
+  const pilotAgent = isMiniAppPilotAgent();
   const inviteEligible = clientStatus === 'active';
   const isManager = profile === 'manager';
   const valid =
@@ -328,7 +335,8 @@ export function ClientManagePanel({
         </div>
       </ManageSection>
 
-      {/* 2 — Primary: profile + generate link */}
+      {/* 2 — Primary: profile + generate link. Pilot agents only — see `miniAppPilot`. */}
+      {pilotAgent ? (
       <ManageSection title="Registration link" hint={profileHint}>
         <span style={s(MANAGE_LABEL)}>Profile</span>
         <div style={s('display:flex;gap:8px')}>
@@ -390,7 +398,7 @@ export function ClientManagePanel({
                   <option value="">Select a card number…</option>
                   {availableCards.map((c) => (
                     <option key={c.cardId ?? c.cardNumber ?? ''} value={c.cardId ?? ''}>
-                      {(c.cardNumber || c.cardId || '—') + (c.status ? ` · ${c.status}` : '')}
+                      {(c.cardNumber ? maskCard(c.cardNumber) : c.cardId || '—') + (c.status ? ` · ${c.status}` : '')}
                     </option>
                   ))}
                 </select>
@@ -453,6 +461,14 @@ export function ClientManagePanel({
           </div>
         )}
       </ManageSection>
+      ) : (
+        <ManageSection title="Registration link">
+          <div style={s('font-size:13px;color:var(--text2)')}>
+            Client registration is with the mini-app pilot agents for now. Existing mini-app users
+            below keep working.
+          </div>
+        </ManageSection>
+      )}
 
       {/* 3 — Registered users */}
       <ManageSection title="Registered users" hint="Remove cuts off mini-app access immediately.">

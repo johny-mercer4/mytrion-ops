@@ -1,0 +1,676 @@
+/*
+ * Mytrion Watch — one carrier's score, and the evidence for it.
+ *
+ * Split from `mytrionWatch.css` on the real seam: the queue answers "who", this answers "why". Both
+ * live inside `.mw`, so the risk ramp declared there (`--mw-low` … `--mw-high`) and the
+ * `[data-band]` mapping apply here unchanged — this file adds no colours of its own.
+ */
+
+/* ------------------------------------------------------------------ detail */
+
+[data-mytrion='verification'] .mw-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+[data-mytrion='verification'] .mw-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+[data-mytrion='verification'] .mw-back:hover { color: var(--text-primary); }
+
+[data-mytrion='verification'] .mw-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--mw-band, var(--hz-pane-bd)) 28%, var(--hz-pane-bd));
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .mw-hero-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
+[data-mytrion='verification'] .mw-hero-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .mw-hero-v {
+  font-size: var(--text-4xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--mw-band, var(--text-primary));
+}
+
+[data-mytrion='verification'] .mw-hero-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-hero-name {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+[data-mytrion='verification'] .mw-hero-meaning {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/*
+ * The header facts, as labelled pairs.
+ *
+ * They used to be a single run of same-weight text — "Carrier 5840150 Limit $4,000 Default risk
+ * 47.5% First snapshot Scored Aug 11" — where the reader had to work out which word was the label.
+ */
+[data-mytrion='verification'] .mw-hero-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--hz-pane-bd);
+}
+
+[data-mytrion='verification'] .mw-hf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-hf-k {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-hf-v {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-hero-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ score scale */
+
+/*
+ * The score placed on the band scale.
+ *
+ * A bare "490" is not a quantity. Drawn against the model's own cut-points it becomes one: thirty
+ * points below Elevated, a hundred and fifty below Low risk. The zones ARE the bands, so the
+ * picture can never disagree with the pill beside it.
+ */
+[data-mytrion='verification'] .mw-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .mw-scale-track {
+  position: relative;
+  display: flex;
+  overflow: visible;
+  height: 0.5rem;
+  border-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-scale-zone {
+  background: color-mix(in srgb, var(--mw-band, var(--text-muted)) 42%, transparent);
+}
+
+[data-mytrion='verification'] .mw-scale-zone:first-child {
+  border-start-start-radius: var(--vf-r-pill);
+  border-end-start-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-scale-zone:last-child {
+  border-start-end-radius: var(--vf-r-pill);
+  border-end-end-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-scale-mark {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  left: var(--mw-at, 0%);
+  width: 0.25rem;
+  border-radius: var(--vf-r-pill);
+  background: var(--mw-band, var(--text-primary));
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--mw-band, var(--text-primary)) 55%, transparent);
+  translate: -50% 0;
+}
+
+[data-mytrion='verification'] .mw-scale-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (width >= 900px) {
+  [data-mytrion='verification'] .mw-panes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  [data-mytrion='verification'] .mw-pane[data-span='full'] {
+    grid-column: 1 / -1;
+  }
+}
+
+[data-mytrion='verification'] .mw-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3_5);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .mw-pane-title {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-pane-sub {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ history chart */
+
+[data-mytrion='verification'] .mw-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+[data-mytrion='verification'] .mw-chart-guide {
+  stroke: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  stroke-dasharray: 3 4;
+  stroke-width: 1;
+}
+
+[data-mytrion='verification'] .mw-chart-guide-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+[data-mytrion='verification'] .mw-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+[data-mytrion='verification'] .mw-chart-area {
+  fill: color-mix(in srgb, var(--accent) 14%, transparent);
+  stroke: none;
+}
+
+[data-mytrion='verification'] .mw-chart-dot {
+  fill: var(--hz-pane-solid, var(--hz-pane));
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+[data-mytrion='verification'] .mw-chart-dot[data-last='true'] {
+  fill: var(--mw-band, var(--accent));
+  stroke: var(--mw-band, var(--accent));
+}
+
+[data-mytrion='verification'] .mw-chart-x {
+  fill: var(--text-muted);
+  font-size: 11px;
+  text-anchor: middle;
+}
+
+/* No trend yet — a single point drawn on a full chart reads as a broken chart. */
+[data-mytrion='verification'] .mw-nochart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-3);
+  border: 1px dashed var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  text-align: center;
+}
+
+[data-mytrion='verification'] .mw-nochart-v {
+  font-size: var(--text-3xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--mw-band, var(--text-primary));
+}
+
+[data-mytrion='verification'] .mw-nochart-t {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-nochart-b {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ what the score is built from */
+
+/*
+ * One row per measure — what it is, the carrier's value, the bucket that value fell in, and what it
+ * did to the score.
+ *
+ * This replaced two panes that listed the same eight features twice. The bucket column is the piece
+ * that was missing: a weight of +1.60 is arbitrary until you can see the value landed in "up to
+ * 47%", the worst of six.
+ */
+[data-mytrion='verification'] .mw-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-thead,
+[data-mytrion='verification'] .mw-trow {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(5.5rem, 0.9fr) minmax(6rem, 1fr) minmax(8rem, 1.4fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .mw-thead {
+  padding: 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-th-effect { text-align: right; }
+
+[data-mytrion='verification'] .mw-trows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-trow {
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--vf-r-control);
+}
+
+[data-mytrion='verification'] .mw-trow:nth-child(odd) {
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+
+[data-mytrion='verification'] .mw-tname {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-tlabel {
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-thelp {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-tvalue {
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-trow[data-missing='true'] .mw-tvalue {
+  color: var(--text-disabled);
+  font-weight: var(--fw-regular);
+}
+
+[data-mytrion='verification'] .mw-tbin {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-teffect {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-tweight {
+  min-width: 3rem;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+[data-mytrion='verification'] .mw-tweight[data-dir='risk'] { color: var(--danger); }
+[data-mytrion='verification'] .mw-tweight[data-dir='safe'] { color: var(--success); }
+
+/*
+ * A diverging bar centred on zero: right of centre RAISES the probability of default, left of it
+ * protects. Direction and colour say the same thing twice on purpose — this is the panel a credit
+ * agent uses to answer "why", and it must not be ambiguous at a glance.
+ */
+[data-mytrion='verification'] .mw-bar {
+  position: relative;
+  height: 0.7rem;
+  border-radius: var(--vf-r-pill);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+[data-mytrion='verification'] .mw-bar::before {
+  content: '';
+  position: absolute;
+  inset-block: -0.15rem;
+  left: 50%;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-primary) 22%, transparent);
+}
+
+[data-mytrion='verification'] .mw-bar-fill {
+  position: absolute;
+  inset-block: 0.12rem;
+  width: var(--mw-w, 0%);
+  border-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-bar-fill[data-dir='risk'] {
+  left: 50%;
+  background: var(--danger);
+}
+
+[data-mytrion='verification'] .mw-bar-fill[data-dir='safe'] {
+  right: 50%;
+  background: var(--success);
+}
+
+/* Below the tablet cut the four columns become two rows; the label keeps the full width. */
+@media (width < 900px) {
+  [data-mytrion='verification'] .mw-thead { display: none; }
+
+  [data-mytrion='verification'] .mw-trow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-1_5);
+  }
+
+  [data-mytrion='verification'] .mw-tname { grid-column: 1 / -1; }
+  [data-mytrion='verification'] .mw-tbin { text-align: right; }
+  [data-mytrion='verification'] .mw-teffect { grid-column: 1 / -1; }
+}
+
+/* ------------------------------------------------------------------ the arithmetic */
+
+/*
+ * The model, shown rather than implied. A credit decision a carrier may appeal has to be
+ * reproducible on paper, and these five lines are the whole of it.
+ */
+[data-mytrion='verification'] .mw-math {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-math-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-math-row[data-total='true'] {
+  padding-top: var(--space-1_5);
+  border-top: 1px solid var(--hz-pane-bd);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+[data-mytrion='verification'] .mw-math-v {
+  font-variant-numeric: tabular-nums;
+}
+
+[data-mytrion='verification'] .mw-math-note {
+  padding-top: var(--space-1);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* An invoice still owed is the one number on this panel worth colouring. */
+[data-mytrion='verification'] .mw-tvalue[data-open] {
+  color: var(--danger);
+  font-weight: var(--fw-bold);
+}
+
+/* ------------------------------------------------------------------ invoices
+ *
+ * Deliberately LARGER than the rest of the detail page. This is the one panel a credit agent reads
+ * as a number rather than scans as a table, and the previous 4-column grid at --text-xs buried the
+ * only figure that matters under three that do not.
+ */
+
+[data-mytrion='verification'] .mw-inv-lede {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-inv-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .mw-inv-figure {
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-inv-figure[data-tone='late'] { color: var(--danger); }
+[data-mytrion='verification'] .mw-inv-figure[data-tone='open'] { color: var(--warning); }
+[data-mytrion='verification'] .mw-inv-figure[data-tone='settled'] { color: var(--success); }
+
+[data-mytrion='verification'] .mw-inv-caption {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-inv-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-inv-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-control);
+  background: var(--surface-data);
+}
+
+/* A settled or void invoice is history, not a task — it recedes but stays legible. */
+[data-mytrion='verification'] .mw-inv-row[data-tone='settled'],
+[data-mytrion='verification'] .mw-inv-row[data-tone='void'] {
+  background: transparent;
+}
+
+[data-mytrion='verification'] .mw-inv-icon { flex: none; margin-top: 2px; color: var(--text-muted); }
+[data-mytrion='verification'] .mw-inv-row[data-tone='late'] .mw-inv-icon { color: var(--danger); }
+[data-mytrion='verification'] .mw-inv-row[data-tone='open'] .mw-inv-icon { color: var(--warning); }
+[data-mytrion='verification'] .mw-inv-row[data-tone='settled'] .mw-inv-icon { color: var(--success); }
+
+[data-mytrion='verification'] .mw-inv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-inv-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1_5);
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-inv-status {
+  padding: 1px var(--space-1_5);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-inv-row[data-tone='late'] .mw-inv-status {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+}
+[data-mytrion='verification'] .mw-inv-row[data-tone='open'] .mw-inv-status {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
+}
+
+[data-mytrion='verification'] .mw-inv-meta {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-inv-amounts {
+  display: flex;
+  gap: var(--space-4);
+  flex: none;
+}
+
+[data-mytrion='verification'] .mw-inv-amt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-end;
+  min-width: 5.5rem;
+}
+
+[data-mytrion='verification'] .mw-inv-amt-k {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-inv-amt-v {
+  font-size: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Only the money someone actually owes is emphasised. */
+[data-mytrion='verification'] .mw-inv-amt[data-owed] .mw-inv-amt-v {
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+[data-mytrion='verification'] .mw-inv-row[data-tone='late'] .mw-inv-amt[data-owed] .mw-inv-amt-v {
+  color: var(--danger);
+}
+
+[data-mytrion='verification'] .mw-inv-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-inv-row { flex-wrap: wrap; }
+  [data-mytrion='verification'] .mw-inv-amounts {
+    width: 100%;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  [data-mytrion='verification'] .mw-inv-amt { align-items: flex-start; min-width: 0; }
+}

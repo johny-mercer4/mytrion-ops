@@ -74,8 +74,6 @@
    alone here and only re-tinted below, so the per-card semantic colour still reads. */
 .bm-root .bm-summary-item {
     background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur-md));
-    -webkit-backdrop-filter: blur(var(--hz-blur-md));
     border-color: var(--hz-pane-bd);
     box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
     transition:
@@ -94,8 +92,6 @@
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 .bm-root .bm-table-wrap {
     background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
     border-color: var(--hz-pane-bd);
     box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }

@@ -210,8 +210,6 @@
   border-radius: var(--an-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 .an-root .an-card-head {
@@ -256,8 +254,6 @@
   background:
     linear-gradient(152deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
 }
 .an-root .an-kpi-l {
@@ -518,8 +514,6 @@
   border-radius: var(--an-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
   transition:
     border-color var(--hz-dur-tone) var(--hz-ease),

@@ -30,6 +30,7 @@ import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { auditLogRoutes } from './routes/v1/auditLogs.routes.js';
 import { dataLoaderRoutes } from './routes/v1/dataLoader.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
@@ -39,6 +40,13 @@ import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.
 import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
 import { verificationWritebackRoutes } from './routes/v1/verificationWriteback.routes.js';
 import { verificationClientsRoutes } from './routes/v1/verificationClients.routes.js';
+import { verificationCaseQueueRoutes } from './routes/v1/verificationCaseQueue.routes.js';
+import { verificationCasesRoutes } from './routes/v1/verificationCases.routes.js';
+import { verificationApplicationsRoutes } from './routes/v1/verificationApplications.routes.js';
+import { verificationFlowRoutes } from './routes/v1/verificationFlow.routes.js';
+import { mytrionWatchRoutes } from './routes/v1/mytrionWatch.routes.js';
+import { verificationFirstRunRoutes } from './routes/v1/verificationFirstRun.routes.js';
+import { verificationStrategiesRoutes } from './routes/v1/verificationStrategies.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { mytrionPermissionSetsRoutes } from './routes/v1/mytrionPermissionSets.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
@@ -46,6 +54,9 @@ import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppAuthRoutes } from './routes/v1/carrierMiniAppAuth.routes.js';
 import { carrierMiniAppReportRoutes } from './routes/v1/carrierMiniAppReports.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
+import { horizonTelegramRoutes } from './routes/v1/horizonTelegram.routes.js';
+import { horizonTelegramExportRoutes } from './routes/v1/horizonTelegramExport.routes.js';
+import { horizonTelegramLinkRoutes } from './routes/v1/horizonTelegramLink.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
 import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
@@ -113,6 +124,7 @@ const LOG_REDACT_PATHS = [
   'req.headers["x-inbox-secret"]',
   'req.headers["x-rejection-secret"]',
   'req.headers["x-webhook-signature"]',
+  'req.headers["x-telegram-bot-api-secret-token"]',
 ];
 
 function loggerOption() {
@@ -420,6 +432,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(auditLogRoutes);
       await v1.register(dataLoaderRoutes);
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);
@@ -433,6 +446,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(carrierMiniAppAuthRoutes);
       await v1.register(carrierMiniAppReportRoutes);
       await v1.register(carrierMiniAppActionsRoutes);
+      await v1.register(horizonTelegramRoutes);
+      await v1.register(horizonTelegramLinkRoutes);
+      await v1.register(horizonTelegramExportRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
@@ -456,6 +472,15 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(verificationPipelineRoutes);
       await v1.register(verificationWritebackRoutes);
       await v1.register(verificationClientsRoutes);
+      await v1.register(verificationCaseQueueRoutes);
+      // Before verificationCasesRoutes: `/verification/applications` must not be captured by that
+      // plugin's `/verification/cases/:id` style params. Same ordering reason as the queue routes.
+      await v1.register(verificationApplicationsRoutes);
+      await v1.register(verificationFlowRoutes);
+      await v1.register(mytrionWatchRoutes);
+      await v1.register(verificationCasesRoutes);
+      await v1.register(verificationFirstRunRoutes);
+      await v1.register(verificationStrategiesRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csMaintenanceRoutes);

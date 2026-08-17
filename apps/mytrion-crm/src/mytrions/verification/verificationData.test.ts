@@ -5,7 +5,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { VerificationClientRow } from '../../api/verificationClients';
-import { distinctValues, filterVerificationClients, EMPTY_VERIFICATION_FILTERS } from './verificationData';
+import {
+  distinctValues,
+  filterVerificationClients,
+  filtersAreActive,
+  isActiveWithin,
+  sortVerificationClients,
+  EMPTY_VERIFICATION_FILTERS,
+} from './verificationData';
+import { hasCreditScore, isCreditworthy, isPrepayTerms } from './verificationFormat';
 
 function row(overrides: Partial<VerificationClientRow> = {}): VerificationClientRow {
   return {
@@ -21,6 +29,7 @@ function row(overrides: Partial<VerificationClientRow> = {}): VerificationClient
     creditLimit: 25000,
     creditScore: 720,
     isActive: true,
+    lastTransactionAt: null,
     ...overrides,
   };
 }
@@ -81,6 +90,69 @@ describe('filterVerificationClients', () => {
   it('empty filters return every row', () => {
     const rows = [row(), row({ carrierId: '2' })];
     expect(filterVerificationClients(rows, EMPTY_VERIFICATION_FILTERS)).toHaveLength(2);
+  });
+
+  it('activity windows use lastTransactionAt and exclude carriers with no swipe', () => {
+    const now = new Date(2026, 7, 14); // 14 Aug 2026 local
+    const rows = [
+      row({ carrierId: '1', lastTransactionAt: '2026-08-01' }),
+      row({ carrierId: '2', lastTransactionAt: '2026-06-01' }),
+      row({ carrierId: '3', lastTransactionAt: null }),
+    ];
+    expect(filterVerificationClients(rows, { ...EMPTY_VERIFICATION_FILTERS, activity: '30' }, now).map((c) => c.carrierId)).toEqual(['1']);
+    expect(filterVerificationClients(rows, { ...EMPTY_VERIFICATION_FILTERS, activity: '90' }, now).map((c) => c.carrierId)).toEqual(['1', '2']);
+    expect(filterVerificationClients(rows, { ...EMPTY_VERIFICATION_FILTERS, activity: 'all' }, now)).toHaveLength(3);
+  });
+});
+
+describe('sortVerificationClients', () => {
+  it('default creditworthy sort puts scored non-debtors first, then other clear, then debtors', () => {
+    const rows = [
+      row({ carrierId: 'd', companyName: 'Debtor Co', isDebtor: true, creditScore: 800 }),
+      row({ carrierId: 'u', companyName: 'Unscored Co', isDebtor: false, creditScore: null }),
+      row({ carrierId: 'z', companyName: 'Zero Co', isDebtor: false, creditScore: 0 }),
+      row({ carrierId: 'b', companyName: 'Beta Scored', isDebtor: false, creditScore: 640 }),
+      row({ carrierId: 'a', companyName: 'Alpha Scored', isDebtor: false, creditScore: 810 }),
+    ];
+    expect(sortVerificationClients(rows, 'creditworthy').map((c) => c.carrierId)).toEqual(['a', 'b', 'u', 'z', 'd']);
+  });
+
+  it('name sort is alphabetical and ignores creditworthy rank', () => {
+    const rows = [
+      row({ carrierId: '2', companyName: 'Zed', isDebtor: false, creditScore: 900 }),
+      row({ carrierId: '1', companyName: 'Ann', isDebtor: true, creditScore: null }),
+    ];
+    expect(sortVerificationClients(rows, 'name').map((c) => c.companyName)).toEqual(['Ann', 'Zed']);
+  });
+});
+
+describe('activity date math', () => {
+  it('treats last-transaction on the cutoff day as in-window', () => {
+    const now = new Date(2026, 7, 14);
+    expect(isActiveWithin('2026-07-15', 30, now)).toBe(true);
+    expect(isActiveWithin('2026-07-14', 30, now)).toBe(false);
+    expect(isActiveWithin(null, 30, now)).toBe(false);
+  });
+});
+
+describe('prepay and score predicates', () => {
+  it('treats Prepay case-insensitively and a 0 score as unscored', () => {
+    expect(isPrepayTerms('Prepay')).toBe(true);
+    expect(isPrepayTerms('prepay')).toBe(true);
+    expect(isPrepayTerms('LOC')).toBe(false);
+    expect(hasCreditScore(0)).toBe(false);
+    expect(hasCreditScore(null)).toBe(false);
+    expect(hasCreditScore(640)).toBe(true);
+    expect(isCreditworthy({ isDebtor: false, creditScore: 640 })).toBe(true);
+    expect(isCreditworthy({ isDebtor: true, creditScore: 640 })).toBe(false);
+  });
+});
+
+describe('filtersAreActive', () => {
+  it('is false for the empty default and true once any chip or search is set', () => {
+    expect(filtersAreActive(EMPTY_VERIFICATION_FILTERS)).toBe(false);
+    expect(filtersAreActive({ ...EMPTY_VERIFICATION_FILTERS, activity: '30' })).toBe(true);
+    expect(filtersAreActive({ ...EMPTY_VERIFICATION_FILTERS, q: 'acme' })).toBe(true);
   });
 });
 

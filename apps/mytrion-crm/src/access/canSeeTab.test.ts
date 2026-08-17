@@ -7,7 +7,7 @@ function user(overrides: Partial<UserContext> = {}): UserContext {
     userId: 'u1',
     profile: 'Standard',
     role: 'Agent',
-    userName: 'Robiya',
+    userName: 'CI Test Admin',
     trusted: true,
     allDepartmentAccess: false,
     ...overrides,

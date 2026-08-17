@@ -15,15 +15,12 @@
  */
 import { type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { useTheme } from '@/hooks/useTheme';
 import { s } from './dc';
 import { Icon } from './icons';
+import { sheetBackdrop, sheetPanel } from './phoneSheetLayout';
 import { useAccessibleDialog } from './useAccessibleDialog';
-
-const BACKDROP =
-  'position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)';
-const SHEET =
-  'width:100%;max-width:960px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden';
 const CLOSE =
   'width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center';
 const FOOT_BTN = 'height:38px;padding:0 18px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px';
@@ -41,6 +38,7 @@ export function DetailSheet({
   saving,
   children,
   ariaLabel,
+  maxWidth = 960,
 }: {
   accent: string;
   title: string;
@@ -52,9 +50,11 @@ export function DetailSheet({
   saving?: boolean;
   children: ReactNode;
   ariaLabel: string;
+  /** Client detail is 820px; Lead/Deal sheets stay at 960. */
+  maxWidth?: number;
 }) {
   const dialogRef = useAccessibleDialog(true, onClose, { dismissible: !saving });
-
+  const phone = useIsPhone();
   const { theme } = useTheme();
 
   return createPortal(
@@ -64,7 +64,7 @@ export function DetailSheet({
       onClick={() => {
         if (!saving) onClose();
       }}
-      style={s(BACKDROP)}
+      style={s(sheetBackdrop(phone))}
     >
       <div
         ref={dialogRef}
@@ -74,8 +74,27 @@ export function DetailSheet({
         aria-busy={saving || undefined}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        style={s(`${SHEET};border-top:3px solid ${accent}`)}
+        style={s(
+          sheetPanel(
+            phone,
+            phone ? '' : `max-width:${maxWidth}px;border-top:1px solid ${accent}`,
+          ),
+        )}
       >
+        {phone ? (
+          <div
+            aria-hidden
+            style={s(
+              'flex-shrink:0;display:flex;justify-content:center;padding:8px 0 0;cursor:grab',
+            )}
+          >
+            <span
+              style={s(
+                'width:36px;height:4px;border-radius:99px;background:var(--border)',
+              )}
+            />
+          </div>
+        ) : null}
         <header
           style={s(
             'flex-shrink:0;padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:color-mix(in srgb,var(--surface) 92%,var(--alt))',

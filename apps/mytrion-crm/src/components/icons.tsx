@@ -15,8 +15,10 @@ import {
   CloudUpload,
   Copy,
   Database,
+  Download,
   Eye,
   FileText,
+  FlaskConical,
   Hash,
   Headset,
   Heart,
@@ -82,6 +84,7 @@ export const WarehouseIcon = icon(Layers, 19);
 export const AccessIcon = icon(ShieldCheck, 19);
 export const UsersIcon = icon(Users, 19);
 export const HistoryIcon = icon(History, 13);
+export const VitestIcon = icon(FlaskConical, 19);
 export const JobsIcon = icon(Timer, 19);
 export const ChatIcon = icon(MessageCircleMore, 16);
 
@@ -104,6 +107,7 @@ export const BanIcon = icon(Ban, 11);
 export const ChevronLeftIcon = icon(ChevronLeft, 13);
 export const ChevronRightIcon = icon(ChevronRight, 13);
 export const AlertIcon = icon(TriangleAlert, 11);
+export const DownloadIcon = icon(Download, 12);
 
 // ── content ─────────────────────────────────────────────────────────────────
 export const DocIcon = icon(FileText, 14);

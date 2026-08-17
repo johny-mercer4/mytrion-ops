@@ -15,7 +15,7 @@ function seedSession(): void {
     JSON.stringify({
       accessToken: 'tok',
       refreshToken: 'r1',
-      worker: { zohoUserId: '42', userName: 'Robiya' },
+      worker: { zohoUserId: '42', userName: 'CI Test Admin' },
     }),
   );
 }
@@ -66,15 +66,19 @@ describe('logAutomation', () => {
     seedSession();
     const fetchMock = vi.fn(async () => jsonResponse(500, {}));
     vi.stubGlobal('fetch', fetchMock);
-    expect(() => logAutomation('balance')).not.toThrow();
+    // 'tracking' is deliberately an UNALIASED id — it is the pass-through case. ('balance' used to
+    // stand here and now aliases to the widget's key, which is what the next test pins.)
+    expect(() => logAutomation('tracking')).not.toThrow();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toContain('/v1/automation/logs');
     const body = JSON.parse(String(init.body)) as Record<string, string>;
-    expect(body.automationType).toBe('balance');
-    expect(body.agentName).toBe('Robiya');
+    expect(body.automationType).toBe('tracking');
+    expect(body.agentName).toBe('CI Test Admin');
     expect(body.triggerDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(body.triggerTime).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    // Everything this app logs is Horizon; the legacy Zoho widget sends no origin at all.
+    expect(body.originSource).toBe('Mytrion Horizon');
   });
 
   it('aliases catalog ids to widget log keys and hyphen→underscore', async () => {
@@ -87,5 +91,27 @@ describe('logAutomation', () => {
       automationType: string;
     };
     expect(body.automationType).toBe('close_wex_application');
+  });
+
+  /**
+   * The two aliases that closed a live data split: Horizon was writing `balance` / `account_status`
+   * while the Zoho widget kept writing `balance_check` / `account_status_check` for the same
+   * automations, so each one had two names and two partial histories in the log.
+   */
+  it.each([
+    ['balance', 'balance_check'],
+    ['account-status', 'account_status_check'],
+    ['unit-driver', 'unit_driver_change'],
+  ])('logs %s under the widget key %s', async (id, expected) => {
+    seedSession();
+    const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1' }));
+    vi.stubGlobal('fetch', fetchMock);
+    logAutomation(id);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(
+      String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+    ) as { automationType: string; originSource: string };
+    expect(body.automationType).toBe(expected);
+    expect(body.originSource).toBe('Mytrion Horizon');
   });
 });

@@ -31,14 +31,35 @@
         font-size: 1.375rem;
     }
 
-    /* Table — horizontal scroll on small screens */
+    /* Table — no sideways min-width on phone; ledgers collapse in ledger-panel.css */
     .bm-root .bm-table-wrap {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        /*
+         * Data Center / Transactions size this via inline flex:1;minHeight:0 (DataCenter.tsx,
+         * Transactions.tsx), which lets it shrink to whatever's left after the header + KPI cards +
+         * toolbar. On a normal browser window that's plenty; on Telegram's mini-app viewport (its own
+         * chrome already eats vertical space before Billing renders anything) the leftover space
+         * collapses to a sliver. Nothing else in .bm-panel actually overflows its box at that point,
+         * so .bm-panel's own overflow-y:auto (shared-base.css) never activates — the only thing that
+         * scrolls is this squeezed table wrap, which is too short to be usable. Confirmed live
+         * 2026-08-15: Data Center and Transactions both reported "scroll only in table, can't see
+         * table" on the Telegram mini-app.
+         *
+         * A real floor forces the panel's total content to genuinely exceed its own box on a short
+         * viewport, so .bm-panel's existing scroll takes over for the whole panel (KPIs + table)
+         * instead of leaving this the only scrollable sliver. !important is required — an inline
+         * style always wins over a stylesheet rule regardless of specificity or cascade order.
+         *
+         * dvh, not vh: bare vh is exactly the unit that made the original bug possible (breakpoints.
+         * test.ts's "does not add a bare vh" budget exists for this reason — it's the height with the
+         * URL bar HIDDEN / ignores Telegram's actual visible area, not the real live viewport).
+         */
+        min-height: 50dvh !important;
     }
 
     .bm-root .bm-table {
-        min-width: 480px;
+        min-width: 0;
     }
 
     /* Toolbar wraps */
@@ -114,17 +135,122 @@
    §5  MODAL  (≤ 640px)
    ═══════════════════════════════════════════════ */
 
-/* Bottom sheet. The 16vh strip above the sheet is now the OVERLAY's padding rather than a `84vh`
-   cap on the panel: same height, but the gutter and the panel's `max-height: 100%` are one
-   measurement instead of two that can disagree, and the strip stays a backdrop-click target. */
+/* Bottom sheet: grabber, 96dvh, decelerate in — same grammar as Sales phoneSheetLayout. */
 @media (width < 640px) {
     .bm-root .bm-modal-backdrop {
-        align-items: flex-end;
-        padding: 16vh 0 0;
+        align-items: stretch;
+        justify-content: flex-end;
+        flex-direction: column;
+        padding: 0;
     }
 
     .bm-root .bm-modal-box {
         max-width: 100%;
-        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        max-height: 96dvh;
+        border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+        animation: bmSheetUp var(--duration-moderate) var(--ease-decelerate);
+        padding-block-start: 12px;
+    }
+
+    .bm-root .bm-modal-box::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        translate: -50% 0;
+        width: 36px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--border);
+        z-index: 4;
+    }
+}
+
+@keyframes bmSheetUp {
+    from { translate: 0 100%; }
+}
+
+/* Horizon phone leftover pass — Debtors / Prepay / Returns rows, not min-width columns. */
+@media (width < 640px) {
+    .bm-root .db-content-area {
+        overflow-x: hidden;
+    }
+    .bm-root .db-list-header {
+        display: none;
+    }
+    .bm-root .db-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 12px;
+        min-height: 3.5rem;
+        padding: 12px 14px;
+    }
+    .bm-root .db-row-main > :not(.db-col-company):not(.db-col-remain):not(.db-col-owed):not(.db-col-chevron):not(.rt-col-action) {
+        display: none;
+    }
+    .bm-root .db-col-company,
+    .bm-root .db-col-remain,
+    .bm-root .db-col-owed {
+        flex: none;
+        min-width: 0;
+        text-align: left;
+        padding-right: 0;
+    }
+    .bm-root .db-col-remain,
+    .bm-root .db-col-owed {
+        text-align: right;
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   §7  KPI BANNER — the total has to be readable
+   ═══════════════════════════════════════════════ */
+
+/*
+ * Added on the merge of origin/build, and kept because the Horizon phone pass above does not cover
+ * it: `.bm-summary-banner` (DataCenter / Transactions) is a separate grid from `.db-kpi-grid`, and
+ * its amount was the one number on the screen still rendering wrong.
+ *
+ * An eight-figure value does not truncate — it PAINTS PAST the tile and the panel edge cuts it.
+ * Measured at 375, both grids, and the numbers are almost identical:
+ *   Transactions  `.bm-summary-amount`  $66,711,799.20  wants 223px in a 138px box  ->  70px past
+ *   Debtors       `.db-kpi-value`       $2,042,604.16   wants 223px in a 133px box  ->  72px past
+ * They read as "$66,711,14" and "$2,042,60". `.db-kpi-grid` is the grid build's phone pass DOES
+ * touch, but only to set it 2-up — 2-up is what leaves 133px, so the tile still had to go 1-up.
+ *
+ * 22px buys back ~34px of the deficit and keeps the KPI hierarchy; the 480 rule closes the rest.
+ * `tabular-nums` stops the digits shifting width between refreshes.
+ */
+@media (width < 640px) {
+    .bm-root .bm-summary-amount,
+    .bm-root .db-kpi-value {
+        font-size: var(--text-xl);
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+@media (width < 480px) {
+    /*
+     * This deliberately revises the call recorded at shared-base.css:735 ("Deliberately NOT 1-up
+     * below 480 … a 145px tile still holds these labels"). That is still right about the LABELS; it
+     * was never tested against an eight-figure currency VALUE, which a 138px tile overflows even
+     * after the 22px step. A phone is 375px, so this is the rule that actually fires there.
+     *
+     * Its stated cost — stacked tiles pushing the list down — is real, so the tiles get tighter in
+     * the same block, which brings the first row back above the fold.
+     */
+    .bm-root .bm-summary-banner,
+    .bm-root .db-kpi-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-2);
+    }
+
+    .bm-root .bm-summary-item {
+        padding: var(--space-2) var(--space-3);
+    }
+
+    .bm-root .bm-summary-amount {
+        margin-top: 0;
     }
 }

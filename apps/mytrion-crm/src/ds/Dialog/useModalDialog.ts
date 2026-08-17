@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type AnimationEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type AnimationEvent } from 'react';
 
 /**
  * The modal lifecycle, shared by `Dialog` and `Drawer`.
@@ -112,7 +112,7 @@ export function useModalDialog({
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const lockedRef = useRef(false);
   const backdropPressRef = useRef(false);
-  const [phase, setPhase] = useState<ModalPhase>('closed');
+  const [phase, setPhase] = useState<ModalPhase>(() => (open ? 'open' : 'closed'));
 
   // The native `cancel`/`close` listeners below are attached once and read the current props from
   // here. Re-subscribing on every render because `onClose` is an inline arrow at the call site
@@ -141,7 +141,9 @@ export function useModalDialog({
   };
 
   // ── Open / begin closing, driven by the controlled prop ───────────────────────────────────────
-  useEffect(() => {
+  // Layout, not paint: a useEffect here left one blank frame (phase still `closed`, children
+  // unmounted) before showModal ran — the flicker on every Verification row click.
+  useLayoutEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
     if (open) {

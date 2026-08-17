@@ -1,23 +1,32 @@
-import { FileCheck2, Home, MessagesSquare, SlidersHorizontal, Users } from 'lucide-react';
+import { Activity, Building2, ClipboardCheck, Home, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
+import { NewApplicants } from './tabs/NewApplicants';
+import { MytrionWatch } from './watch/MytrionWatch';
 import './verification.css';
+import './verificationModal.css';
+import './verificationRuleset.css';
 
 /**
  * Verification Mytrion — credit and compliance decisioning.
  *
- * Main / Applications / Configuration Ruleset are still STRUCTURAL ONLY — the previous module rendered
- * a full applications queue, an application modal, a configuration screen and an inbox built on ~330
- * lines of invented fixtures (`data.ts`), all deleted rather than carried forward: a fabricated credit
- * application is indistinguishable from a real one at a glance. Approving/declining or editing a
- * scoring rule is a write against someone's credit outcome, so those wait on an audited, role-gated
- * endpoint — not a queue or a form that only looks real.
+ * New applicants is the 10-phase underwriting flow from the New Applicant Underwriting SOP, running
+ * entirely on Mytrion's own Postgres (`src/modules/verificationFlow/`). A case arrives here when a
+ * Sales agent completes intake; until then it is listed but locked.
+ *
+ * Mytrion Watch is the other half of the same job: new applicants are scored once at intake, and
+ * every carrier already on the books is re-scored weekly from its own payment and fuelling
+ * behaviour (`src/modules/mytrionWatch/`). Both live under Queue because they answer the same
+ * question — who deserves credit — at different points in the relationship.
+ *
+ * The credit-platform desk (Inbox, Verification cases, Decision rules) is QUARANTINED — see
+ * `legacyDesk.ts` and `src/modules/verification/killSwitches.ts`. Its components are still on disk
+ * and its tests still pass; it is undeclared here so `tabRegistry.test.ts` cannot grant a permission
+ * set for a tab that will not mount.
  *
  * Existing clients IS live — `src/modules/verification/verificationClients.ts` +
  * `routes/v1/verificationClients.routes.ts` read `octane.dim_company` company-wide (read-only; the
- * DWH can't be written), gated on the `verification` department. Distinct from the Sales redesign's
- * own "Verification Pipeline" tab (`verificationPipeline.routes.ts`), which is the caller's own
- * deal-clients plus a mock compliance-stage snapshot — different audience, different data, on purpose.
+ * DWH can't be written), gated on the `verification` department.
  */
 const TABS: ModuleTab[] = [
   {
@@ -27,39 +36,37 @@ const TABS: ModuleTab[] = [
     icon: Home,
     tone: 'var(--tone-violet)',
     keywords: ['home', 'overview', 'queue', 'throughput'],
+    // No group — Main sits above Queue / Policy / Roster without a section heading.
   },
   {
-    id: 'applications',
-    label: 'Applications',
-    description: 'New applications awaiting a credit and compliance decision.',
-    icon: FileCheck2,
-    tone: 'var(--tone-sky)',
-    keywords: ['queue', 'new', 'decision', 'credit', 'approve', 'reject'],
-    soon: {
-      title: 'Application queue',
-      body: 'Incoming applications with their documents, credit signals and decision trail. Approving or declining is a write against someone’s credit outcome, so it waits on an audited, role-gated endpoint — not a queue that only looks real.',
-      sources: ['verification pipeline · verification DB'],
-    },
+    id: 'applicants',
+    label: 'New applicants',
+    description: 'The 10-phase underwriting flow, from intake through to the credit decision.',
+    icon: ClipboardCheck,
+    tone: 'var(--tone-indigo)',
+    group: 'Queue',
+    hideKicker: true,
+    keywords: ['queue', 'applicants', 'underwriting', 'credit', 'approve', 'decline', 'applications', 'phases'],
+    content: <NewApplicants />,
   },
   {
-    id: 'ruleset',
-    label: 'Configuration Ruleset',
-    description: 'The thresholds and rules that drive automatic pass, watch and stop.',
-    icon: SlidersHorizontal,
+    id: 'watch',
+    label: 'Mytrion Watch',
+    description: 'Behavioural scoring for carriers already on the books — who is drifting, and why.',
+    icon: Activity,
     tone: 'var(--tone-amber)',
-    keywords: ['rules', 'thresholds', 'tiers', 'policy', 'scoring', 'config'],
-    soon: {
-      title: 'Configuration ruleset',
-      body: 'Score thresholds, tiers and the rules behind each automatic verdict. Editing these changes who gets credit, so it needs an audit trail and a review step before a single field becomes editable.',
-      sources: ['verification pipeline · rules config'],
-    },
+    group: 'Queue',
+    hideKicker: true,
+    keywords: ['watch', 'score', 'scoring', 'risk', 'behaviour', 'behavior', 'monitoring', 'pd', 'default', 'credit score', 'watchlist'],
+    content: <MytrionWatch />,
   },
   {
     id: 'clients',
     label: 'Existing clients',
     description: 'Every carrier company-wide, with the payment and credit terms on file.',
-    icon: Users,
+    icon: Building2,
     tone: 'var(--tone-emerald)',
+    group: 'Roster',
     keywords: ['existing', 're-verification', 'compliance', 'review', 'renewal', 'roster', 'clients'],
     content: <VerificationClients />,
   },
@@ -67,8 +74,9 @@ const TABS: ModuleTab[] = [
     id: 'tickets',
     label: 'Tickets',
     description: 'Requests filed to Verification, with the conversation attached.',
-    icon: MessagesSquare,
-    tone: 'var(--tone-cyan)',
+    icon: Ticket,
+    tone: 'var(--tone-slate)',
+    group: 'Roster',
     keywords: ['tickets', 'requests', 'chat', 'plaid', 'limit review', 'escalation', 'queue'],
     // PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty
     // while the real requests sit in Desk. The shared console is untouched — swap `soon` back for
@@ -88,7 +96,7 @@ export default function VerificationMytrion() {
       kicker="Decisioning"
       heroLead="Verification "
       heroAccent="Mytrion"
-      heroBlurb="Credit and compliance decisioning — new applications, the ruleset behind each verdict, and re-verification for clients already on the books."
+      heroBlurb="Credit and compliance decisioning — new applicants through the ten underwriting phases, and re-verification for clients already on the books."
       navLabel="Verification"
       tabs={TABS}
     />

@@ -6,19 +6,22 @@
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { request, requestBlob } from '@/api/transport';
-import { money } from './live';
-import { deliverBlob } from './txnExportLibs';
+import { deliverExport } from '@/lib/deliverExport';
+import { isTelegramWebView } from '@/telegram/webApp';
+import { money, moneyExact } from './live';
 import {
   EFS_LOGIN_URL,
   LIMIT_CHANGE_MAX,
+  cmpInvoiceStatus,
   filterClientInvoices,
+  mergeCmpInvoices,
   fmtDate,
   invRangeBounds,
   mapInvRange,
   mapInvStatus,
+  moneyOrDash,
   shortCard,
   str,
-  titleStatus,
   type Addr,
   type Automation,
   type Card,
@@ -161,8 +164,12 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
             r.issueDate ?? r.issue_date ?? r.invoice_date ?? r.period ?? r.created_date ?? r.createdDate
               ?? (r.fromDate && r.toDate ? `${String(r.fromDate)} — ${String(r.toDate)}` : null),
           ),
-          amount: money(r.total_amount ?? r.totalAmount ?? r.amount ?? r.grandTotal),
-          status: titleStatus(r.status ?? r.invoiceStatus ?? r.invoice_status),
+          amount: moneyExact(r.total_amount ?? r.totalAmount ?? r.amount ?? r.grandTotal),
+          status: cmpInvoiceStatus(
+            r.status ?? r.invoiceStatus ?? r.invoice_status,
+            r.totalPaid ?? r.total_paid ?? r.paid ?? r.amount_paid,
+            r.remainingAmount ?? r.remaining_amount ?? r.remaining ?? r.balance ?? r.due,
+          ),
         };
       }));
       // Endpoint is CMP-first; upstream does not emit meta.source on this route.
@@ -195,9 +202,11 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       // Widget parity: DWH payment-info (summary/totals) + live CMP invoices are fetched in
       // PARALLEL and merged — NOT a fallback chain. Either half may fail independently.
       const cid = requireCarrier(deal);
-      const [infoRes, cmpRes] = await Promise.allSettled([
+      const [infoRes, cmpRes, liveRes] = await Promise.allSettled([
         callTouchpoint('dwh.payment_info', { carrierId: cid, days: 90 }),
         callTouchpoint('carrier.check_payment', { carrierId: cid }),
+        // Same CMP-first route C-20 reads, for the status the Deluge gets wrong. See mergeCmpInvoices.
+        callTouchpoint('clients.invoices', { carrierId: cid, limit: 500 }),
       ]);
       let summary: PaymentsSummary | null = null;
       if (infoRes.status === 'fulfilled') {
@@ -205,27 +214,25 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
         const totals = p.invoices?.totals ?? {};
         summary = {
           invoiceCount: str(p.invoices?.count ?? 0),
-          totalBilled: money(totals.total_billed),
-          totalPaid: money(totals.total_paid),
-          openBalance: money(totals.open_balance),
+          // Exact, like the invoices below them: a panel that totals $43,496 over an invoice
+          // reading $43,495.62 looks like two different numbers for the same debt.
+          totalBilled: moneyExact(totals.total_billed),
+          totalPaid: moneyExact(totals.total_paid),
+          openBalance: moneyExact(totals.open_balance),
           paymentCount: str(p.payments?.count ?? 0),
-          paymentsTotal: money(p.payments?.total_amount),
         };
       }
-      let cmpInvoices: CmpInvoiceRow[] = [];
-      let cmpError: string | undefined;
-      if (cmpRes.status === 'fulfilled') {
-        cmpInvoices = (cmpRes.value.invoices ?? []).map((inv, i) => ({
-          id: str(inv.id) || `cmp-${i}`,
-          invoiceNumber: str(inv.invoiceNumber) || `#${i + 1}`,
-          status: str(inv.status) || '—',
-          total: money(inv.totalAmount),
-          paid: money(inv.totalPaid),
-          remaining: money(inv.remainingAmount),
-        }));
-      } else {
-        cmpError = cmpRes.reason instanceof Error ? cmpRes.reason.message : 'CMP invoice check failed.';
-      }
+      const deluge = cmpRes.status === 'fulfilled'
+        ? (cmpRes.value.invoices ?? []) as Array<Record<string, unknown>>
+        : [];
+      const live = liveRes.status === 'fulfilled'
+        ? (liveRes.value.data ?? []) as Array<Record<string, unknown>>
+        : [];
+      const cmpInvoices: CmpInvoiceRow[] = mergeCmpInvoices(deluge, live);
+      // Only an error when NEITHER invoice source answered — one of the two is enough to render.
+      const cmpError = cmpRes.status === 'rejected' && liveRes.status === 'rejected'
+        ? (cmpRes.reason instanceof Error ? cmpRes.reason.message : 'CMP invoice check failed.')
+        : undefined;
       if (!summary && cmpInvoices.length === 0) {
         // Both sources genuinely failed — surface the primary's error, not a silent empty.
         if (infoRes.status === 'rejected') throw infoRes.reason;
@@ -246,11 +253,20 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
     }
     case 'balance': {
       const bal = await callTouchpoint('dwh.carrier_balance', { carrierId: requireCarrier(deal) });
-      const parts = [`available balance ${money(bal.efs_balance ?? bal.balance)}`];
-      if (bal.credit_limit != null) parts.push(`on a ${money(bal.credit_limit)} line`);
-      if (bal.credit_remaining != null) parts.push(`${money(bal.credit_remaining)} remaining`);
-      if (bal.efs_error) parts.push(`(EFS: ${bal.efs_error})`);
-      return { kind: 'message', message: `${str(bal.company_name) || 'This carrier'} — ${parts.join(', ')}.` };
+      return {
+        kind: 'balance',
+        result: {
+          companyName: str(bal.company_name) || 'This carrier',
+          efsBalance: moneyOrDash(bal.efs_balance ?? bal.balance),
+          availableLimit: moneyOrDash(bal.credit_remaining),
+          weeklyLimit: moneyOrDash(bal.credit_limit),
+          creditUsed: moneyOrDash(bal.credit_used),
+          accountType: str(bal.account_type),
+          paymentTerms: str(bal.payment_terms),
+          billingCycle: str(bal.billing_cycle),
+          efsError: str(bal.efs_error),
+        },
+      };
     }
     case 'account-status':
     case 'verification': {
@@ -264,6 +280,8 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       if (ovResult.status === 'rejected') throw ovResult.reason;
       const ov = ovResult.value;
       let activeCards = ov.cards?.active_count ?? 0;
+      let totalCards = ov.cards?.count ?? 0;
+      let cardsLive = false;
       if (efsResult.status === 'fulfilled') {
         const rows = (efsResult.value.data ?? []) as Array<Record<string, unknown>>;
         activeCards = rows.filter((r) => {
@@ -272,10 +290,37 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
           if (/inactive|deactiv|suspend|closed|cancel/.test(x)) return false;
           return /active|ok|good/.test(x);
         }).length;
+        totalCards = rows.length;
+        cardsLive = true;
       }
+      const debt = ov.cmp_debt ?? {};
+      const notices = [
+        ov.efs_error ? `EFS: ${str(ov.efs_error)}` : '',
+        debt.error ? `CMP debt: ${str(debt.error)}` : '',
+        ov.cards?.error ? `Cards: ${str(ov.cards.error)}` : '',
+        efsResult.status === 'rejected'
+          ? 'Live EFS card roster unavailable — card counts come from the warehouse and may lag.'
+          : '',
+      ].filter(Boolean);
       return {
-        kind: 'message',
-        message: `${str(ov.company_name) || 'This carrier'}: account ${ov.is_active ? 'active' : 'inactive'}, ${activeCards} active cards, open debt ${money(ov.cmp_debt?.total_debt ?? 0)}.`,
+        kind: 'account-status',
+        result: {
+          companyName: str(ov.company_name) || 'This carrier',
+          isActive: ov.is_active === true,
+          accountType: str(ov.account_type),
+          paymentTerms: str(ov.payment_terms),
+          efsBalance: moneyOrDash(ov.efs_balance),
+          weeklyLimit: moneyOrDash(ov.credit_limit),
+          totalDebt: money(debt.total_debt ?? 0),
+          debtInvoiceCount: debt.invoice_count == null ? '—' : str(debt.invoice_count),
+          maxDebtDays: debt.max_debt_days == null ? '—' : `${str(debt.max_debt_days)} days`,
+          worstStatus: str(debt.worst_status),
+          isHardDebtor: debt.is_hard_debtor === true,
+          activeCards,
+          totalCards,
+          cardsLive,
+          notices,
+        },
       };
     }
     case 'tracking': {
@@ -555,8 +600,9 @@ export async function downloadInvoice(
 
   // Zoho app WebView: blob URLs don't survive the tab hop, so open the short-lived signed URL and
   // let the OS download it natively. Same carve-out (and reason) as the widget — but routed through
-  // our own gate rather than the unscoped servercrm endpoint.
-  if (window.MytrionDownload?.isMobileWebView?.()) {
+  // our own gate rather than the unscoped servercrm endpoint. Telegram Mini App is NOT this path:
+  // files go to the Horizon bot chat via deliverExport.
+  if (!isTelegramWebView() && window.MytrionDownload?.isMobileWebView?.()) {
     const { url } = (await request('GET', `${base}/signed-url${scope}`)) as { url?: string };
     if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
     window.open(url, '_blank', 'noopener');
@@ -565,7 +611,7 @@ export async function downloadInvoice(
 
   const blob = await requestBlob(`${base}${scope}`);
   if (blob.size === 0) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
-  deliverBlob(blob, fileName);
+  await deliverExport(blob, fileName);
 }
 
 /** Sequential multi-invoice download (reference: downloadAllSelected / downloadSelectedExcel). */

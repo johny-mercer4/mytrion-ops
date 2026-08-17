@@ -692,3 +692,12 @@
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Horizon phone leftover pass */
+@media (width < 640px) {
+  .mg-root .mg-ref-table,
+  .mg-root .mg-table-wrap {
+    overflow-x: hidden;
+    min-width: 0;
+  }
+}

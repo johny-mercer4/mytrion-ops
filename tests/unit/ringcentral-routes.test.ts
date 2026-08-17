@@ -68,7 +68,7 @@ async function workerToken(profile: string, zohoUserId = '77'): Promise<string> 
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — re-derived from the profile at verify
-    worker: { zohoUserId, userName: 'Robiya', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 

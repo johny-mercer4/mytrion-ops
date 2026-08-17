@@ -409,3 +409,18 @@
     white-space: nowrap;
     border: 0;
 }
+
+@media (width < 640px) {
+    .cs-root .cs-pool-layout {
+        grid-template-columns: 1fr;
+    }
+    .cs-root .cs-pool-drawer {
+        display: none;
+    }
+    .cs-root .cs-pool-table {
+        min-width: 0;
+    }
+    .cs-root .cs-pool-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

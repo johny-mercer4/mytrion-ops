@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { horizonTelegramEnvShape } from './envHorizon.js';
 import { operationalEnvShape } from './envOperational.js';
 
 /** Parse a '0'/'1'/'true'/'false' style flag into a boolean, with a default. */
@@ -21,10 +22,16 @@ const EnvSchema = z.object({
   // per-instance subdomain of zappsusercontent.com, so we allow that whole suffix.
   CORS_ORIGIN_SUFFIXES: z.string().default('zappsusercontent.com'),
 
-  // --- Database: Mytrion OPS external Postgres (sessions, logging, knowledge) ---
-  // No local DB — always the external URL. `DATABASE_URL` is kept only as a legacy alias.
-  // No localhost default on purpose: a missing value should fail loudly, not silently
-  // connect to localhost (see assertRuntimeSecrets).
+  // --- Database: Mytrion OPS Postgres (sessions, logging, knowledge) ---
+  // No localhost default: a missing value should fail loudly (see assertRuntimeSecrets).
+  // `DATABASE_URL` is a legacy alias.
+  //
+  // THERE IS NO LOCAL DATABASE OVERRIDE, deliberately. A `LOCAL_OPS_DATABASE_URL` used to redirect
+  // this in development, and it cost three separate false diagnoses in one day: a repair script that
+  // reported "scored 716" five times while writing nothing to prod, a 503 blamed on an unmigrated
+  // prod database that was in fact migrated, and a filter reported as broken that was reading an
+  // empty local snapshot. Localhost and prod must be the same database. See
+  // tests/unit/no-local-db-override.test.ts.
   MYTRION_OPS_DATABASE_URL: z.string().default(''),
   DATABASE_URL: z.string().default(''),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
@@ -38,9 +45,16 @@ const EnvSchema = z.object({
   // SSL). Read pool (verificationDb.ts) opens it read-only; the write-back pool
   // (creditPlatformWriteDb.ts) opens the SAME DSN in a writable session. ---
   VERIFICATION_DATABASE_URL: z.string().default(''),
-  // Write-back kill switch: when on, the Sales verification tab may INSERT into the credit_platform
-  // kxd.sales_agent_* inbox over VERIFICATION_DATABASE_URL. On by default; set 0 to disable.
+  // Write-back kill switch: when on, Mytrion may write credit_platform over VERIFICATION_DATABASE_URL
+  // (kxd.sales_agent_* inbox + Orchestration stop_factors / system_state). On by default; set 0 to disable.
   VERIFICATION_WRITE_ENABLED: flag('1'),
+  // Credit-platform HTTP (fire-and-forget create/run/approve). Empty = ingest still writes the
+  // local case and marks auto-start failed.
+  CREDIT_PLATFORM_BASE_URL: z.string().default(''),
+  CREDIT_PLATFORM_API_KEY: z.string().default(''),
+  CREDIT_PLATFORM_ANALYST_API_KEY: z.string().default(''),
+  // Shared Verification case owner. Numeric Zoho user id; if empty we resolve "Sarvar Asqarov".
+  VERIFICATION_CASE_OWNER_ZOHO_USER_ID: z.string().default(''),
 
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
   // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
@@ -223,9 +237,9 @@ const EnvSchema = z.object({
   // primary user directly. Callers can still override per-call with an explicit chatId.
   TELEGRAM_CHAT_ID_MAIN: z.string().default(''),
 
-  // --- Carrier onboarding bot (separate from the assistant's own Telegram integration above) ---
-  // Deep-linked from the carrier invite flow: https://t.me/<username>?start=<inviteId>. The bot
-  // itself (webhook + mini-app) is future work; today we only need the username to build the link.
+  // --- Carrier onboarding / client mini-app bot (apps/mini-app + agent-gateway). ---
+  // Deep-linked from the carrier invite flow: https://t.me/<username>?start=<inviteId>.
+  // This token is ALSO what agent-gateway long-polls. Do NOT reuse it for Horizon.
   TELEGRAM_CARRIER_BOT_USERNAME: z.string().default(''),
   TELEGRAM_CARRIER_BOT_TOKEN: z.string().default(''),
   // Public HTTPS URL of apps/mini-app once deployed — the inline web_app button's target (`/start`
@@ -238,6 +252,9 @@ const EnvSchema = z.object({
   // App URL = <origin>/mini-app/). Then links use https://t.me/<bot>?startapp=<id> (no short name)
   // and open the mini-app directly. Off → ?start= fallback (needs a bot /start reply, not built).
   TELEGRAM_CARRIER_MINI_APP_DIRECT: z.string().default(''),
+
+  // --- Horizon worker-CRM Mini App bot (apps/mytrion-crm). Isolated from the carrier bot above. ---
+  ...horizonTelegramEnvShape,
 
   // '1' → apply pending Drizzle migrations at boot (see db/migrate.ts). Set in the Render env group
   // so a deploy migrates the DB itself; off by default so tests/local/tooling never auto-migrate.
@@ -548,6 +565,17 @@ const EnvSchema = z.object({
   // Maintenance gets its OWN Dropbox folder, not DROPBOX_ROOT_PATH (CS feedback 2026-08-06: don't dump
   // every service into one shared folder) — same app key/secret/refresh token, different root prefix.
   DROPBOX_MAINTENANCE_ROOT_PATH: z.string().default('/maintenance'),
+  // Which provider a NEW Verification applicant document lands on. Defaults to Dropbox, unlike comms
+  // and Maintenance: verification_case_documents is a new table with no pre-existing S3 rows, so there
+  // are no reads a Dropbox default could repoint at bytes that are not there.
+  VERIFICATION_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_verification']).default('dropbox_verification'),
+  // Verification's own Dropbox folder — bank statements, SSN cards, licences, lease agreements. Kept
+  // separate so the later LLM underwriting review has one addressable root, and so applicant PII never
+  // lands in the comms or Maintenance folder.
+  DROPBOX_VERIFICATION_ROOT_PATH: z.string().default('/verification'),
+  /** Employee photos and HR documents — their own folder, never mixed into `/comms`. */
+  DROPBOX_HR_ROOT_PATH: z.string().default('/hr'),
+  HR_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_hr']).default('dropbox_hr'),
   // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
   // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
   // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.
@@ -695,10 +723,21 @@ export const isTest = env.NODE_ENV === 'test';
 export const isDev = env.NODE_ENV === 'development';
 
 /**
- * Resolved app database URL — the Mytrion OPS external Postgres. `DATABASE_URL` is a
- * legacy alias kept only as a fallback. Empty means unconfigured (caught at startup).
+ * Resolved app database URL — the Mytrion OPS external Postgres. `DATABASE_URL` is a legacy alias
+ * kept only as a fallback. Empty means unconfigured (caught at startup).
+ *
+ * One database, in every environment including localhost. No dev-only override.
  */
 export const databaseUrl: string = env.MYTRION_OPS_DATABASE_URL || env.DATABASE_URL;
+
+/** Hostname only — safe to log / return in operator-facing 503s. Never includes credentials. */
+export function databaseHost(url = databaseUrl): string {
+  try {
+    return new URL(url).hostname || 'unknown';
+  } catch {
+    return 'unparseable';
+  }
+}
 
 export const corsOrigins: string[] = env.CORS_ORIGINS.split(',')
   .map((o) => o.trim())

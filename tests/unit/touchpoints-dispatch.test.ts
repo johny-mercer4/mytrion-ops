@@ -45,7 +45,7 @@ const salesCtx = () =>
     role: 'worker',
     audience: 'internal',
     userId: 'zoho:42',
-    userName: 'Robiya',
+    userName: 'CI Test Admin',
     departments: ['sales'],
     allDepartmentAccess: false,
   });
@@ -134,7 +134,7 @@ describe('identity injection (session-authoritative)', () => {
     expect(serverCrmRequestMock).toHaveBeenCalledWith(
       'GET',
       '/api/clients/by-agent/42',
-      expect.objectContaining({ query: expect.objectContaining({ agentName: 'Robiya' }) }),
+      expect.objectContaining({ query: expect.objectContaining({ agentName: 'CI Test Admin' }) }),
     );
   });
 });

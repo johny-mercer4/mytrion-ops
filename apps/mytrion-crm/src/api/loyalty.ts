@@ -74,6 +74,75 @@ export function listLoyaltyClients(options: { refresh?: boolean } = {}): Promise
   }) as Promise<LoyaltyRoster>;
 }
 
+/**
+ * One carrier measured against a CHOSEN month, for the export.
+ *
+ * Field names say which WINDOW the figure comes from, never "prev"/"this": `basis*` is the month that
+ * earns the tier (M-1) and `month*` is the month being reported (M). The board's `LoyaltyClient`
+ * above can afford `prevMonth`/`thisMonth` because it is always anchored on today; an export of March
+ * cannot. `loyaltyExportModel.ts` is the one place that maps these onto the shared tier resolver.
+ */
+export interface LoyaltyMonthClient {
+  carrierId: string;
+  companyName: string;
+  agentName: string;
+  trucks: number | null;
+  /** Account-level active cards from the warehouse dim — today's figure, not the month's. */
+  activeCards: number;
+  /** `dim_company.tier_name` as persisted now. Present for context; prefer `retainedTierName`. */
+  currentStoredTierName: string;
+  /**
+   * The retained tier the server is willing to stand behind for this month — the stored value for a
+   * current-month export, and deliberately EMPTY for any past month (a carrier that is Gold today
+   * was not necessarily Gold in March).
+   */
+  retainedTierName: string;
+  basisActiveCards: number;
+  basisInNetworkGallons: number;
+  basisTotalGallons: number;
+  basisTransactions: number;
+  monthActiveCards: number;
+  monthInNetworkGallons: number;
+  monthTotalGallons: number;
+  monthTransactions: number;
+  /** The 26th→25th billing cycle closing inside the reported month. */
+  cycleGallons: number;
+  /** ISO `YYYY-MM-DD` of the latest transaction in the scanned window, or null. */
+  lastTransactionAt: string | null;
+  /** Manual exception as configured NOW — `updatedAt` says when that became true. */
+  loyaltyOverride: LoyaltyClientOverride | null;
+}
+
+export interface LoyaltyMonthRoster {
+  /** The reported month, `YYYY-MM-01`. */
+  month: string;
+  /** The month that earns the tier — always one month before `month`. */
+  basisMonth: string;
+  monthLabel: string;
+  basisMonthLabel: string;
+  cycleLabel: string;
+  /** False when the reported month is still in progress, so its activity figures are partial. */
+  monthComplete: boolean;
+  clients: LoyaltyMonthClient[];
+  total: number;
+  fetchedAt: string;
+}
+
+/**
+ * The month-anchored roster behind the export. A two-month mart scan over ~8k carriers, so it gets a
+ * generous timeout — the transport's 20s default is tuned for interactive reads, not extracts.
+ */
+export function getLoyaltyMonthRoster(
+  month: string,
+  options: { refresh?: boolean } = {},
+): Promise<LoyaltyMonthRoster> {
+  return request('GET', '/marketing/loyalty/export', {
+    headers: MKT_HEADERS,
+    query: options.refresh ? { month, refresh: '1' } : { month },
+    timeoutMs: 90_000,
+  }) as Promise<LoyaltyMonthRoster>;
+}
+
 export interface SaveLoyaltyOverrideInput {
   companyName: string;
   enterpriseMode: LoyaltyEnterpriseMode | null;

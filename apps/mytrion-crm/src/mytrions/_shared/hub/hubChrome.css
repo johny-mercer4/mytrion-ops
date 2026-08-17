@@ -248,8 +248,8 @@
   border-radius: var(--mg-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  /* No backdrop-filter: these sit in a scrolling grid. Blur + hover/focus then scroll-off
+     leaves the composited layer un-repainted (empty card, children still in the DOM). */
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),
@@ -373,8 +373,7 @@
   border-radius: var(--mg-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  /* Same scrolling-card contract as .mg-card — no blur on a grid tile that leaves the viewport. */
   box-shadow: var(--hz-glass-inset);
   transition:
     background var(--hz-dur-wash) var(--hz-ease),

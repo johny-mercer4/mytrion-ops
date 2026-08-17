@@ -13,9 +13,20 @@ vi.mock('../../src/modules/verification/verificationClients.js', () => ({
   getVerificationClientDetail: vi.fn(async () => null),
 }));
 
+vi.mock('../../src/modules/verification/carrierAttachmentService.js', () => ({
+  carrierAttachmentService: {
+    list: vi.fn(async () => []),
+    upload: vi.fn(),
+    downloadUrl: vi.fn(),
+    getBytes: vi.fn(),
+    remove: vi.fn(),
+  },
+}));
+
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { carrierAttachmentService } from '../../src/modules/verification/carrierAttachmentService.js';
 import {
   getVerificationClientDetail,
   listVerificationClients,
@@ -24,6 +35,7 @@ import {
 
 const listMock = vi.mocked(listVerificationClients);
 const detailMock = vi.mocked(getVerificationClientDetail);
+const attachments = vi.mocked(carrierAttachmentService);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -65,6 +77,7 @@ function clientRow(overrides: Partial<VerificationClientRow> = {}): Verification
     creditLimit: 25000,
     creditScore: 720,
     isActive: true,
+    lastTransactionAt: null,
     ...overrides,
   };
 }
@@ -168,5 +181,49 @@ describe('Verification roster — detail', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(res.statusCode).toBe(502);
+  });
+});
+
+describe('Verification roster — carrier attachments', () => {
+  it('lists attachments for a verification worker, keyed on carrier id', async () => {
+    attachments.list.mockResolvedValue([
+      {
+        id: 'cat_abc',
+        carrierId: '1001',
+        fileName: 'COI.pdf',
+        mime: 'application/pdf',
+        sizeBytes: 1200,
+        uploadedByName: 'Test Worker',
+        createdAt: '2026-08-15T00:00:00.000Z',
+      },
+    ]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/roster/1001/attachments',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ attachments: [{ id: 'cat_abc', carrierId: '1001' }] });
+    expect(attachments.list).toHaveBeenCalledWith(expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }), '1001');
+  });
+
+  it('refuses a sales worker — attachments inherit the roster audience', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/roster/1001/attachments',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(attachments.list).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-numeric carrier id so files cannot be keyed on an arbitrary path', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/roster/not-a-carrier/attachments',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(attachments.list).not.toHaveBeenCalled();
   });
 });

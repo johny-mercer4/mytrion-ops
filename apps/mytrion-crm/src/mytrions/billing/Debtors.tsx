@@ -249,9 +249,10 @@ export function Debtors() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Carrier ID or Company..."
+            aria-label="Search Carrier ID or Company"
           />
           {search ? (
-            <button className="db-search-clear" onClick={() => setSearch('')}>
+            <button type="button" className="db-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
               <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
               </svg>
@@ -346,7 +347,7 @@ export function Debtors() {
             <>
               {paginated.map((debtor) => (
                 <div className="db-row-item" key={debtor.carrierId}>
-                  <div className="db-row-main" onClick={() => setSelected(debtor)}>
+                  <button type="button" className="db-row-main" onClick={() => setSelected(debtor)}>
                     <div className="db-col-carrier db-carrier-id">{debtor.carrierId}</div>
                     <div className="db-col-company">
                       <div className="db-company-name">{debtor.company}</div>
@@ -385,7 +386,7 @@ export function Debtors() {
                     </div>
                     <div className="db-col-count db-count-text">{debtor.invoiceCount}</div>
                     <div className="db-col-remain db-money-bold">{fmtCurrency(debtor.totalRemaining)}</div>
-                  </div>
+                  </button>
                 </div>
               ))}
 
@@ -431,9 +432,9 @@ export function Debtors() {
 function DebtorModal({ debtor, onClose }: { debtor: Debtor; onClose: () => void }) {
   return (
     <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="bm-modal-box" style={{ maxWidth: 600 }}>
+      <div className="bm-modal-box" role="dialog" aria-modal="true" aria-labelledby="bm-debtor-title" style={{ maxWidth: 600 }}>
         <div className="bm-modal-header">
-          <h3 className="bm-modal-title">
+          <h3 className="bm-modal-title" id="bm-debtor-title">
             {debtor.company}
             <span
               style={{
@@ -446,7 +447,7 @@ function DebtorModal({ debtor, onClose }: { debtor: Debtor; onClose: () => void 
               #{debtor.carrierId}
             </span>
           </h3>
-          <button className="bm-modal-close" onClick={onClose}>
+          <button type="button" className="bm-modal-close" onClick={onClose} aria-label="Close">
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
             </svg>

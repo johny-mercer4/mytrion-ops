@@ -165,6 +165,17 @@ const ownedArm = (pred: string, cols: string = OWNED_COLS): string =>
         order by carrier_id, update_date desc nulls last`;
 
 /**
+ * The AGENT-AGNOSTIC `owned` CTE — every carrier, newest dim row each, no owner predicate and no
+ * binds (the predicate is the fixed literal `true`). Exported so the month-anchored loyalty export
+ * (integrations/dwhLoyaltyMonth.ts) resolves its carrier set through THIS file's dedupe: a second
+ * `distinct on (carrier_id) order by update_date desc` elsewhere is how two loyalty surfaces come to
+ * disagree on which dim row is current for a re-assigned carrier. NOT owner-filtered — every caller is
+ * a company-wide read whose route must be manager- or marketing-gated. */
+export function allCarriersCte(cols: string = OWNED_COLS): string {
+  return `owned as (${ownedArm('true', cols)})`;
+}
+
+/**
  * Build the `owned` CTE. With BOTH an id-suffix and a name available, resolve id-FIRST and fall back to
  * the name ONLY when the id arm is empty (`union all … where not exists (select 1 from id_owned)`) —
  * mirrors servercrm's by-agent and is deliberately MUTUALLY EXCLUSIVE, never `id OR name`: display
@@ -409,7 +420,7 @@ export async function fetchAgentClients(
  */
 async function runAllLoyaltyClientsQuery(): Promise<ClientDbRow[]> {
   return dwhQuery<ClientDbRow>(
-    `with owned as (${ownedArm('true')}),
+    `with ${allCarriersCte()},
      bounds as (
        select date_trunc('month', current_date) as current_start,
               date_trunc('month', current_date - interval '1 month') as previous_start,

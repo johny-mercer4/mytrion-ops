@@ -5,7 +5,7 @@
  * allowlist + casing resolution + Edit_History server-side); widget-parity per-field
  * validation gates the save. Fields the live view-model doesn't carry render '—'.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { saveApplication } from '@/api/cs';
 import { copyWithToast } from './copyToast';
@@ -106,6 +106,8 @@ export function ApplicationModal({
   onSaved: (warning?: string) => void;
 }) {
   useScrollLock();
+  const titleId = useId();
+  const fieldIdPrefix = useId();
   const boxRef = useRef<HTMLDivElement>(null);
   const [values, setValues] = useState<Record<string, string | boolean>>(() => {
     const v: Record<string, string | boolean> = {};
@@ -216,9 +218,16 @@ export function ApplicationModal({
         if (e.target === e.currentTarget) requestClose();
       }}
     >
-      <div className="cs-modal-box cs-modal-wide" ref={boxRef} tabIndex={-1}>
+      <div
+        className="cs-modal-box cs-modal-wide"
+        ref={boxRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="cs-modal-header">
-          <h3 className="cs-modal-title">
+          <h3 className="cs-modal-title" id={titleId}>
             {app.company || 'Record'}
             {(() => {
               const idValue = subTab === 'clients' ? app.carrierId : app.appId;
@@ -236,7 +245,7 @@ export function ApplicationModal({
               );
             })()}
           </h3>
-          <button className="cs-modal-close" onClick={requestClose}>
+          <button type="button" className="cs-modal-close" onClick={requestClose} aria-label="Close">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -266,12 +275,17 @@ export function ApplicationModal({
                 key={f.field}
                 className={`cs-form-field${f.type === 'textarea' ? ' cs-form-field-wide' : ''}`}
               >
-                <label className="cs-form-label">{f.label}</label>
+                {f.type !== 'readonly' && f.type !== 'boolean' ? (
+                  <label className="cs-form-label" htmlFor={`${fieldIdPrefix}-${f.field}`}>{f.label}</label>
+                ) : (
+                  <div className="cs-form-label">{f.label}</div>
+                )}
 
                 {f.type === 'readonly' ? (
                   <div className="cs-form-readonly">{readonlyText(f, app)}</div>
                 ) : f.type === 'textarea' ? (
                   <textarea
+                    id={`${fieldIdPrefix}-${f.field}`}
                     rows={3}
                     className="cs-form-input"
                     value={String(values[f.field] ?? '')}
@@ -279,6 +293,7 @@ export function ApplicationModal({
                   />
                 ) : f.type === 'picklist' ? (
                   <select
+                    id={`${fieldIdPrefix}-${f.field}`}
                     className="cs-form-input"
                     value={String(values[f.field] ?? '')}
                     onChange={(e) => set(f.field, e.target.value)}
@@ -301,6 +316,7 @@ export function ApplicationModal({
                   </label>
                 ) : (
                   <input
+                    id={`${fieldIdPrefix}-${f.field}`}
                     type={f.type === 'number' ? 'number' : 'text'}
                     step={f.type === 'number' ? 'any' : undefined}
                     className="cs-form-input"

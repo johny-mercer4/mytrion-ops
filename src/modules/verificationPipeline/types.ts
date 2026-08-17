@@ -59,7 +59,8 @@ export interface PipelineRequirementField {
   label: string;
   type: PipelineRequirementFieldType;
   required: boolean;
-  placeholder?: string;
+  /** What Verification needs in this field so the application can proceed. Never an HTML placeholder. */
+  hint?: string;
   options?: string[];
 }
 
@@ -116,6 +117,14 @@ export interface PipelineApplicant {
   mcNumber: string;
 }
 
+export interface PipelinePlaid {
+  status: string | null;
+  linkState: string | null;
+  linkUrl: string | null;
+  lastActionStatus: string | null;
+  lastActionError: string | null;
+}
+
 export interface PipelineSnapshot {
   requestId: string;
   status: string;
@@ -127,6 +136,7 @@ export interface PipelineSnapshot {
   attachments: PipelineAttachment[];
   /** Current applicant values for the edit-applicant prefill (present only for the live provider). */
   applicant?: PipelineApplicant;
+  plaid?: PipelinePlaid;
   /** Where the snapshot came from. */
   source: 'mock' | 'credit_platform';
 }
@@ -163,10 +173,10 @@ export function normalizeStageStatus(raw: string | null | undefined): PipelineSt
 /** stage_flow status (pending|ready|running|ran|approved|failed|skipped) → UI status. */
 export function normalizeStageFlowStatus(raw: string | null | undefined): PipelineStageStatus {
   const s = (raw ?? '').trim().toLowerCase();
-  if (s === 'ran' || s === 'approved') return 'done';
+  if (s === 'approved') return 'done';
   if (s === 'failed') return 'failed';
   if (s === 'skipped') return 'skipped';
-  if (s === 'running') return 'pending';
+  if (s === 'running' || s === 'ran') return 'pending';
   return 'not_started';
 }
 
@@ -186,6 +196,26 @@ export function normalizeReviewState(
   const mrs = (manualReviewStatus ?? '').trim().toLowerCase();
   if (['pending', 'claimed', 'in_progress'].includes(mrs) || st === 'REVIEW') return 'in_progress';
   return 'queued';
+}
+
+/**
+ * Zoho-only fallback when credit_platform has no request for the deal. Live `summary.state` always
+ * wins on the roster. "Declined-Prepay/Secured Only" is a CREDIT product decision (no LOC) — it
+ * still maps to `rejected` here so the "Rejected (prepay)" filter has a Zoho-side bucket when the
+ * desk has not opened a request. It is NOT proof the verification desk closed the case.
+ */
+export function deriveZohoState(input: {
+  creditDecision: string | null;
+  applicationStatus: string | null;
+  applicationId: string | null;
+}): VerificationState | null {
+  const cd = (input.creditDecision ?? '').trim().toLowerCase();
+  if (cd) {
+    if (cd.startsWith('approved')) return 'approved';
+    if (cd.startsWith('declined') || cd.includes('reject')) return 'rejected';
+  }
+  if (input.applicationId || input.applicationStatus) return 'in_progress';
+  return null;
 }
 
 /** Compact per-deal verification facts for a roster card (bulk-read; only-relevant, never raw reports/PII). */

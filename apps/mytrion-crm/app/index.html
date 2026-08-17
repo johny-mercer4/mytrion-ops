@@ -11,6 +11,10 @@
          failure. The real fix is 16px fields, which --text-input-mobile already ships. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0e1a" />
+    <!-- Telegram Mini App SDK. Unpinned on purpose: Telegram revises this file in place; a stale
+         SRI hash would break the worker CRM the next time they ship. Same posture as the carrier
+         mini-app, without copying user-scalable=no. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- Theme BEFORE first paint.
 
          ThemeProvider applies [data-theme] from a useLayoutEffect, which runs after the browser has
@@ -20,7 +24,10 @@
          before the stylesheet has anything to disagree with.
 
          Kept in sync by hand with hooks/themeContext.tsx (KEY, the 'dark' default) and theme.css
-         (--page in each block). Three literals, in the one place a build step cannot reach. -->
+         (--page in each block). Three literals, in the one place a build step cannot reach.
+
+         When the Telegram SDK is present this also calls ready()/expand() and writes --tg-inset-*
+         so the header and tab bar clear Mini App chrome on the first frame. -->
     <script>
       (function () {
         var theme = 'dark';
@@ -35,6 +42,39 @@
         document.documentElement.style.backgroundColor = page;
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.setAttribute('content', page);
+
+        var wa = window.Telegram && window.Telegram.WebApp;
+        var inside = false;
+        if (window.TelegramWebviewProxy) inside = true;
+        else if (wa) {
+          if (wa.initData && wa.initData.length > 0) inside = true;
+          else if (wa.platform && wa.platform !== 'unknown') inside = true;
+          else if (/Telegram/i.test(navigator.userAgent)) inside = true;
+        }
+        function px(n) {
+          return typeof n === 'number' && n > 0 ? Math.round(n) : 0;
+        }
+        var root = document.documentElement;
+        if (inside && wa) {
+          root.setAttribute('data-telegram', 'true');
+          try { wa.ready(); } catch (e) {}
+          try { wa.expand(); } catch (e) {}
+          try { if (wa.disableVerticalSwipes) wa.disableVerticalSwipes(); } catch (e) {}
+          try {
+            if (wa.setHeaderColor) wa.setHeaderColor(page);
+            if (wa.setBackgroundColor) wa.setBackgroundColor(page);
+            if (wa.setBottomBarColor) wa.setBottomBarColor(page);
+          } catch (e) {}
+          var safe = wa.safeAreaInset || {};
+          var content = wa.contentSafeAreaInset || {};
+          root.style.setProperty('--tg-inset-top', px(safe.top) + px(content.top) + 'px');
+          root.style.setProperty('--tg-inset-bottom', px(safe.bottom) + px(content.bottom) + 'px');
+          root.style.setProperty('--tg-inset-left', px(safe.left) + px(content.left) + 'px');
+          root.style.setProperty('--tg-inset-right', px(safe.right) + px(content.right) + 'px');
+        } else {
+          root.style.setProperty('--tg-inset-top', '0px');
+          root.style.setProperty('--tg-inset-bottom', '0px');
+        }
       })();
     </script>
     <!-- data: URI — Vite base './' rewrites /favicon.svg → ./favicon.svg, which 404s on
@@ -75,8 +115,8 @@
       type="font/woff2"
       crossorigin
     />
-    <script type="module" crossorigin src="./assets/index-BXo7Yuc_.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-fiJcEjJH.css">
+    <script type="module" crossorigin src="./assets/index-U8AzViLP.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Dm2fhxcn.css">
   </head>
   <body>
     <div id="root"></div>

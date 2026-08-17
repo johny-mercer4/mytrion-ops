@@ -1,13 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { deliverBlob, requestBlob } = vi.hoisted(() => ({
-  deliverBlob: vi.fn(),
+const { deliverExport, requestBlob } = vi.hoisted(() => ({
+  deliverExport: vi.fn(),
   requestBlob: vi.fn(),
 }));
 
 vi.mock('@/api/transport', () => ({ requestBlob }));
-vi.mock('./txnExportLibs', () => ({ deliverBlob }));
+vi.mock('@/lib/deliverExport', () => ({ deliverExport }));
 
 import { AutoCardLookupPanel } from './AutoCardLookupPanel';
 
@@ -45,7 +45,7 @@ describe('AutoCardLookupPanel', () => {
       '/sales/cards/report?carrierId=5762018&companyName=ONZMOVE+INC&format=xlsx',
       { timeoutMs: 60_000 },
     ));
-    expect(deliverBlob).toHaveBeenCalledWith(
+    expect(deliverExport).toHaveBeenCalledWith(
       expect.any(Blob),
       expect.stringMatching(/^Octane_Card_Lookup_\d{4}-\d{2}-\d{2}\.xlsx$/),
     );

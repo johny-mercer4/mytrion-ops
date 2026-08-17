@@ -1,5 +1,22 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Where unit tests point Postgres.
+ *
+ * CI exports `MYTRION_OPS_DATABASE_URL` for its own pg service (port 5432), so an existing value
+ * always wins. The fallback is what matters locally: without it, tests inherit the developer's
+ * `.env`, which points at **Render production in Oregon** — and route suites resolve a session
+ * through the database, so the first test in each file paid a real cross-country round trip.
+ * Measured: 4.4s to 7.2s against a 5s default timeout, i.e. a coin flip, and the cause of
+ * intermittent failures that look like they belong to whatever feature was last touched.
+ *
+ * Same reasoning as the FF_ZOHO_MCP_ENABLED pin below: a unit run must not depend on a network
+ * service answering quickly.
+ */
+const TEST_DATABASE_URL =
+  process.env.MYTRION_OPS_DATABASE_URL ??
+  'postgresql://octane:octane@localhost:5433/octane_assistant';
+
 export default defineConfig({
   test: {
     globals: true,
@@ -12,6 +29,8 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
+      MYTRION_OPS_DATABASE_URL: TEST_DATABASE_URL,
+      DATABASE_URL: TEST_DATABASE_URL,
       FF_FILES_ENABLED: '0',
       FF_ORCHESTRATOR_ENABLED: '0',
       FF_DEEP_AGENTS_ENABLED: '0',
@@ -59,6 +78,19 @@ export default defineConfig({
       // which is the only version of "green locally" worth trusting before opening a PR.
       API_KEY: 'test-secret-key',
       BILLING_INGEST_SECRET: 'test-ingest-secret',
+      // Horizon worker-CRM bot — pinned so a developer .env cannot leak a real token into HMAC
+      // tests, and so the webhook secret is a known value. Distinct from TELEGRAM_* on purpose.
+      HORIZON_BOT_TOKEN: 'horizon-test-token',
+      HORIZON_BOT_SECRET: 'horizon-test-secret',
+      HORIZON_BOT_USERNAME: 'horizon_test_bot',
+      HORIZON_MINI_APP_URL: 'https://example.test/main',
+      // The two that `buildHorizonOpenUrl()` branches on BEFORE falling back to the URL above. Left
+      // unpinned they came from the developer's .env, so "no short name is set" was only true on
+      // machines that happened not to set one: green in CI, red locally, for a reason nothing on
+      // screen explains. Same class as the FF_ZOHO_MCP_ENABLED note above. A suite that needs
+      // either branch sets it at runtime and restores to this baseline.
+      HORIZON_MINI_APP_SHORT_NAME: '',
+      HORIZON_MINI_APP_DIRECT: '',
     },
     coverage: {
       provider: 'v8',

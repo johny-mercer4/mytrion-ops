@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { callTouchpointMock, requestMock, requestBlobMock } = vi.hoisted(() => ({
+const { callTouchpointMock, requestMock, requestBlobMock, requestMultipartMock, isTelegramWebView } = vi.hoisted(() => ({
   callTouchpointMock: vi.fn(),
   requestMock: vi.fn(),
   requestBlobMock: vi.fn(),
+  requestMultipartMock: vi.fn(),
+  isTelegramWebView: vi.fn(() => false),
 }));
 
 vi.mock('@/api/touchpoints', () => ({
@@ -13,6 +15,15 @@ vi.mock('@/api/touchpoints', () => ({
 vi.mock('@/api/transport', () => ({
   request: requestMock,
   requestBlob: requestBlobMock,
+  requestMultipart: requestMultipartMock,
+}));
+
+vi.mock('@/telegram/webApp', () => ({
+  isTelegramWebView,
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 import { AUTO_LIST, loadCards, type Automation, type Card, type Deal } from './autoLive';
@@ -163,8 +174,12 @@ describe('live EFS card state', () => {
         return {
           company_name: 'Divergent',
           is_active: true,
+          account_type: 'LOC',
+          payment_terms: 'Weekly',
+          efs_balance: 1250.5,
+          credit_limit: 8000,
           cards: { count: 4, active_count: 0 },
-          cmp_debt: { total_debt: 0 },
+          cmp_debt: { total_debt: 0, invoice_count: 0, max_debt_days: 0, worst_status: 'PAID' },
         };
       }
       if (key === 'efs.cards') {
@@ -179,8 +194,24 @@ describe('live EFS card state', () => {
     });
 
     await expect(runAutomation(input(action('account-status')))).resolves.toEqual({
-      kind: 'message',
-      message: 'Divergent: account active, 1 active cards, open debt $0.',
+      kind: 'account-status',
+      result: {
+        companyName: 'Divergent',
+        isActive: true,
+        accountType: 'LOC',
+        paymentTerms: 'Weekly',
+        efsBalance: '$1,250.50',
+        weeklyLimit: '$8,000.00',
+        totalDebt: '$0',
+        debtInvoiceCount: '0',
+        maxDebtDays: '0 days',
+        worstStatus: 'PAID',
+        isHardDebtor: false,
+        activeCards: 1,
+        totalCards: 2,
+        cardsLive: true,
+        notices: [],
+      },
     });
     expect(callTouchpointMock).toHaveBeenCalledWith('efs.cards', { carrierId: deal.carrier });
   });
@@ -200,9 +231,54 @@ describe('live EFS card state', () => {
     });
 
     await expect(runAutomation(input(action('account-status')))).resolves.toEqual({
-      kind: 'message',
-      message: 'Divergent: account active, 2 active cards, open debt $0.',
+      kind: 'account-status',
+      result: {
+        companyName: 'Divergent',
+        isActive: true,
+        accountType: '',
+        paymentTerms: '',
+        efsBalance: '—',
+        weeklyLimit: '—',
+        totalDebt: '$0',
+        debtInvoiceCount: '—',
+        maxDebtDays: '—',
+        worstStatus: '',
+        isHardDebtor: false,
+        activeCards: 2,
+        totalCards: 4,
+        cardsLive: false,
+        notices: [
+          'Live EFS card roster unavailable — card counts come from the warehouse and may lag.',
+        ],
+      },
     });
+  });
+
+  it('returns the three balance blocks, and a dash where a prepay account has no line', async () => {
+    callTouchpointMock.mockResolvedValue({
+      company_name: 'Divergent',
+      efs_balance: 1250.5,
+      credit_remaining: 3200,
+      credit_limit: null,
+      account_type: 'Prepay',
+      payment_terms: 'Prepay',
+    });
+
+    await expect(runAutomation(input(action('balance')))).resolves.toEqual({
+      kind: 'balance',
+      result: {
+        companyName: 'Divergent',
+        efsBalance: '$1,250.50',
+        availableLimit: '$3,200.00',
+        weeklyLimit: '—',
+        creditUsed: '—',
+        accountType: 'Prepay',
+        paymentTerms: 'Prepay',
+        billingCycle: '',
+        efsError: '',
+      },
+    });
+    expect(callTouchpointMock).toHaveBeenCalledWith('dwh.carrier_balance', { carrierId: deal.carrier });
   });
 
   it('keeps live EFS status and reads the DWH last_used_date fallback', async () => {
@@ -307,6 +383,117 @@ describe('C-20 request invoices', () => {
   });
 });
 
+describe('C-18 check payment information', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('shows CMP amounts to the cent and does not call a part-paid invoice Paid', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') {
+        return {
+          invoices: { count: 13, totals: { total_billed: 384_817.4, total_paid: 341_320.57, open_balance: 43_496.83 } },
+          payments: { count: 26, total_amount: 340_174.11 },
+        };
+      }
+      return {
+        invoices: [
+          // CMP's own numbers contradict its status string — this is carrier 5815660's invoice.
+          { id: 1, invoiceNumber: '178238', status: 'PAID', totalAmount: 43_495.62, totalPaid: 10_000, remainingAmount: 33_495.62 },
+          { id: 2, invoiceNumber: '176639', status: 'PAID', totalAmount: 53_026.51, totalPaid: 53_026.51, remainingAmount: 0 },
+          { id: 3, invoiceNumber: '176640', status: 'PAID', totalAmount: 1_200, totalPaid: 0, remainingAmount: 1_200 },
+        ],
+      };
+    });
+
+    const out = await runAutomation(input(action('payments')));
+    if (out.kind !== 'payments') throw new Error(`expected payments, got ${out.kind}`);
+
+    // Exact to the cent — 43,495.62 must not read as 43,496.
+    expect(out.cmpInvoices[0]).toMatchObject({
+      invoiceNumber: '178238',
+      status: 'Partially Paid',
+      total: '$43,495.62',
+      paid: '$10,000.00',
+      remaining: '$33,495.62',
+    });
+    expect(out.cmpInvoices[1]).toMatchObject({ status: 'Paid', total: '$53,026.51' });
+    // Nothing paid at all is Pending, not "Partially Paid".
+    expect(out.cmpInvoices[2]).toMatchObject({ status: 'Pending' });
+    expect(out.summary).toEqual({
+      invoiceCount: '13',
+      totalBilled: '$384,817.40',
+      totalPaid: '$341,320.57',
+      openBalance: '$43,496.83',
+      paymentCount: '26',
+    });
+    // "Payments total" is gone — "Total paid" is the number the team reads.
+    expect(out.summary && 'paymentsTotal' in out.summary).toBe(false);
+  });
+});
+
+describe('C-18 merges the two CMP invoice sources', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('takes status and total from clients.invoices, paid/remaining from the Deluge', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') return {};
+      if (key === 'carrier.check_payment') {
+        return {
+          invoices: [
+            { id: 1, invoiceNumber: '178238', status: 'PAID', totalAmount: 43_496, totalPaid: 10_000, remainingAmount: 33_495.62 },
+          ],
+        };
+      }
+      return {
+        data: [
+          { id: 1, invoice_number: '178238', status: 'PARTIALLY_PAID', total_amount: 43_495.62 },
+          { id: 9, invoice_number: '178901', status: 'PENDING', total_amount: 900.25 },
+        ],
+      };
+    });
+
+    const out = await runAutomation(input(action('payments')));
+    if (out.kind !== 'payments') throw new Error(`expected payments, got ${out.kind}`);
+
+    expect(out.cmpInvoices).toEqual([
+      {
+        id: '1',
+        invoiceNumber: '178238',
+        status: 'Partially Paid',
+        total: '$43,495.62',
+        paid: '$10,000.00',
+        remaining: '$33,495.62',
+      },
+      // Live-only invoice: the Deluge never returned it, and it is still a real invoice.
+      { id: '9', invoiceNumber: '178901', status: 'Pending', total: '$900.25', paid: '$0.00', remaining: '$0.00' },
+    ]);
+  });
+
+  it('renders on one source when the other fails, and only errors when both do', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') return {};
+      if (key === 'carrier.check_payment') throw new Error('Deluge timeout');
+      return { data: [{ id: 4, invoice_number: '178300', status: 'PAID', total_amount: 10 }] };
+    });
+    const ok = await runAutomation(input(action('payments')));
+    if (ok.kind !== 'payments') throw new Error(`expected payments, got ${ok.kind}`);
+    expect(ok.cmpError).toBeUndefined();
+    expect(ok.cmpInvoices).toHaveLength(1);
+
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') return {};
+      throw new Error('CMP unreachable');
+    });
+    const bad = await runAutomation(input(action('payments')));
+    if (bad.kind !== 'payments') throw new Error(`expected payments, got ${bad.kind}`);
+    expect(bad.cmpError).toBe('CMP unreachable');
+    expect(bad.cmpInvoices).toEqual([]);
+  });
+});
+
 describe('invoice download', () => {
   const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 
@@ -314,6 +501,8 @@ describe('invoice download', () => {
     callTouchpointMock.mockReset();
     requestMock.mockReset();
     requestBlobMock.mockReset();
+    requestMultipartMock.mockReset();
+    isTelegramWebView.mockReturnValue(false);
     anchorClick.mockClear();
     // jsdom ships no object-URL implementation; deliverBlob needs both halves.
     URL.createObjectURL = vi.fn(() => 'blob:mock');
@@ -363,5 +552,23 @@ describe('invoice download', () => {
     );
     expect(requestBlobMock).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith('https://servercrm.example/signed?token=abc', '_blank', 'noopener');
+  });
+
+  it('sends the invoice to Horizon inside Telegram WebView instead of downloading', async () => {
+    isTelegramWebView.mockReturnValue(true);
+    window.MytrionDownload = { deliverBlob: vi.fn(), isMobileWebView: () => true };
+    requestBlobMock.mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+    requestMultipartMock.mockResolvedValue({ ok: true, sent: true });
+
+    await downloadInvoice('100', 'pdf', 'INV/100', '12345');
+
+    expect(requestBlobMock).toHaveBeenCalledWith('/sales/invoices/100/pdf?carrierId=12345');
+    expect(requestMultipartMock).toHaveBeenCalledWith(
+      '/horizon/telegram/export-send',
+      expect.any(FormData),
+      expect.objectContaining({ impersonate: false }),
+    );
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(anchorClick).not.toHaveBeenCalled();
   });
 });

@@ -206,6 +206,13 @@
   --dur-fast: 120ms;
   --dur-base: 170ms;
   --dur-slow: 220ms;
+  /* Named duration ladder for mobile sheets / lists (Horizon Telegram sprint).
+     --dur-* stays the 220ms ceiling for general UI; --duration-moderate is the sheet travel. */
+  --duration-instant: 50ms;
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-moderate: 300ms;
+  --duration-slow: 400ms;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
@@ -245,7 +252,12 @@
      that lives OUTSIDE the shell (RingCentralPhone mounts in WorkerLayout), which is why it is
      declared on :root and not on .shell. */
   --layout-bottombar-h: 0px;
-  --layout-safe-b: env(safe-area-inset-bottom, 0px);
+  --tg-inset-top: 0px;
+  --tg-inset-bottom: 0px;
+  --tg-inset-left: 0px;
+  --tg-inset-right: 0px;
+  --layout-safe-t: max(env(safe-area-inset-top, 0px), var(--tg-inset-top));
+  --layout-safe-b: max(env(safe-area-inset-bottom, 0px), var(--tg-inset-bottom));
   --layout-bottom-inset: calc(var(--layout-bottombar-h) + var(--layout-safe-b));
 
   /* ── Icon ───────────────────────────────────────────────────────────────────

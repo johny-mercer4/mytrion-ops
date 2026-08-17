@@ -17,6 +17,8 @@ import { HrSelect, type HrSelectOption } from './HrSelect';
 import { useHrDirectory } from './hrData';
 import { HrBusy } from './HrBits';
 import { tashkentToday } from './attendanceTime';
+import { deliverExport } from '@/lib/deliverExport';
+import { isTelegramWebView } from '@/telegram/webApp';
 
 /**
  * Only +5 zones are offered: every punch is bucketed, classified and formatted against a fixed
@@ -33,19 +35,8 @@ function addDays(iso: string, delta: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-function downloadCsv(csv: string, filename: string): void {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  // Safari (and some Firefox builds) only fetch the object URL for an in-document anchor, and
-  // fetch it after this tick — revoking synchronously made the download a silent no-op.
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+async function downloadCsv(csv: string, filename: string): Promise<void> {
+  await deliverExport(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
 }
 
 export function HrAttendanceSettings() {
@@ -168,8 +159,10 @@ export function HrAttendanceSettings() {
         to: exportTo,
         employeeId: exportEmpId,
       });
-      downloadCsv(csv, filename);
-      setExportMessage(`Downloaded ${filename}.`);
+      await downloadCsv(csv, filename);
+      setExportMessage(
+        isTelegramWebView() ? 'Sent — check your Horizon bot chat' : `Downloaded ${filename}.`,
+      );
     } catch (err) {
       setExportError(err instanceof Error ? err.message : String(err));
     } finally {

@@ -60,7 +60,7 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — role is re-derived from the profile at verify
-    worker: { zohoUserId, userName: 'Robiya', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 
@@ -192,6 +192,22 @@ describe('inbox messages — list (owner-scoped)', () => {
   it('rejects unauthenticated access', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1/inbox/messages' });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('forwards tag=verification to the owner-scoped list and counts', async () => {
+    const token = await workerToken('Verification', '42');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/inbox/messages?tag=verification',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(repo.listForOwner).toHaveBeenCalledWith(
+      expect.anything(),
+      '42',
+      expect.objectContaining({ tag: 'verification' }),
+    );
+    expect(repo.countsForOwner).toHaveBeenCalledWith(expect.anything(), '42', undefined, 'verification');
   });
 
   it('a worker lists ONLY their own inbox — an owner_id override is ignored', async () => {

@@ -137,10 +137,15 @@ describe('breakpoint ladder', () => {
         if (!LADDER.has(value)) offenders.push(`${where}  ${value}px`);
       }
     }
+    // 72 -> 70 merging feature/billing-cs-mobile-view into the origin/build baseline: CS's
+    // `shared-responsive.css` carried a 380px block and a 768px block that between them held nothing
+    // but four empty rules, so deleting them removed two off-ladder values outright.
+    // 70 -> 69: verification CSS dropped one off-ladder value.
+    // 69 -> 68: the profile modal's 560px block moved onto the 640 structure line.
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      78,
+      68,
     );
   });
 
@@ -152,10 +157,14 @@ describe('breakpoint ladder', () => {
     for (const { line, where } of mediaLines()) {
       if (/(?:max-width|min-width)\s*:\s*\d+px/.test(line)) offenders.push(where);
     }
+    // 92 -> 89 on the same merge: CS's phone sheet was rewritten onto range syntax as part of giving
+    // CS a phone layer at all, so its three `max-width` blocks (768/640/380) are gone.
+    // 89 -> 88: verification CSS converted one more block to range syntax.
+    // 88 -> 87: the profile modal's block became `(width < 640px)`.
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      99,
+      87,
     );
   });
 });
@@ -166,7 +175,10 @@ describe('fixed tracks — the things that cannot fit a phone', () => {
   it('does not add a CSS min-width in px', () => {
     // 74 -> 76 on the merge of origin/build (PR #166, CS Applications sort/filter). Neither is a
     // live defect: one is a 16px badge dot, the other a 150px filter field inside a wrapping row.
-    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 76);
+    // 76 -> 75: the Card Activity tooltip now has a fixed `width` its edge clamp can reason about,
+    // so its `min-width` went away.
+    // 75 -> 74: Billing phone sheets dropped `.bm-table { min-width: 480px }`.
+    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 74);
   });
 
   it('does not add an inline minWidth in TSX', () => {
@@ -216,7 +228,8 @@ describe('viewport units', () => {
   // that must not be covered. Not a blind codemod — `dvh` re-lays-out on every URL-bar frame, which
   // is the wrong trade for a 400-row table.
   it('does not add a bare vh', () => {
-    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 26);
+    // 26 -> 25: Billing phone sheets use 96dvh instead of a 16vh overlay gutter.
+    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 25);
   });
 
   /**
@@ -261,7 +274,7 @@ describe('touch', () => {
         if (sample.length < 8) sample.push(at(file, m.index, text));
       }
     }
-    expectBudget('reveal-on-hover rules without a `(hover: none)` reset', { count, sample }, 148);
+    expectBudget('reveal-on-hover rules without a `(hover: none)` reset', { count, sample }, 147);
   });
 
   it('does not add a font-size to an input outside the style layer', () => {
@@ -290,7 +303,8 @@ describe('touch', () => {
     // 43 -> 44 on the merge of origin/build: `.cs-app-sort select.cs-form-input` at 13px. Not a live
     // defect — the !important guard in global.css already beats it below the density line. It is
     // counted because it is one more rule that guard has to fight.
-    expectBudget('`font-size` on an input outside styles/ and ds/', { count, sample }, 44);
+    // 44 -> 43: verification search/sort fields dropped `font-size` (inherit from the style layer).
+    expectBudget('`font-size` on an input outside styles/ and ds/', { count, sample }, 43);
   });
 });
 

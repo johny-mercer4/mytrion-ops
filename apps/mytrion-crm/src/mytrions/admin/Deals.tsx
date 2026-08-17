@@ -479,7 +479,7 @@ export function Deals() {
       ) : null}
 
       <div className={s.dealsLayout}>
-          <div className={s.tableScroll} aria-busy={loading}>
+          <div className={s.tableScroll} data-table-scroller aria-busy={loading}>
             <div className={s.table}>
               {recoveryMode ? (
                 <div className={`${s.tHead} ${s.tDealsRecovery}`}>

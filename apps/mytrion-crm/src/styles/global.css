@@ -8,6 +8,7 @@
 /* Horizon after theme.css so the atmosphere and elevation win over the base scale. */
 @import './horizon.css';
 @import './responsive-tables.css';
+@import './workspace-touch.css';
 
 /* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
    `text-muted-foreground`, `bg-tint-good-bg`, etc. resolve to the same values the CSS-Modules
@@ -343,6 +344,11 @@ button {
     --dur-fast: 0.01ms;
     --dur-base: 0.01ms;
     --dur-slow: 0.01ms;
+    --duration-instant: 0.01ms;
+    --duration-fast: 0.01ms;
+    --duration-normal: 0.01ms;
+    --duration-moderate: 0.01ms;
+    --duration-slow: 0.01ms;
     --hz-hover-lift-sm: none;
     --lift-1: none;
     --lift-2: none;
@@ -457,10 +463,20 @@ html.theme-vt::view-transition-new(root) {
     overflow: hidden;
   }
 
+  html[data-telegram],
+  html[data-telegram] body,
+  html[data-telegram] #root {
+    height: var(--tg-viewport-stable-height, 100dvh);
+  }
+
   body {
     /* No rubber-band past the ends, and no blue flash under a thumb that rests on a label. */
     overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  html[data-telegram] body {
+    overscroll-behavior: none;
   }
 }
 

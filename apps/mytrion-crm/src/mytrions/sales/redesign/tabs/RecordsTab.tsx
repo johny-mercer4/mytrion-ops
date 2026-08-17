@@ -6,6 +6,7 @@
  * Clients use the owner-scoped DWH roster; pipeline tabs use Zoho CRM; Money Codes use Ops DB.
  */
 import { useMemo, useState } from 'react';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { badge, NAV_DESC, type BadgeVM } from '../salesData';
@@ -42,6 +43,7 @@ import {
 import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { compareClients } from '../clientSort';
 import { getImpersonation } from '@/api/impersonation';
+import { isMiniAppPilotAgent } from '../miniAppPilot';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
 import { ClientLoyaltyComparison } from '../ClientLoyaltyComparison';
@@ -312,6 +314,9 @@ export function RecordsTab() {
 
   // Cache keyed per acted-as agent so an admin's "view-as" switch doesn't cross-contaminate books.
   const actAs = getImpersonation()?.zohoUserId ?? 'self';
+  // Rollout gate. Not a disabled button: outside the pilot there is nothing to enable, and a dead
+  // "Mini-app unavailable" on every card would read as "these clients are ineligible".
+  const miniAppPilot = isMiniAppPilotAgent();
   // SWR-cached: Clients loads eagerly; CRM tabs load lazily on first open, then paint instantly from
   // cache on re-entry while revalidating in the background (no blank loader on tab switch / refresh).
   const recsLoad = useCachedLoad(`sales:clients:${actAs}`, loadRecords);
@@ -320,6 +325,7 @@ export function RecordsTab() {
   const rejLoad = useCachedLoad(`sales:rejections:${actAs}`, loadRejections, { enabled: dcSub === 'rejections' });
 
   const q = search[dcSub].toLowerCase();
+  const phone = useIsPhone();
   const showView = dcSub === 'leads' || dcSub === 'deals';
   const view = dcSub === 'deals' ? dealView : leadView;
   const setView = (v: PipeView): void => (dcSub === 'deals' ? setDealView(v) : setLeadView(v));
@@ -470,7 +476,7 @@ export function RecordsTab() {
             options={[{ v: 'all', label: 'All stages' }, ...DEAL_STAGE_ORDER.map((st) => ({ v: st, label: st }))]}
           />
         )}
-        {showView && (
+        {showView && !phone && (
           <SalesSubTabs
             items={VIEW_TABS}
             value={view}
@@ -554,6 +560,7 @@ export function RecordsTab() {
                   accountActiveCards={c.active}
                   owed={c.owed}
                 />
+                {miniAppPilot && (
                 <button
                   type="button"
                   disabled={!c.miniAppEligible || launchingCarrier === c.id}
@@ -568,6 +575,7 @@ export function RecordsTab() {
                   <Icon name={launchingCarrier === c.id ? 'refresh' : 'link'} size={14} />
                   {launchingCarrier === c.id ? 'Opening mini-app…' : c.miniAppEligible ? 'View mini-app' : 'Mini-app unavailable'}
                 </button>
+                )}
               </div>
             ))}
           </div>
@@ -585,7 +593,7 @@ export function RecordsTab() {
           emptyMsg="New leads land here as soon as they are assigned to you."
           skeleton={
             <SalesBodySkeleton
-              variant={leadView === 'kanban' ? 'board' : 'table'}
+              variant={phone ? 'rows' : leadView === 'kanban' ? 'board' : 'table'}
               label="leads"
               cols={5}
             />
@@ -605,7 +613,7 @@ export function RecordsTab() {
           emptyMsg="Deals appear here once a lead converts."
           skeleton={
             <SalesBodySkeleton
-              variant={dealView === 'kanban' ? 'board' : 'table'}
+              variant={phone ? 'rows' : dealView === 'kanban' ? 'board' : 'table'}
               label="deals"
               cols={5}
             />
@@ -623,7 +631,7 @@ export function RecordsTab() {
           emptyIcon="rejections"
           emptyTitle="No card declines"
           emptyMsg="Nothing has been declined for your clients yet."
-          skeleton={<SalesBodySkeleton variant="table" label="rejection reports" cols={5} />}
+          skeleton={<SalesBodySkeleton variant={phone ? 'rows' : 'table'} label="rejection reports" cols={5} />}
         >
           <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} onOpen={setOpenRejection} />
         </Gate>

@@ -15,6 +15,8 @@ import { copyToClipboard } from './carrierUserUtil';
 import { ClientCombobox } from './ClientCombobox';
 import { RadioToggleGroup } from './RadioToggleGroup';
 import { adminToast } from './toast';
+import { Drawer } from '@/ds';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import s from './admin.module.css';
 
 /** Seed values for a fresh link — used to reissue an invite that expired or was cancelled. */
@@ -34,7 +36,17 @@ export interface InviteDraft {
  * profiles; a driver additionally picks the one active fuel card the invite is for, listed
  * straight from servercrm.
  */
-export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated: () => void; initial?: InviteDraft }) {
+export function CarrierUserForm({
+  onInviteCreated,
+  initial,
+  onClose,
+}: {
+  onInviteCreated: () => void;
+  initial?: InviteDraft;
+  onClose?: () => void;
+}) {
+  const phone = useIsPhone();
+
   const [profile, setProfile] = useState<CarrierProfile>(initial?.profile ?? 'owner');
   const [picked, setPicked] = useState<DwhClient | null>(null);
   // A reissued draft opens straight into manual entry: its ids came from the dead invite, not from
@@ -254,7 +266,7 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
     else adminToast.error('Copy failed — select the link in the field', url, 15000);
   }
 
-  return (
+  const form = (
     <form className={`${s.card} ${s.cardPad} ${s.formSteps}`} onSubmit={(e) => void generateInvite(e)}>
       {/* Step 1 — account type */}
       <div className={s.formStep}>
@@ -551,4 +563,13 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
       )}
     </form>
   );
+
+  if (phone) {
+    return (
+      <Drawer open onClose={() => onClose?.()} title="New registration link" size="lg">
+        {form}
+      </Drawer>
+    );
+  }
+  return form;
 }

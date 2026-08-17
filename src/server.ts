@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { env } from './config/env.js';
+import { databaseHost, env } from './config/env.js';
 import { assertRuntimeSecrets } from './config/envRuntime.js';
 import { closeDb } from './db/client.js';
 import { closeCmpTunnel } from './integrations/cmpTunnel.js';
@@ -11,6 +11,7 @@ import {
   sweepStalePresenceOnBoot,
 } from './modules/realtime/presence.js';
 import { jobsEnabled, startJobs, stopJobs } from './modules/jobs/boss.js';
+import { ensureHorizonWebhook } from './integrations/telegramHorizonBot.js';
 
 // Last-resort guards (incident 2026-07-13: Render Postgres went into recovery and a background
 // promise rejection killed the process). A rejection outside a request handler — background
@@ -62,7 +63,16 @@ async function main(): Promise<void> {
   const app = await buildApp();
 
   await listenDualStack(app);
-  logger.info({ port: env.PORT, env: env.NODE_ENV }, 'octane-assistant API listening');
+  logger.info(
+    {
+      port: env.PORT,
+      env: env.NODE_ENV,
+      dbHost: databaseHost(),
+    },
+    'octane-assistant API listening',
+  );
+  // Horizon bot only — never setWebhook on TELEGRAM_BOT_TOKEN (that would kill agent-gateway polling).
+  await ensureHorizonWebhook();
 
   // Background jobs: 'inline' runs workers in-process (single Render service);
   // 'send-only' boots boss for enqueueing only (a dedicated dist/worker.js executes).

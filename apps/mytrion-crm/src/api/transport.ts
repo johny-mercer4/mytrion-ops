@@ -234,9 +234,14 @@ export async function requestMultipart(
 /** GET a binary response (attachment download) as a Blob, with the same auth + 401-refresh. */
 export async function requestBlob(
   path: string,
-  opts: { headers?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: {
+    headers?: Record<string, string>;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    query?: RequestOptions['query'];
+  } = {},
 ): Promise<Blob> {
-  const url = buildUrl(path);
+  const url = buildUrl(path, opts.query);
   const doFetch = (): Promise<Response> =>
     fetchWithTimeout(
       url,
@@ -270,7 +275,7 @@ export async function requestBlob(
 }
 
 export async function request(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {
@@ -297,7 +302,7 @@ export async function request(
 }
 
 async function requestOnce(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions,
 ): Promise<unknown> {

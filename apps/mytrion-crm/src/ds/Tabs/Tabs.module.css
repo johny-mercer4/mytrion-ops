@@ -18,16 +18,30 @@
      on the first, last or bottom edge of a tab would be sliced off. Derived from the focus tokens
      rather than picked, so it stays correct if the ring ever gets thicker. */
   --tabs-ring-pad: calc(var(--focus-ring-offset) + var(--focus-ring-width));
+
+  /*
+   * The seam between the rail and its panel.
+   *
+   * There was none: the panel sat flush against the tabs, so a field label rendered directly under
+   * the selected-tab indicator and the control read as part of the content. Its one consumer that
+   * noticed compensated with a local `padding-block-start` on `[role=tabpanel]` — a workaround for
+   * a gap the component should own, which is why this lives here and that override is gone.
+   *
+   * Scaled with the control, like `--tabs-h`: a 28px rail wants a tighter seam than a 36px one.
+   */
+  gap: var(--tabs-gap);
 }
 
 /* ── Size ───────────────────────────────────────────────────────────────────── */
 .root[data-size='md'] {
   --tabs-h: 36px;
   --tabs-px: var(--space-3);
+  --tabs-gap: var(--space-4);
 }
 .root[data-size='sm'] {
   --tabs-h: 28px;
   --tabs-px: var(--space-2);
+  --tabs-gap: var(--space-3);
 }
 
 /* ── The rail ────────────────────────────────────────────────────────────────
@@ -119,7 +133,14 @@
 /* ── Variant: line (default) ─────────────────────────────────────────────────
    The hairline lives on the ROOT, not on the scroller, so it spans the full container width while
    the tabs scroll inside it — a rail that scrolled away with its tabs would read as a broken box. */
-.root[data-variant='line'] {
+/*
+ * The hairline is the RAIL's bottom edge, not the component's.
+ *
+ * It used to sit on `.root`, which contains the rail AND the panel — so it painted a rule under the
+ * panel's last line of content instead, and the selected-tab indicator (positioned to sit "flush on
+ * top of the hairline") had nothing beneath it. Two visible defects from one misplaced border.
+ */
+.root[data-variant='line'] .list {
   border-block-end: 1px solid var(--border-subtle);
 }
 .root[data-variant='line'] .tab[data-state='selected'] {

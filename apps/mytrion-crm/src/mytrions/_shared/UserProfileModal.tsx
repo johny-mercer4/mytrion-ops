@@ -77,13 +77,26 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // The employee tab is only offered once we know there IS a record. Showing a tab that resolves to
-  // "not linked" teaches the user the tab is broken.
+  /**
+   * The employee tab is offered once we know there IS a record — but the SLOT is held while we find
+   * out, disabled. Appending a tab after the fetch resolved moved the whole strip under the
+   * pointer; a user who had already reached for "Account" got a different target.
+   *
+   * It carried a `count: 9` badge, which read as nine things needing attention. It was the number of
+   * read-only fields.
+   */
+  const loadingEmployee = employee === undefined;
   const hasEmployee = Boolean(employee);
   const items = [
-    { value: 'account', label: 'Account', ...(hasEmployee ? {} : { title: 'Your Zoho sign-in' }) },
-    ...(hasEmployee
-      ? [{ value: 'employee' as const, label: 'Employee record', count: 9 }]
+    { value: 'account', label: 'Account' },
+    ...(hasEmployee || loadingEmployee
+      ? [
+          {
+            value: 'employee' as const,
+            label: 'Employee record',
+            ...(loadingEmployee ? { disabled: true, title: 'Looking for your HR record…' } : {}),
+          },
+        ]
       : []),
   ];
 
@@ -153,7 +166,7 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
           size="sm"
         >
           {tab === 'account' ? (
-            <>
+            <div className={styles.panel}>
               <dl className={styles.grid}>
                 <Field label="Name" value={user.userName} />
                 <Field label="Email" value={user.email} mono />
@@ -163,9 +176,9 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
               <p className={styles.hint}>
                 These come from your Zoho sign-in and cannot be edited here.
               </p>
-            </>
+            </div>
           ) : employee ? (
-            <>
+            <div className={styles.panel}>
               <dl className={styles.grid}>
                 <Field label="Employee ID" value={employee.employeeId} mono />
                 <Field label="Department" value={employee.department} />
@@ -180,11 +193,9 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
               <p className={styles.hint}>
                 Directory fields are managed by HR admins — view only from your profile.
               </p>
-            </>
+            </div>
           ) : null}
         </Tabs>
-
-        {employee === undefined ? <p className={styles.hint}>Loading employee record…</p> : null}
 
         {error ? (
           <p className={styles.error} role="alert">

@@ -41,14 +41,15 @@ export function PageShell({
   );
 }
 
-/** Every page opens the same way: uppercase kicker, 32px title, one line of description. */
+/** Every page opens the same way: optional kicker, 32px title, one line of description. */
 export function PageHead({
   kicker,
   title,
   description,
   actions,
 }: {
-  kicker: string;
+  /** Omit when the title already names the page — a kicker above it is noise. */
+  kicker?: string;
   title: string;
   description?: string | undefined;
   /** Right-aligned on the title row. Use PageAction so the pair reads as one set. */
@@ -57,7 +58,7 @@ export function PageHead({
   return (
     <header className={styles.head}>
       <div className={styles.headText}>
-        <p className={styles.kicker}>{kicker}</p>
+        {kicker ? <p className={styles.kicker}>{kicker}</p> : null}
         <h1 className={styles.title}>{title}</h1>
         {description ? <p className={styles.description}>{description}</p> : null}
       </div>

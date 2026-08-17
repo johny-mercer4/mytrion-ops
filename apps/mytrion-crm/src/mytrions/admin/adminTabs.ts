@@ -23,6 +23,7 @@ export const ADMIN_TABS = [
   { key: 'browser', label: 'Knowledge Browser', group: 'AI & Knowledge' },
 
   { key: 'access', label: 'User Management', group: 'Access' },
+  { key: 'octane-telegram-users', label: 'Octane Telegram Users', group: 'Access' },
   { key: 'permission-sets', label: 'Permission Sets', group: 'Access' },
   /**
    * Declared as ONE destination, not two. `carriers-registered` and `carriers-invites` are children
@@ -37,6 +38,8 @@ export const ADMIN_TABS = [
   { key: 'deals', label: 'Deals', group: 'CRM & Ops' },
   { key: 'escalation-routing', label: 'Escalation Routing', group: 'CRM & Ops' },
   { key: 'audit', label: 'Audit Log', group: 'CRM & Ops' },
+  { key: 'vitest-logs', label: 'Vitest Logs', group: 'CRM & Ops' },
+  { key: 'automation-logs', label: 'Automation Logs', group: 'CRM & Ops' },
   { key: 'jobs', label: 'Jobs', group: 'CRM & Ops' },
 
   { key: 'mytrion-db', label: 'Mytrion Database', group: 'Data' },

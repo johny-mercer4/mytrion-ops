@@ -15142,10 +15142,2730 @@ Two fixes, because the cause and the message were separate problems:
 it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
 answer; worth revisiting only if tabs are routinely left open through deploys.
 
-### 2026-08-14 — Today's attendance card said "No shift scheduled" for people who have a shift
+## 2026-08-12 — Card Activity tooltip parity follow-up
 
-Reported: the **Today** card in the attendance week showed `Unscheduled` / `No shift scheduled` /
-`0h 00m` even for a night worker who is on a shift. Should show the shift.
+- Replaced the fixed in-chart hover card with the CRM Mytrion interaction: a tooltip outside the
+  horizontal scroller, positioned from the rendered hovered transaction point.
+- Geometry now scales viewBox X to rendered width, subtracts `scrollLeft`, clamps visible edges, and
+  derives Y from the transaction point instead of a fixed top.
+- Restored the legacy crosshair/glow cues and added focused regression coverage for containment,
+  first/last edges, horizontal scrolling, and point-relative Y movement.
+
+### Review follow-up, same day
+
+Three things the first pass got wrong, found by reviewing the diff before opening the PR:
+
+**The tooltip could leave the card through the top.** It was anchored to `.msd-chart-activity-area`
+with only a horizontal clamp, and the plot is 110px tall while the card is ~128px — so the tallest
+day of a cycle had no room above its own point and `translateY(-100%)` pushed the card out over the
+page header. That is the same defect class as the July screenshot bug the previous comment described,
+reintroduced from the other direction. Fixed by moving the positioning boundary out to
+`.msd-chart-block` (which includes the header band) and clamping the card's bottom edge to
+`MSD_TOOLTIP_HEIGHT + gutter`. Days with room still track their point; tall days park at the top of
+the card, beside the column the horizontal clamp already tracks. `.msd-chart-activity-area` is
+deliberately no longer `position: relative` — a test asserts that, because making it relative silently
+caps the clamp at the plot's top edge again.
+
+`MSD_TOOLTIP_HEIGHT` is an over-estimate on purpose: too high parks the card a few pixels low, too
+low lets it clip out. Measuring the card instead would mean a second layout pass per hover.
+
+**Tokens had been replaced by raw hex.** `rgba(15,23,42,.92)` + a `.ss-root.light` twin + `#38bdf8`
+went back to `--hz-modal-surface` / `--glass-bd-hi` / `--accent`, which theme through the cascade and
+need no light override. The `backdrop-filter: blur(8px)` is gone too: the modal surface is already the
+glass primitive, and a second blurred layer that moves on every hover is exactly the composited-layer
+trap in `modern-web-guidance`.
+
+**The series colours disagreed with themselves.** The header legend said grey for Active/New; the
+tooltip said green and blue for the same two series. They are now one set of `--msd-series-*` vars on
+`.msd-chart-block`, consumed by the legend, the plot and the tooltip dots.
+
+Also: `min-width: Npx` budget in `breakpoints.test.ts` ratcheted 76 → 75, since the card now has a
+fixed `width` the clamp can reason about.
+
+### Then it was looked at, and the clamp was the wrong answer
+
+Screenshots of the running app killed the card-clamp above. Two things it got wrong:
+
+**The intended interaction is a tooltip that floats clear of the card**, over whatever is above it —
+not one held inside the chart. Clamping it to the card put it BELOW the point it described on a tall
+day, which is worse than the bug it fixed. The card is now `position: fixed` in viewport coordinates,
+clamped only to the window, so it cannot leave the screen and cannot be clipped by the page scroller.
+Every input is a client rect now, which also deleted the `scrollLeft` arithmetic: scrolling the chart
+sideways or scrolling the page both move `svgLeft`/`svgTop` on their own.
+
+**`position: fixed` does not mean the viewport here.** The chart sits in a glass card, and a
+`backdrop-filter` ancestor becomes the containing block for fixed descendants — so the card was
+resolving against that card's box and floated off by roughly the page's scroll offset. It is now
+portalled to the module root (`.ss-root`), which the repo's stacking rules keep free of
+transform/filter. `--msd-series-*` moved to `.ss-root` for the same reason: the portalled card is no
+longer inside `.msd-chart-block`, so vars declared there would not reach it.
+
+Worth remembering as a rule: **in this app, `position: fixed` inside a workspace card is not fixed to
+the window.** Portal to `.ss-root` (or use `ds/Dialog`, which is in the top layer) instead.
+
+**How it was verified.** 813 CRM tests pass and the geometry is unit-tested, but jsdom does no layout,
+so the placement was checked in the running app on `localhost:5173`. Not by automation: the Playwright
+browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
+no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
+signed-in browser — tooltip floating above the hovered day, clear of the chart card.
+
+## 2026-08-12 — C-18 Check Payment Information: CMP status and exact amounts
+
+Three reports from Sales, one root cause each.
+
+**"Payments total" removed.** It sat beside "Total paid" showing a different number ($340,174 vs
+$341,321) for what reads as the same thing — one is the 90-day payment ledger, the other the amount
+matched to invoices. Two totals that disagree is a support ticket, not a feature. Total paid stays.
+
+**A part-paid invoice was labelled Paid.** Two independent causes, both fixed:
+
+1. `cmpStatusBadge` relabelled anything containing "paid" as the literal string `Paid` — so
+   "Partially Paid" rendered as "Paid" no matter what CMP returned. The badge now shows CMP's own
+   label and derives only the tone, checking partial first.
+2. The invoice list came from `carrier.check_payment` (Deluge) alone, whose status string is the one
+   Sales says is wrong (carrier 5815660). C-18 now also reads `clients.invoices` — the CMP-first
+   route C-20 already trusts — and `mergeCmpInvoices` matches on invoice number, taking status and
+   total from CMP-first and paid/remaining from the Deluge, which is the only source that carries
+   them. Three calls in `Promise.allSettled`: either invoice source alone still renders the panel,
+   and `cmpError` is only raised when both fail.
+
+On top of that, `cmpInvoiceStatus` refuses to call an invoice Paid while CMP's own numbers say money
+is owed: remaining > 0 with something paid is Partially Paid, remaining > 0 with nothing paid is
+Pending. Every other status is passed through untouched, so Cancelled and Overdue keep their word.
+The money is the source of record; the string is what carriers dispute.
+
+**Amounts were rounded to whole dollars.** `money()` uses `maximumFractionDigits: 0`, so CMP's
+$43,495.62 displayed as $43,496 (carrier 5834146). Added `moneyExact` — always cents — and used it
+for every invoice amount in the automations: the C-18 invoice cards (total/paid/remaining), the C-18
+summary tiles, and the C-20 Request Invoices amount column. `money()` is untouched for dashboard
+aggregates, where cents are noise. Deliberately NOT changed: EFS balances, credit lines, money-code
+draws and fuel-transaction totals — none of those are an invoice quoted from a source of record.
+
+5 new tests (17 in `autoRunners.test.ts`, 5 in `autoLive.invoiceStatus.test.ts`); 818 CRM tests green.
+Not yet seen against the two named carriers in a signed-in browser — worth checking 5815660 (status)
+and 5834146 (cents) on the preview.
+### 2026-08-12 — Worker CRM as a Telegram Mini App (mobile + tablet)
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md. Operate refinement of the incumbent CRM — not a visual-world
+replacement, and not the carrier product in `apps/mini-app`. Branch: `feature/crm-telegram-mobile` off
+`origin/build`. No commit.
+
+**Telegram bootstrap.** `index.html` loads `telegram-web-app.js` (unpinned, same as the carrier app) and
+an inline first-paint script calls `ready()` / `expand()` / `disableVerticalSwipes()`, stamps
+`data-telegram`, and writes `--tg-inset-*`. `src/telegram/webApp.ts` re-applies on viewport / safe-area /
+theme events. Viewport stays pinch-zoomable (`user-scalable=no` is not copied). Telegram chrome is painted
+to match CRM light/dark; themeParams are not rebound onto `--accent`.
+
+**Auth.** Session was already in localStorage. OAuth *state* was sessionStorage-only — dual-written to
+localStorage now so a WebView that drops sessionStorage across the Zoho round-trip can still complete.
+Backend-signed state remains the CSRF gate. Login copy in Telegram tells the worker to stay in the
+window. **Not in this pass:** Telegram `initData` as identity. Workers remain Zoho OAuth users. If Zoho
+opens in an external browser instead of the WebView, the session will not transfer back into the Mini
+App — that needs a Bot-side return path later.
+
+**RingCentral.** Embeddable is not mounted in Telegram (iframe + WebRTC + OAuth popup). In-UI card:
+"Calling isn’t available in Telegram. Use Mytrion on a desktop browser or the RingCentral app." Desktop
+calling is unchanged. OAuth redirect URI remains
+`https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html`. On phone (non-
+Telegram) an incoming-call banner sits above `--layout-bottom-inset` and the vendor pill is lifted off
+the tab bar (`data-rc-ringing`). Sign-in/error cards dropped the 4px side-tab (craft-floor / hook).
+
+**Shell / departments.** `--layout-safe-t` / `--layout-safe-b` max env() with Telegram insets. Header
+pads the Mini App top chrome; tab bar and sheets use `--layout-safe-b`. Admin / Sales / launcher tables
+get `data-table-scroller` (horizontal scroll, sticky first+last columns under 640, `100dvh` instead of
+`100vh`). Launcher grid is 2-col below 900 and 1-col below 640 via data attributes (module CSS is hook-
+blocked). Shared MytrionShell already owns phone tab bar + More sheet, so Admin's 19 tabs are reachable.
+All workspaces that mount MytrionShell (Sales, CS, Billing, Admin, HR, Finance, Manager, Marketing, …)
+inherit the chrome.
+
+**Preview.** `pnpm dev:all` → CRM at `http://localhost:5173`. Telegram: BotFather Mini App URL pointing
+at the deployed CRM origin (`/main`), then Sign in with Zoho *in the same WebView*. Phone/tablet:
+DevTools 375 / 768, or `pnpm -C apps/mytrion-crm audit:mobile` with the API up.
+---
+
+## 2026-08-12 — Permission sets: override precedence, a real Save, and a screen verified in a browser
+
+Four asks, all on Mytrion Admin → Permission Sets.
+
+**1. Override (the one that changes semantics).** Sets were strictly additive, so "Billing — Ledger
+only" did nothing to someone whose profile default already granted Billing unscoped. That limitation
+was documented and correct, but it made scoping unusable in practice. New `override` boolean on
+`mytrion_permission_sets` (migration `0115`, hand-written and idempotent — `drizzle-kit generate`
+still emits 388 lines of already-applied tables in this repo and cannot be used).
+
+Resolution gains **Step 3.4** in `combineAccess`, after the per-user override REPLACE and before the
+deny subtraction: if any assigned set carries `override`, `allowed`, `userModes` and `allDept` are
+cleared and only the sets contribute. Deliberate limits, all pinned by tests:
+- a denied Mytrion on the user record **stays denied** — override widens precedence, not authority;
+- an overriding set **cannot** confer all-department access;
+- `homeMytrion` is re-picked from what survives, so nobody lands on a workspace they cannot enter.
+
+`AccessTrace` gains `overriddenBy: string[]`, and the effective-access drawer now says in words why
+a profile default that plainly grants Billing produced no Billing. Without that this is undebuggable.
+
+**2. Save is a real save.** The editor used to PATCH on every click — a half-finished configuration
+was live for everyone holding the set, and there was nothing to press. It now holds a draft, shows a
+save bar only when the draft differs from what is stored, and commits through one new atomic
+`PUT /admin/permission-sets/:id/grants` whose repo writes the three grant columns together, filtered
+to the allowed set so the row can never disagree with itself. Save returns to the list.
+
+The save bar is `position: sticky`. **This forced a structure change:** `.card` is `overflow: hidden`,
+which makes a sticky child stick to a box that never scrolls. The card is therefore rendered by the
+editor, not by the page, so the bar is its sibling. Worth remembering the next time something needs
+to stick inside an admin card.
+
+**3. Three levels, not one wall.** 1 workspaces → 2 full/read-only → 3 tabs, each with its number in
+its own heading (the kicker-above-a-heading shape is gone; the numeral stays because the sequence IS
+the dependency). Levels 2 and 3 are dimmed and inert until level 1 is answered.
+
+**4. Assignees.** Was a chip wall capped at `.slice(0, 60)` — simultaneously overwhelming and
+incomplete, with nothing on screen saying the tail was unreachable. Now a searchable list over the
+whole roster (126 people), assigned pinned above candidates, per-row busy state.
+
+**Verified in a real browser, not by reading class names.** `apps/mytrion-crm/vite.audit.config.ts`
+gained `AUDIT_API_PORT` so an audit can run against its own API on a throwaway local DB — the default
+:3001 is whatever `pnpm dev:all` is pointed at, and `.env` points at Render **production**. Ran a
+CDP script over both themes: list, skeleton, detail, dirty state, assignees, precedence. That pass
+found four things reading the code did not: the save bar was below the fold, the create form vanished
+during loading (the grid jumped on arrival), list cards were ragged because `.profileGrid` is
+`align-items: start`, and skeleton bars were invisible except when the shimmer highlight crossed them
+— fatal under `prefers-reduced-motion`, where nothing moves at all.
+
+`pnpm build:widget` run and `app/` committed; confirmed the new copy is in the hashed bundle.
+
+### 2026-08-12 — Horizon worker CRM on its own Telegram bot
+
+Wired Mytrion Horizon (`apps/mytrion-crm`) to a **separate** Telegram bot so it does not share the
+carrier client mini-app / agent-gateway token.
+
+- First-class env: `HORIZON_BOT_TOKEN` (Bot API + initData HMAC), `HORIZON_BOT_SECRET` (webhook
+  `secret_token` / `X-Telegram-Bot-Api-Secret-Token` — cannot be the bot token, Telegram forbids `:`),
+  plus username / Mini App URL / short name / direct / webhook URL. Client keys
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CARRIER_BOT_*` are unchanged.
+- Webhook-only on the API: `POST /v1/telegram/horizon-webhook`. No getUpdates poller. Boot
+  `setWebhook` uses the Horizon token only (skipped unless public HTTPS + secret; refused if the
+  Horizon token equals a client token).
+- CRM UI was already a Mini App host (Zoho OAuth, not initData login). No `src/` UI change, no
+  vendored `app/` rebuild. No bot token in `VITE_*`.
+- Isolation is asserted at boot. Gateway `.env.example` warns not to poll Horizon.
+
+Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-host>/main`, domain
+allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
+token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
+
+
+## 2026-08-13 — Card Activity gallons, in full
+
+The tooltip showed `Gallons 9k` for a day that moved 9,241.36 — via `msdFmtK`, which is a
+one-significant-figure abbreviation. Gallons are what the carrier is billed on, so that is the one
+number on this dashboard that cannot be read approximately, and the Transaction Details table
+directly below it has always shown the exact figure. The panel disagreed with itself.
+
+Two formatters, one rule — never one significant figure:
+
+- `msdFmtGallonsK` — `9.24k`, `0.74k`, `1.23M` — the Card Activity tooltip and the single-day tile.
+  Two decimals ALWAYS, never trimmed: these are tabular-mono columns, and a "10k" next to a "9.24k"
+  breaks the alignment the column exists for. Sub-thousand stays in k (`0.74k`) rather than switching
+  units mid-column. Two decimals is the smallest abbreviation that still resolves ~10 gallons here.
+- `msdFmtGallons` — `9,241.36` — the Transaction Details table and its total. This is the rule
+  `SalesDashPanel`'s local `fmtVol` already applied, so that duplicate is gone and both read from one
+  formatter.
+
+Compact where the number is scanned, exact where it is read off.
+
+Left abbreviated on purpose: the hero KPI strip (`msdFmtNum(hero.volume)`). It is a cycle total in
+the millions inside a two-up flex row of unbreakable mono figures that already does not fit a phone —
+"1.2M" is the point there, and an exact number would break the strip before it helped anyone. Worth
+revisiting only with a layout change.
+
+3 tests on the formatter, plus the chart test now pins 10,241.36 and asserts "10k" is absent.
+847 CRM tests green.
+
+## 2026-08-13 — Sales mini-app: pilot roster, and money code switched off in the catalog
+
+### The mini-app is one agent's for now
+
+Two Sales surfaces put a company into Telegram: "View mini-app" on a client card (the agent's own
+mini-app) and "Generate registration link" in client Manage (the carrier's). Rollout is one agent at
+a time, so both now answer only for a named roster — today just **Daniel Brown**
+(`6227679000031473048`).
+
+`src/modules/carrier/salesMiniAppPilot.ts` is the authority and both routes call it
+(`POST /carrier-invitations`, `POST /carrier/mini-app/sales-agent-invitations`). The CRM has a copy
+of the id list purely so a non-pilot agent is not shown a control that answers 403 — hiding a button
+is decoration; the route is the gate.
+
+**Ids, not names.** A Zoho display name is editable and duplicated in the directory; the id survives
+a rename. The name in the list is a comment for reviewers, never matched on — a test pins both halves
+of that (a renamed Daniel keeps access; someone else renamed to "Daniel Brown" does not gain it).
+
+**Admins keep their bypass, "View as" does not.** Admin Client Management onboards outside the pilot.
+But an admin viewing as an agent sees that agent's Sales, pilot membership included — that is what
+View-as is for, and `impersonatorUserId` is what distinguishes the two.
+
+**Not a disabled button.** Outside the pilot the control is absent, not greyed: "Mini-app unavailable"
+on an active client means *the client* is ineligible everywhere else on that card, and reusing it
+here would have read as a data problem. Manage shows one line of explanation instead, and the
+Registered users / password-reset sections stay — the pilot gates minting links, not managing the
+users a client already has.
+
+### Money code was advertised but switched off
+
+`FF_MINIAPP_MONEY_CODE_ENABLED` has been `0` since it shipped, and the draw/preview/void routes
+enforce it. The owner catalog still listed money code with a live `moneycode` action, so the #1
+most-asked service opened a sheet whose first call returned 503 "not enabled here yet".
+
+It is now a `soon` item (`action: null`), moved below the live rows per the catalog's own "soon items
+last" rule, and dropped from `defaultPinned` — a soon item is not pinnable, and its pin slot goes to
+Balance. Visible but disabled, so an owner reads "coming" rather than hunting for a service that
+vanished. The driver entry was already `soon`. The sheet implementation in `App.tsx` is untouched and
+comes back when the flag does.
+
+Not touched: the money-code REPORT (`/money-code-report`, `/money-code/history`) — reading the
+history of past draws is not drawing, and it is what accounting asks for.
+
+Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
+the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
+CRM 851 green. Both vendored bundles rebuilt.
+
+## 2026-08-13 — Sales Verification: card vs detail mapping, Horizon glass
+
+Sales → Verification roster cards and the pipeline detail were lying to each other.
+
+**Mapping bug.** The card printed Zoho `Credit_Decision` verbatim (`Declined-Prepay/Secured Only`).
+The detail pane preferred `pipeline.decision` and relabeled it `Prepay` / `Not Accepted` / `LOC
+Approved` as soon as the credit-platform snapshot loaded — same click, different credit line.
+WEX `Application_Status` was also rewritten on both surfaces (`Pending Decision` → `Review`), so
+operators never saw the real WEX value.
+
+Fix: card and detail share `ApplicationStatusFacts` / `VerificationStateLine` in
+`verificationFields.tsx`. Deal Pipeline = `dealStage`, WEX = raw `applicationStatus` (bucket is
+tone + tooltip only), Credit decision = raw Zoho. The platform snapshot is a separate
+"Verification desk" field. Declined-prepay + verification still in progress is explained, not
+collapsed. `deriveZohoState` no longer treats a bare "prepay"/"secured" substring as rejected
+(Declined-Prepay still maps via `startsWith('declined')` for the Zoho-only filter fallback; live
+`summary.state` still wins).
+
+**UI.** Roster cards and detail sections use incumbent `.ss-card-h` (blur, highlight, glare) instead
+of a flat custom card with a 3px tone bar and hover `transform`. Labels use `--muted` not `--faint`
+(border colour). Primary = who + verification next action + "Open pipeline"; secondary = WEX /
+credit / deal stage. Split `VerificationTab.tsx` (was over the 600-line cap) into
+`VerificationDetail.tsx`. Breakpoints on the ladder (`width < 900` / `640`). Nested copy-buttons
+removed from the card (the card is the button).
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md at repo root — incumbent Horizon left as authority, docs
+not repaired. Live a11y audit skipped (AccessLint MCP down; browser MCP dropped; Vite `:5173` needs
+auth). Source audit + unit tests only.
+
+Not committed. `pnpm build:widget` rebuilds `apps/mytrion-crm/app/`.
+
+## 2026-08-13 — Sales Verification: platform Credit, approved collapse, Data Center sheet
+
+Operators rejected the last pass: headline Credit was Zoho `Credit_Decision` (`Approved-Requested`)
+while the desk said Undecided, the numbered pipeline stayed up after a green result, and both the
+pipeline and Edit applicant sat in a generic centered overlay.
+
+**Credit.** Card and detail Credit is the verification-platform outcome again (`platformCreditLabel` /
+`deskDecisionLabel`: Prepay / Not Accepted / LOC Approved / Undecided). Zoho credit is a secondary
+tile in the sheet. Roster without a snapshot derives the same labels from `verificationState` +
+payment type.
+
+**Approved collapse.** `pipelineIsApproved` hides Pre Stop / Black List / FMCSA / … when
+`verificationState === 'approved'` or every used stage is done/skipped with a loc/prepaid decision.
+In-progress, failed, rejected, and awaiting-intake still show the step list.
+
+**Layout / modals.** Detail is the Data Center `DetailSheet` (portal, `--scrim`, 820px like Client
+detail, avatar header, tile grid, footer Close). Edit applicant uses the same sheet. One pipeline
+fetch, one skeleton in the sheet body; the roster stays under the scrim.
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md — incumbent Client detail is the layout authority.
+Not committed.
+
+## 2026-08-13 — Sales Verification: Credit Decision is Zoho again
+
+Operators reversed the previous mapping. Headline **Credit Decision** on the roster card and the
+detail sheet is Zoho `Credit_Decision` (`Approved-Requested`, `Declined-Prepay/Secured Only`, empty
+→ "Not decided yet"). The verification-platform outcome is a separate "Verification desk" line
+(Prepay / LOC Approved / Undecided) and the approved-result block — it is not labeled Credit
+Decision.
+
+**Layout.** 2-column fact grid (no leftover 3+2 row). Body type for dates; IDs are secondary
+tabular, not display mono. Header actions clustered like Client detail (In Pipeline pill, Edit
+applicant 32px, close). List-row facts paint immediately; pipeline skeleton is only the step
+region. List + pipeline `useCachedLoad` staleMs 90s so a reopen of the same client does not refetch
+while fresh.
+
+Approved step-list collapse and Data Center sheet placement kept.
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md.
+Not committed.
+
+## 2026-08-13 — Marketing Loyalty: month-scoped tier export (CSV + Excel)
+
+`hotfix/Mytrion`. Loyalty Program board gains an **Export** action: pick a month, get every loyalty
+tier client for it as a styled `.xlsx` or a flat `.csv`.
+
+**The month rule.** Export month M ⇒ the tier is what **M-1** earned; the activity reported alongside
+it is **M's own**. Pick July and you get July gallons/cards/transactions, tiered by June. That is the
+program (`_shared/loyalty.ts`: status is earned from the full previous calendar month), just with the
+months named explicitly instead of inherited from today.
+
+**Backend.** New `integrations/dwhLoyaltyMonth.ts` — one read-only query, month bound as `$1::date`,
+windows named by ROLE (`basis_*` = the month that earns the tier, `month_*` = the reported month)
+rather than prev/this, because those words only mean something relative to today. Cycle window is the
+26th of M-1 → 25th of M. `dwhClientRoster.allCarriersCte` is now exported so both loyalty reads share
+one carrier dedupe. `modules/manager/loyaltyMonthRoster.ts` resolves/bounds the month (refuses a
+future one and anything past 36 months — refuses, never clamps), attaches the override overlay, and
+makes the one judgement call: `dim_company.tier_name` is TODAY's tier, so it is forwarded only for a
+current-month export and withheld for every past month. Route `GET /v1/marketing/loyalty/export`,
+marketing-gated, **audit-logged** (`marketing.loyalty.export.read`) — the board read is a screen
+someone looked at; this is the whole company book leaving as a file.
+
+**Tier math is still client-side and still single-copy.** `loyaltyExportModel.toTierInput` maps the
+month-anchored row onto `resolveTierForRow`'s `prevMonth`/`thisMonth` inputs — four lines, one visible
+place, no second copy of the thresholds in SQL or on the server.
+
+**Design.** Picklist columns (Tier, Projected Next Tier, How It Was Earned, 6 perks, Perk Source,
+Enterprise Mode) carry a coloured fill AND a real Excel `dataValidation` list, so they behave like the
+Zoho picklists they mirror. Palette is a print-tuned light-tint/dark-ink pair per bucket
+(`loyaltyExportStyle.ts`) — NOT the board's `--lty-*`, which are tuned for dark glass and vanish on
+white. Workbook is three sheets: Overview (both months, partial-month banner, distribution), Clients
+(group band, frozen header + identity columns, autofilter, SUM totals with cached results), Legend
+(thresholds and perk matrix read out of `_shared/loyalty.ts`, never retyped).
+
+**UI.** Month picker lives in the export dialog, not the page header — a month control next to the
+board would read as filtering the board, and then "last month" would mean two things. Dialog previews
+the exact scored population it will write (same `buildExportPayload`), so the footer row count is the
+sheet row count. Scope: Active clients / Tier holders only / Every carrier.
+
+**Refactors forced by the 600-line cap.** `LoyaltyCard.tsx` was already at 615; its presentation moved
+to `LoyaltyBoardCards.tsx` (behaviour unchanged) and now uses the shared `TierBucket` /
+`TIER_BUCKET_ORDER` instead of a local duplicate. Marketing's population predicate moved to
+`loyaltyPopulation.ts` so the export shares it; `countsForMarketing` stays exported for its test.
+
+`pnpm lint` (4 pre-existing `ds-bundle/*.d.ts` errors only), both typechecks, 2631 backend + 901 CRM
+tests green. `app/` rebuilt via `pnpm build:widget`; `exceljs` and the workbook builder stay lazy
+chunks. Not committed.
+
+---
+
+## 2026-08-13 — Horizon Telegram mobile sprint (Sales core)
+
+**Challenge.** Make Horizon feel like a phone app inside Telegram for sales: sign in, work a deal,
+leave — without desktop chrome, a RingCentral pill, or a broken Zoho hop.
+
+**Test task.** Open today’s Verification applicant and say the Zoho Credit Decision out loud.
+Five agents, real Telegram, not DevTools-only. Script + CS/Billing/Admin roll-out live in
+`docs/design/HORIZON_MOBILE_PLAYBOOK.md`.
+
+**RC freeze.** Never mount Embeddable in Telegram. `inAppCallingSupported()` is false;
+`mountAdapter` returns after teardown; `RingCentralPhone` renders null. Deleted
+`TelegramCallingNotice` (the undismissable “popup”). Call Hub copy points at desktop / RC app.
+Desktop calling and the Embeddable OAuth redirect are unchanged.
+
+**OAuth freeze.** We cannot restyle `accounts.zoho.com`. Own chrome: theme-aware `LoginGate` /
+callback (`Screen.module.css` dropped the hardcoded dark glass + grid mesh). Stay in-WebView;
+dual-write OAuth state already in `auth.ts`.
+
+**Sales phone grammar.** Structure line 640: Data Center leads/deals/rejections are grouped list
+rows (`dataCenterPhoneList.tsx`); Client + Verification + Call detail use `phoneSheetLayout`
+(bottom sheet, grabber, 96dvh). Desktop kanban / 820–960 dialogs unchanged. Tab bar pins Home,
+Inbox, Data Center, Verification; More is `ds/Drawer`. Duration ladder `--duration-instant` …
+`--duration-slow`; reduced-motion zeros it. One skeleton per screen (`SalesBodySkeleton` rows on
+phone, not a kanban skeleton).
+
+**Out of sprint.** `initData` as identity; in-Telegram WebRTC; restyling Zoho’s page; `apps/mini-app`.
+Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget` before any UI PR. Not committed until asked.
+
+---
+
+## 2026-08-13 — CS / Billing / Admin phone lists + sheets
+
+Same Horizon Telegram grammar as Sales (`docs/design/HORIZON_MOBILE_PLAYBOOK.md`), structure line
+640 / `useIsPhone()`. Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`. Tickets stay parked;
+Retention Cases is the ticket-like list, Open Pool is the pool.
+
+**Customer Service.** Tab bar pins Home / Applications / Retention Cases / Open Pool. Retention
+Cases: full-bleed rows (title + due, chevron) and `ds/Drawer` detail (`CaseDetailBody`). Open Pool
+already used DataTable cards; phone sheet body is `OpenPoolCaseSheet` (timeline lives in `detail.render`
+because DataTable’s sheet wins over `onRowActivate`).
+
+**Billing.** Tab bar pins Data Center / Transactions / Ledger / Debtors. Ledger section rows collapse
+to company + closing amount (carrier as meta). Statement modal is date + amount rows on phone; the
+desktop table is unchanged. Shared `bm-modal` is a 96dvh bottom sheet with grabber
+(`--duration-moderate` / `--ease-decelerate`). Dropped `.bm-table { min-width: 480px }` on phone.
+TransactionModal was not rewritten — the CSS sheet covers invoice/payment.
+
+**Admin.** Tab bar pins Knowledge Base / User Management / Carrier User Management / Audit Log.
+Tables collapse to title + trailing action (audit keeps actor / action / status). Invitations: phone
+list rows open an “Invite details” sheet for Copy/Cancel/reissue. New registration link is a Drawer
+on phone (`CarrierUserForm` + `onClose`). Desktop tables and tests at 1280 are unchanged.
+
+**Budgets.** `breakpoints.test.ts` min-width 75→74, bare vh 26→25 (480px table floor and 16vh gutter
+went away). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
+
+**Gaps.** CS Applications / CITI / Maintenance, Billing Debtors/Prepay/Returns dense tables, Admin
+Deals/Jobs/KB still inherit CSS collapse rather than purpose-built list+sheet. HR / Marketing /
+Manager are next in the playbook, not this pass.
+
+---
+
+## 2026-08-13 — Remaining Mytrions phone lists + sheets
+
+Same playbook (`docs/design/HORIZON_MOBILE_PLAYBOOK.md`). Shared primitive: `_shared/phone/PhoneList`
+(title + meta, 44px, chevron). Detail stays `ds/Drawer` or the existing modal CSS retargeted to a
+96dvh bottom sheet (`--duration-moderate` / `--ease-decelerate`). Did not touch `apps/mini-app` or
+`TELEGRAM_BOT_TOKEN`. Loyalty month-export landed in its own commit first (`feat(marketing): export
+loyalty tiers for a chosen month`).
+
+**Pins (4 or fewer).** HR: Home / Employees / Attendance / Time Off. Marketing: both programs.
+Manager: Overview + Sales / CS / Billing. Finance: Home / Clients. Collection: Home (`soon` now a
+real flag, not a label suffix). Recruit: Home / Jobs / Candidates. Analyst: Sales / CRM / CS /
+Finance. Verification + Trailhead: ModuleShell pins the first four built (non-soon) tabs.
+
+**Lists.** CS Applications is a PhoneList on phone (desktop table unchanged). HR attendance roster
+is a PhoneList on phone. Verification client cards collapse to one-column rows (no blur). Billing
+Debtors / Prepay / Returns hide the multi-column header and keep company + amount. Admin Deals /
+Jobs / KB / job-runs keep the existing 2-col collapse and no longer force `min-width: 1040px`
+sideways scroll.
+
+**Sheets.** Finance client, HR employee/dept, Verification client, loyalty/export (was 960), Recruit
+job/candidate, and Admin KB/Jobs dialogs become bottom sheets below 640. CS Application / CITI
+modals already had the shared `cs-modal` sheet.
+
+**Budgets.** Off-ladder 77→72, legacy max-width 97→92 (Recruit 760/1100, Prepay/Returns 700, loyalty
+680). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
+
+**Gaps.** Manager department desks are still ComingSoon copy. Collection Array/Cases unbuilt.
+Trailhead unbuilt. Finance invoice/payment/transaction tables inside the client sheet still dense.
+Recruit job cards are cards, not list rows. Horizon brand kickers / gradient wordmarks left as
+incumbent identity.
+
+**Impeccable reaudit (2026-08-13).** Context: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, no
+`CONTEXT_STALE`. Sprint blockers already hold: `#rc-widget` gated in Telegram, login is token
+themed (not a leftover dark desktop card), sheets are 96dvh grabber panels below 640, core lists
+are PhoneList / DataTable cards / column-collapse rather than required sideways tables. Batched
+fix: PhoneList now uses `--text-primary` / `--space-1` ( `--text` is not a global token); CS
+Applications phone load is one skeleton. Detector clean on the new phone files. Deferred:
+incumbent kickers / gradient wordmarks, loyalty 32px month steppers, Finance tables inside the
+client sheet, Recruit cards.
+
+**AccessLint.** MCP `plugin-accesslint-accesslint` was `error` (live discovery failed; `mcp_auth`
+timed out). Source-pattern report only — unlabeled search fields, CS Application/CITI sheets
+missing `role="dialog"`, icon-only close without a name.
+
+## 2026-08-13 — Loyalty export dialog: button states fixed, light/dark verified
+
+Follow-up on the export dialog. Reported: "the hover effect on buttons is really bad." It was a
+specificity bug, not taste.
+
+**Root cause.** `hubDialog.css` had ONE `.mg-lty-modal-foot button:hover` rule setting `background`
+and `color` for every footer button. At (0,4,1) it beat `.is-primary` and `.is-reset` at (0,3,0) —
+which are declared *later* in the file, so they read as though they would win. Hovering the primary
+therefore discarded `--accent`/`--on-accent` and repainted it as a neutral pane with body ink: a full
+polarity inversion in both themes, reading as the button going *inactive* under the cursor. Hovering
+`.is-reset` likewise dropped `--danger`. Second bug in the same rule: it hovered from a COLOUR
+(`--hz-pane-alt`) to a GRADIENT (`--hz-pane-lift`); `background-image` does not interpolate, so the
+change snapped. Both also affected LoyaltyBonusModal — fixed there for free.
+
+**Fix.** One hover language — hover = more accent presence, never a polarity change. Neutral gains a
+wash, tonal deepens its wash, primary saturates toward `--accent-strong` (which theme.css documents as
+"the saturated FILL and hover step", so this is the system's own answer). Every state is colour →
+colour so the transition has something to smooth. Added `:active` and `:focus-visible` — the ring uses
+`outline-offset` so it lands on the footer rather than invisibly on the accent fill.
+
+**Hierarchy.** Excel and CSV were both `is-primary` — two solid accent fills side by side, no place for
+the eye to land. Excel is primary (the designed artifact); CSV takes a new reusable `.is-tonal`.
+
+**A silent theming bug found on the way.** `--lty-*` was defined only on `.mg-root .mg-lty`
+(descendant). The dialogs portal to `document.body` with BOTH classes on one root element, which a
+descendant combinator cannot match, so every `--lty-*` read inside a dialog was an undefined custom
+property → invalid at computed-value time → silently `inherit`. The export dialog's tier icons were
+muted grey instead of gold/sky in both themes. Added `.mg-root.mg-lty` to both palette blocks.
+
+**Distilled Step 3.** "Carriers" repeated the selected scope card's row count AND the footer's — the
+same number three times on one screen — and "Hold a tier" repeated the "Tier holders only" card. Cut
+both; what remains is the two months' in-network gallons, labelled to match the relation strip. Also
+split the Refresh control: the timestamp is a caption, not the button's label ("Updated just now" is
+not something you click).
+
+**Verified in a real browser**, not by reasoning: a CDP script opened the dialog and dispatched genuine
+`Input.dispatchMouseEvent` moves (CSS `:hover` ignores synthetic events), capturing dark+light ×
+1280/375 at rest and on both actions. That round caught two regressions I had just introduced —
+wrapping Refresh in a div broke `.mg-lty-modal-section-head > button` and let the kicker rule uppercase
+the caption, and the mobile footer's inherited `1fr 1fr` grid orphaned CSV onto its own row. Both
+fixed and re-confirmed. Contrast measured: primary hover 9.7→8.5:1 dark, 7.5→6.8:1 light.
+
+`pnpm typecheck` clean, 2631 backend tests green, 910/911 CRM green. The one failure is
+`ds/purity.test.ts` on a **pre-existing** `border-radius: 99px` at `ds/Drawer/Drawer.module.css:188`,
+committed in 67565825 (Horizon phone lists) — not in this diff; `var(--radius-full)` fixes it.
+`app/` rebuilt. Not committed.
+
+## 2026-08-13 — Horizon phone a11y apply-pass (Impeccable + AccessLint)
+
+Continue of the aborted Operate cycle. Context.mjs: `NO_PRODUCT_MD` / `SCOPED_EXISTING_ALLOWED`, no `CONTEXT_STALE`. Vite was down, so AccessLint used `audit_html` (compact) on login, Data Center list, client sheet, Verification.
+
+**AccessLint before → after (targeted mechanicals):**
+- Login: 2 moderate (no main / no landmark) → 0
+- Data Center list: 1 serious (placeholder-only label) + 2 moderate → 0
+- Client sheet: 2 critical (unlabelled input, unnamed Close) + 3 moderate → 3 moderate page-level (`page-has-heading-one`, `landmark-main`, `region`) — overlay fragment; the page behind now supplies `<main>` + h1. TODO, do not invent a dialog h1.
+- Verification: 2 moderate → 0 (with page landmarks)
+
+**Applied.** AuthScreen + MytrionShell `<main>` (inner Billing/CS/Sales/Recruit `<main>` demoted to avoid nesting). CS Application/CITI + Billing debtor/prepay/return-match sheets: `role="dialog"` / `aria-modal` / labelled Close. Debtors/Prepay clickable rows are `<button>`. Search fields use existing placeholder copy as `aria-label`. PhoneList hover/active is named `background-color` only. Sales detail accent stripe 3px → 1px (hook `border-accent-on-rounded`). Debtors age-bar dropped `transition: width`; invoice cards dropped the 3px left stripe.
+
+**Incumbent, left.** AppHeader gradient wordmark; rail width collapse animation; Sales `theme.css` side-tab / gradient-text. Loyalty `hubDialog.css` hover polarity fix from the prior uncommitted pass is in this commit.
+
+`pnpm build:widget` rebuilt `apps/mytrion-crm/app/`. Desktop ≥900 unchanged (structure still 640). Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`.
+
+## 2026-08-13 — Horizon worker Telegram identity linking (Zoho login)
+
+First slice only: persist Telegram credentials when a worker signs in with Zoho inside the Horizon Mini App. sendDocument / file delivery is not in this change.
+
+**Table** `horizon_worker_telegram_links` (migration `0116_horizon_worker_telegram_links`, hand-written + idempotent — `drizzle-kit generate` still cannot be used here because meta snapshots have drifted). Not `telegram_octane_users`, not `sales_agent_mini_app_principals`. PK is uuid (`gen_random_uuid()`). Unique per tenant on `zoho_user_id` and on `telegram_user_id`. `telegram_username` / `zoho_username` / `zoho_email` are caches, not auth keys. `linked_via` is `webapp_bind` | `bot_start`; `status` is `active` | `revoked`.
+
+**Bind (primary).** After Zoho session is live in the CRM Mini App (`UserContextProvider`), a headless `POST /v1/horizon/telegram/link` sends Bearer + raw initData. Server verifies HMAC with `HORIZON_BOT_TOKEN` (same algorithm as the existing Horizon helper; not the carrier token). Zoho user comes from the session (`zoho:<id>`), Telegram user from verified initData. Failures do not block CRM; the client retries a few times. `impersonate: false` so View-as cannot attach the admin's Telegram to another worker.
+
+**Prod apply (2026-08-13 evening).** `0116` was the only pending journal entry on Render app Postgres (`dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com`). Applied with `ALLOW_REMOTE_DB_MIGRATE=1 pnpm db:migrate` (not a full pending stack). Verified live: table + unique indexes present; insert/readback of `telegram_user_id` / `telegram_chat_id` / `telegram_username` succeeded; duplicate zoho and telegram ids rejected (`23505`); smoke row deleted. Pending count is 0. Rebuilt vendored CRM `app/` so Mini App prod actually POSTs `/horizon/telegram/link` after Zoho login. API route still needs this branch deployed.
+
+**Webhook (supplement).** Horizon `/start` in a private chat refreshes `telegram_chat_id` / `telegram_username` on an existing active row. It does not create a worker identity. Unlinked `/start` still only opens the Mini App.
+
+**Gaps for the sendDocument slice:** lookup by `telegram_chat_id` (private chat ≈ user id, already stored), Bot API `sendDocument` on `HORIZON_BOT_TOKEN`, download-button wiring in CRM, and what to do when the worker has not opened `/start` yet (chat_id still equals user id from initData, which is enough for private chat).
+
+## 2026-08-13 — Horizon Telegram upsert + Mini App file delivery
+
+Two slices on `hotfix/Mytrion`. No `telegram_octane_users` table. Carrier mini-app / `TELEGRAM_BOT_TOKEN` untouched.
+
+**1. No duplicate `horizon_worker_telegram_links` rows.** Unique indexes already exist (`horizon_worker_tg_links_tenant_zoho_uk`, `horizon_worker_tg_links_tenant_tg_uk`). `planHorizonTelegramWebAppBind` + `upsertWebAppBind` look up tenant+zoho and tenant+telegram inside a transaction: same pair or same zoho re-login → UPDATE (telegram ids, username, chat_id, zoho snapshot, `updated_at`); same telegram already bound to another zoho → `TELEGRAM_LINKED_TO_OTHER_WORKER` (no insert). Unique-violation catch is the belt-and-suspenders.
+
+**2. Mini App exports via Horizon `sendDocument`; desktop unchanged.** Shared CRM helper `deliverExport` (`apps/mytrion-crm/src/lib/deliverExport.ts`): if `isTelegramWebView()` is false, existing `deliverBlob` / `<a download>` / `MytrionDownload` path (invoices still use the Zoho-webview signed-URL carve-out when *not* in Telegram). Inside Telegram WebView, POST the blob to `POST /v1/horizon/telegram/export-send` (Zoho Bearer, `impersonate:false`). API `sendHorizonDocumentToLinkedWorker` looks up `horizon_worker_telegram_links` by session zoho id (tenant-scoped) and calls `sendHorizonDocument` on **HORIZON_BOT_TOKEN only**. Unlinked → 409 `TELEGRAM_CHAT_UNLINKED` + toast to open Mini App after Zoho login. Success toast: "Sent — check your Horizon bot chat".
+
+Call sites: Sales invoices (`downloadInvoice`), C-15 txn report, C-30 card lookup, verification attachments; Billing debtors/prepay XLSX + opening template/export/rejected; CS CITI CSV + maintenance attachments (bytes route for Telegram CORS); Marketing loyalty + referrals; Analyst reports; HR attendance CSV.
+
+Deferred: signed-URL desktop path for maintenance attachments is unchanged.
+
+## 2026-08-13 — Admin: Octane Telegram Users
+
+Simple Admin list of `horizon_worker_telegram_links`. Access group tab **Octane Telegram Users**. Columns: user name, Zoho user id, Telegram user id, Telegram username, last login (`updated_at` from the Mini App bind after Zoho sign-in). Search is client-side over those fields. Admin-only `GET /v1/horizon/telegram/links` (all-department). Empty / loading / no-match states. Phone collapses to name + last login; handle stays on the name stack.
+
+## 2026-08-13 — Automations UI: balance/status blocks, last-6 cards, C-26 prompt fields
+
+Four Sales Automations complaints from the floor, all in the result/config UI — no touchpoint or
+route changed.
+
+### C-8 Balance and Q-7/C-28 Account Status stopped being sentences
+
+Both actions returned `{kind:'message'}`, so `dwh.carrier_balance` and `dwh.carrier_overview` — which
+answer with a dozen fields each — were collapsed into one line and everything else was thrown away.
+They now return their own payload kinds rendered by `AutoBalancePanel` / `AutoAccountStatusPanel`.
+
+Balance leads with the three blocks CRM Mytrion showed, in its order: **EFS Balance**
+(`efs_balance`, falling back to `balance`), **Available Limit** (`credit_remaining`), **Weekly
+Limit** (`credit_limit` — CMP bills weekly, and the mini-app status sheet already names it that).
+Account type / payment terms / billing cycle / credit used follow as a secondary grid, and only when
+the source answered for them.
+
+A missing figure renders `—`, never `$0.00`: a prepay account has no credit line at all, and `$0.00`
+in the Available Limit block reads as "line exhausted" — the opposite of true.
+
+Account Status keeps the live-EFS active-card count (the reason C-1 shows up on the next C-28) and
+adds what the sentence dropped: open debt with its invoice count and oldest debt days, the worst
+invoice status, the hard-debtor flag as a badge, and per-source failures as notices instead of a
+silent zero. The tile says "Active cards (live EFS)" only when the live roster actually answered.
+
+### Cards: last SIX digits is now the standard, from one helper
+
+EFS cards on a fleet share a long prefix and routinely differ only in the 5th-from-last digit, so
+`•••• 1111` matched several physical cards. Card Lookup (C-30) already showed six; everything else
+showed four. `maskCard` / `shortCard` / `CARD_MASK_DIGITS` in `autoLive.ts` are now the single
+source, and every Sales card surface goes through them: picklist, selected-card chip, C-24 Card Last
+Used rows, the limit-update panel, C-15 transaction rows and groups, the txn export columns, the
+Client modal card list, Client Management's driver card picker, and C-30 (switched off its own
+inline slice). Client-modal mask expectations moved from `•••• 7340` to `•••• 317340`.
+
+Left at four on purpose: the touchpoint audit-log redaction (`redactParams`) is a PAN control, not a
+display surface, and rejection reports / comms tickets only ever *store* `card_last4` — six digits
+there is an ingest and schema change, not a UI one.
+
+### C-26 Unit / Driver Change: the fields are a new prompt, not a form to retype
+
+The credentials panel above already shows the live EFS unit / driver ID / driver name, so prefilling
+the same three values below it asked the agent to retype what was on screen. C-26 now opens empty
+with placeholder **New prompt** on all three, and the runner already sends only non-empty fields, so
+leaving one blank leaves that prompt untouched. C-1 Card Activation still prefills — there the values
+ride along with the activate and the fields are a confirmation.
+
+Also: `.ss-pay-grid` drops to two columns below 640px. Three dollar figures on a phone row leaves
+~90px a tile and truncates the amount — that grid now carries three result panels, not one.
+
+CRM 860 green (4 new panel tests), backend 2611 green, lint clean, vendored `app/` rebuilt.
+
+## 2026-08-13 — Sales Verification: MC/DOT flags on the input, not in the field
+
+Verification sometimes stuffed proceed copy ("Need a valid MC", platform `placeholder` / `flag` /
+event detail) into the MC or DOT value or HTML placeholder. Sales then showed that prose as if it
+were the identifier.
+
+Pipeline mapping now keeps that copy on `hint` only — never as an HTML placeholder. The action
+request and Edit applicant inputs stay empty until the agent types a real id; the exact platform
+sentence renders as a red warning under the field (`aria-invalid` + `aria-describedby`). The record
+MC/DOT tiles do the same instead of displaying the prose as the number. Pipeline lookup ignores a
+DOT that is not an authority id (avoids a 400 on `dot.max(64)` and a bogus SQL match).
+
+Also: action-request fields collapse to one column under 640px, inputs use `--radius-md` /
+`--shadow-sm` / 44px touch height, no `field.placeholder` on MC/DOT.
+
+Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.
+
+## 2026-08-13 — Sales cards empty after focus + scroll (Automations + Verification)
+
+Same compositor defect on both surfaces. `.ss-card-h` applied `backdrop-filter: blur` to every
+Automations catalog button and every Verification roster button. Focusing (or hovering) a card
+promotes that layer; scrolling it off-screen and back leaves the layer un-repainted — children
+still in the DOM, the card looks empty. AutoCatalog had already dropped rest `transform` /
+`overflow: hidden` / `transition: all`; the shared blur was the remaining half.
+
+Fix (refinement, not redesign):
+- `ss-horizon.css` — blur stays on modal chrome and empty/result panes; **not** on `.ss-card-h`.
+  Glass tint is `--surface` + `--shadow-sm`. Same treatment for `.ss-float-drop` (the deal/card
+  picklist is a scrollport over near-opaque `--hz-modal-surface`).
+- `AutoFloatingDrop` — `overflow-x: hidden` + `overflow-y: auto` instead of `overflow: hidden`
+  on the listbox.
+- Contract test `ssCardLayer.test.ts` locks the CSS/source so the blur cannot creep back onto
+  scrolling cards.
+
+Unrelated audit notes (not fixed): AutoCatalog still uses an inline 3-column grid with no
+480/640 ladder (Verification already has it); AutoTab is over the 600-line cap; deal/card pick
+rows are `div role="option"` with mousedown only.
+
+Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.
+
+## 2026-08-13 — Impeccable init (PRODUCT.md)
+
+`/impeccable init` ran on `hotfix/Mytrion`. Wrote `PRODUCT.md` (product-schema 1) from repo sources — Octane fuel-card ops, worker Mytrions / Horizon Mini App, carrier Telegram bot + mini-app. No DESIGN.md; no visual world invented. Live config at `.impeccable/live/config.json` (CRM + mini-app source HTML; vendored `app/` excluded; CSP none). Did not touch Sales card CSS or vendored hashes.
+
+## 2026-08-13 — Same empty-card compositor bug, rest of CRM
+
+Hunt after Sales `.ss-card-h` / `.ss-float-drop` (`9ccdd0e1`). Same trap: `backdrop-filter` on a
+scrolling roster tile or picklist scrollport; focus/hover promotes a layer; scroll off and back
+leaves it un-repainted.
+
+**Fixed (blur off scrolling cards / rows / picklists; glass tint kept):** hub `.mg-card` / `.mg-dept`
+/ `.mg-acc`, ModuleShell `.ms-jump`, Collection `.co-jump`, HR jump/stat/req/employee/dept cards,
+Verification Mytrion `.vf-cardc`, Recruit metric/job/candidate tiles, Analyst card/KPI/report
+catalog, Finance `.fi-stat` / `.fi-row`, CS card/metric/retention rows, Billing KPI tiles + table
+wraps + modal invoice cards, Loyalty `.mg-lty-c`, Escalation `.readyTile` / `.row` / `.pickerPanel`,
+Admin `.statTile`, launcher WorkspaceCard/StatCard, page KPIs, chat message bubbles/chips/picker.
+
+**Left (safe chrome):** modals/scrims, docked headers/rails (AppHeader, MytrionShell sidebar,
+MobileTabBar opaque), DS Dialog/Drawer/Dropdown/Tooltip/DatePicker, empty/ComingSoon panes,
+toolbars/search/buttons/chips/badges, mini-app sticky header (`backdropFilter` on docked chrome),
+CS/Billing table *headers* that are sticky over rows, TicketConsole/comms docked panes,
+ChatPanel dock/composer. `theme.css` untouched.
+
+**Not changed (other compositor traps):** catalog `transform` only while dragging (already);
+CS/HR/Analyst cards still `overflow: hidden` + hover `transform` (lift), without blur so the
+empty-paint bug should not fire; billing `content-visibility: auto` on table rows; DropdownMenu
+blur on a short popover scrollport (DS chrome allowlist).
+
+Contract: `ssCardLayer.test.ts` now walks all CRM CSS. Rebuild: `pnpm -C apps/mytrion-crm build`.
+
+Impeccable: refinement, `SCOPED_EXISTING_ALLOWED`, Operate. Did not write PRODUCT.md / DESIGN.md.
+
+## 2026-08-13 — CS Applications: global sort/filter, off Deluge onto direct COQL
+
+QA (Dina Carter) reopened "issue-17": PR #166 (2026-08-10) shipped sort/filter/copyable-fields for
+the Applications/Clients tables, but sort/filter was explicitly client-side over one loaded page —
+"sorted by date filled, only sorted the first page." Filter-dropdown option lists had the identical
+bug (built from the loaded page's distinct values). Fixing it for real needed a data-path change, not
+a UI patch: `cs.applications.list` was a `kind: 'deluge'` touchpoint calling `mytrionGetApplications`,
+which has a FIXED `ORDER BY`/`WHERE` per tab and no filter param surface — and, more fundamentally,
+**the "Agent (Deal)" filter/sort/facet needs a join to the Deals module that has no expressible path
+in COQL or Deluge**: `Applications.Related_Deal` (labeled "Agent (Owner)") is empty on every record
+checked live; the real match is `Applications.Application_ID` = `Deals.Application_ID`, a
+cross-module value join.
+
+**Moved the touchpoint to `kind: 'local'`**, backed by a direct COQL drain
+(`src/integrations/csApplicationsQuery.ts`: `drainApplications`/`drainDeals`, `runCoqlAll`, 2000-row
+pages) instead of Deluge. A dedicated SWR cache (`src/lib/applicationsSnapshotCache.ts` — NOT the
+shared `touchpointReadCache`, whose 500-entry LRU and tenant-wide invalidate-on-any-write are both
+wrong for a snapshot that costs ~10 COQL calls to rebuild) holds the joined Applications+Deals
+dataset per tenant, soft TTL 5 min / hard TTL 30 min, stale-while-revalidate. Sort/filter/search/facet
+computation (`src/modules/customerService/applicationsListQuery.ts`, pure functions) now runs over
+the WHOLE cached dataset, not one page. `applicationsSave.ts` patches the cached row in place after a
+write (`patchApplicationSnapshotRow`) instead of a full re-drain.
+
+**Verified against live prod Zoho before trusting any of this**: Apps tab 4,389 rows / Clients tab
+7,823 rows / Deals-with-Application_ID 10,709 rows — small enough for the full in-memory snapshot,
+cold parallel drain ~3-4s. Ran an old-vs-new regression diff (old Deluge touchpoint vs. the new
+handler, same params, both tabs, multiple pages) and found two REAL bugs the diff caught, not
+theoretical ones:
+- The drain's first COQL query had no `WHERE` clause at all — Zoho COQL rejects that outright
+  (`SELECT ... FROM Applications` with nothing after it → 400 `missing clause`). Fixed with an
+  always-true `WHERE id is not null`.
+- ~5% of a sampled tab page had `_dealOwner` regress to "not assigned" that the OLD system resolved
+  correctly, in two distinct ways: (1) the old Deluge falls back to matching `Deals.Deal_Name` against
+  the Application's `Name` when `Application_ID` doesn't match a Deal — replicated in
+  `matchDealsByName()`. (2) Deal owners who've since been deactivated have a raw `Owner.name` that's
+  literally `null` in COQL — the old Deluge resolves names against BOTH `AllUsers` and `DeactiveUsers`
+  Zoho user-list types; the existing `zohoCrm.listActiveUsers()` only covers active ones (correctly,
+  for its actual other use — the admin act-as-agent picker). Added
+  `zohoCrm.listUsersForNameResolution()` as a separate primitive rather than changing what
+  `listActiveUsers()` returns. One remaining, deliberate, non-regressive divergence: when multiple
+  Applications share an exact company name, the old Deluge's `nameToRecId` map only ever registers
+  the FIRST one it iterates, so every other same-named Application permanently reads "not assigned"
+  under the old system even when a name-matched Deal genuinely exists — the new code matches each one
+  independently instead of replicating that quirk (confirmed live: three separate Application records
+  named "J&D express trucking", only one of which the old system ever had a chance to match).
+
+**Frontend**: `live.ts` was already at the 600-line cap — the Applications data-loading block (now
+sort/filter-aware) moved to a new `liveApplications.ts`, and the four coercion primitives it shares
+with the rest of `live.ts` (`str`/`num`/`bool01`/`lookupName`) moved to `liveCoerce.ts` so neither file
+has to import from the other (would've been a live.ts ↔ liveApplications.ts cycle otherwise).
+`applicationsFilters.ts` dropped `filterApplications`/`sortApplications`/`distinctValues` (the server
+owns this now) and gained `filtersToParams`/`applicationsQueryKey` — the latter matters because
+`useLoad`'s effect keys off `JSON.stringify(deps)`, and a `Set` (the WEX multi-select) stringifies to
+`{}`, so passing `AppFilters` directly as a dep would have silently never refetched on a WEX chip
+toggle. The filter panel JSX moved to `ApplicationsFilterPanel.tsx` once facets-as-props landed.
+Dropped the frontend's own `APPLICATIONS_PAGE_SIZE` from 2000 to 200 — not a backend limitation
+anymore, but `ApplicationsTable.tsx` is sized for ~200 rows × 28 columns (~5,600 cells) per render.
+
+The Deluge function `mytrionGetApplications` is untouched in Zoho — the legacy `zoho-octane` widget
+still calls it directly. Search-through-pagination is fixed as a side effect: the old function
+hardcoded `more_records = false` whenever a search term was active, so page 2 of a search was
+unreachable; over an in-memory snapshot that limitation just doesn't exist.
+
+44 new backend tests (`cs-applications-list.test.ts` pure logic, `cs-applications-snapshot.test.ts`
+drain/cache with stubbed fetch — pattern from `coql-paginate.test.ts`), a new `AsyncSWRCache.peek()`
+primitive (+3 tests) so a single-row patch doesn't force a cache reload, and a `touchpoints-catalog`
+assertion pinning `cs.applications.list`'s `kind` to `'local'` so an accidental revert to Deluge trips
+a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated failure in
+`sales-golive-contract.test.ts` — confirmed present before this branch too, not caused by this work).
+Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
+same session) rather than a fresh branch off `build`.
+
+## 2026-08-14 — Verification Mytrion: Existing clients polish
+
+Operate-mode refinement of Verification → Existing clients (not a visual-world replacement).
+
+- **Default order:** creditworthy first (not a debtor AND has a real credit score; 0 = unscored), then other non-debtors, then debtors. API `ORDER BY` matches; CRM re-sorts after filters. Sort override: name / score / recently active.
+- **Activity filters:** Last 30 / 60 / 90 days on `dim_company.last_transaction_date` (now on the lean roster row). Mutually exclusive with Any time. Carriers with no swipe drop out of a window.
+- **Prepay:** cards and modal omit credit score and minimum required balance (no empty labelled fields). Prepay meta is payment day + last activity.
+- **Aggregators:** BANK / DIRECT / MERCHANT_CARD / ZELLE get icon + label + `--tone-*` colour (not colour alone). Filter chips use the same mark.
+- **Summary:** split into matching / not flagged / debtors so “726 clients · 4 debtors” is no longer ambiguous.
+- **Filter panel:** one pane (search, chips, sort, clear). Modal moved to `ds/Dialog` (focus trap, sticky chrome, sheet on phone). Tokens only — light and dark via the cascade.
+
+## 2026-08-14 — Verification cases: Mytrion-owned intake
+
+Mytrion owns Verification intake. A 30-minute pg-boss job (`automation.verification.case-ingest`)
+runs the same two-predicate Zoho Deals COQL as credit-platform (Stage IN + Application_Date; never
+select `DOT` — hydrate `DOT1` / `Trucks1` / `First_name` / `Cell` / `Birth_Of_Date`), writes
+`verification_cases` as **shared + Sarvar Asqarov**, seeds 10 Decision Desk stages, enriches from
+DWH `public.stg_broker_snapshot` (Phone digits → email lower → DOT → normalized company name; miss
+is OK), inboxes Sarvar (`type=verification.case.created`, `tag=verification`, `zohoRecordId=vc:{id}`),
+then fire-and-forget `POST /api/v1/requests` with `request_id = zoho_deal_id`. Progress is read from
+the verification DB on GET/Refresh; agent Run / Approve / Decide are the only other writes. No
+inbound webhook. Configuration Ruleset stays Coming Soon with Orchestration table mapping only.
+
+Owner id: `VERIFICATION_CASE_OWNER_ZOHO_USER_ID` or live `GET /users` match on `Sarvar Asqarov`.
+Lookup failure fails the job — no unowned cases. Watermark advances only when `failed === 0`. Auto-
+start HTTP failure marks the case `failed` and keeps the row.
+
+UI: Applications → **Verification cases** + Inbox. List Refresh actually refetches. Modal uses
+`ds/Dialog`. Tokens only. Rebuild `apps/mytrion-crm/app` with `pnpm build:widget` before the PR.
+
+Cutover risk: set `ZOHO_POLL_ENABLED=0` on credit-platform or both sides ingest the same Deal.
+Sarvar's Zoho id is not in git — resolve against live CRM before the first cron.
+
+## 2026-08-14 — Verification cases list 500 (Render vs local)
+
+`GET /v1/verification/cases` 500'd because the running API reads `.env` `MYTRION_OPS_DATABASE_URL`
+(Render `mytrion_ops_db`). Migration 0117 and the sample case
+`vc_i3aa11v9tqs0jcthgvn75f44` exist only on local Docker `localhost:5433/octane_assistant`.
+Render `to_regclass('public.verification_cases')` is null. Did **not** migrate Render.
+
+Fixes: missing table/column → exposed 503 `VERIFICATION_CASES_NOT_MIGRATED` (names the connected
+host + `pnpm dev:local-db`); list SELECT drops `zoho_raw`; GET/refresh fail-soft if verification-db
+sync fails. `LOCAL_OPS_DATABASE_URL` overrides the app DB in development only so `.env` can stay
+on Render. `pnpm dev:local-db` or `USE_LOCAL_OPS_DB=1 pnpm dev:all`. Do not start the ingest job.
+
+## 2026-08-14 — Combined onto feature/UltraMytrion
+
+`feature/verification-cases-intake` and `feature/verification-mytrion-polish` were the same commit
+with uncommitted work (cases in the working tree, polish in a stash). Combined onto
+`feature/UltraMytrion` and deleted the two old local branches. Neither had been pushed.
+
+## 2026-08-14 — Verification Impeccable operate pass (loaders / fetch / polish)
+
+Operate-mode refinement of Verification cases + inbox + existing clients. Not a visual-world
+replacement. No PRODUCT.md — incumbent Horizon tokens stay authority; `/impeccable init` is a
+follow-up if we want that documented.
+
+- **One skeleton, no spinner beside it.** Cases first paint is the real table header + shimmer cells
+  (desktop) / card placeholders (mobile). Inbox is list-shaped `.vf-sk`. Case modal is field + stage
+  placeholders. Refresh keeps rows and spins only on the button. Clients already did this; mobile
+  card skeletons now match the 3.5rem compact row so they don't jump.
+- **No double list GET.** Filter/page reset is batched in the same event (the old `setPage(1)` effect
+  fired a second request). Cases/inbox/detail use `useCachedLoad` so tab remount (ModuleShell
+  unmounts inactive tabs) and Strict Mode join instead of blanking. No AbortSignal on these GETs —
+  abort would drop the cache write that makes coming back instant; transport already dedupes
+  identical GETs. Modal open does not refetch the list; a successful Run/Approve/Decide writes the
+  case key and invalidates `verification:cases`.
+- **Logic:** list `total` was `aggregates.total` (unfiltered), so a status/search page could be empty.
+  Pagination now uses `verificationCaseRepo.count` with the same WHERE as `list`. Modal subtitle no
+  longer hardcodes Shared. Error+empty no longer claim "no cases/messages" when the API refused.
+- **Inspected** mock-auth :5175 at 1280 and 375: cases table/cards, inbox error empty (mock user has
+  no Zoho id — expected), clients roster + creditworthy sort + activity chips. Modal first paint
+  used a generic title + "Loading…" over the skeleton; header now uses the list-row preview.
+
+Tests: `verification-cases` 12, `verification-cases-routes` 5, `verificationData` 15 — all pass.
+Did not start ingest. Did not migrate Render. Did not rebuild `app/`.
+
+---
+
+## 2026-08-14 — Audit Log + Automation Logs: filters, coverage, export
+
+Branch `feature/UltraMytrion`. Everything below was measured against the live table first; the row
+counts in the comments are real, not illustrative.
+
+### 1. "Duplicate data" in Logins was `auth.act_as`
+
+`actAsContext()` wrote an `ok` audit row on EVERY request a view-as session made: **9,178 rows in 30
+days against 116 real logins** (1,659 in one week from 14 users). The Logins chip filtered on the
+`auth.` prefix, so it was ~99% the same fact restated.
+
+- New `modules/audit/sessionEvents.ts` — `auditSessionEvent()` collapses an `ok` event to one row per
+  (actor, target) per 30-minute window. In-process TTL map first, one indexed lookback query on a
+  cold key, so a restart or a second instance cannot reopen the flood.
+- **`denied` is never collapsed** — a refused impersonation is a distinct security event every time.
+- Logins now selects its three events by EXACT name (`auth.login`, `auth.zoho.login`,
+  `mini_app.auth.login`), not by prefix. Impersonation got its own chip.
+
+### 2. Carrier mini-app logins did not exist
+
+`mini_app.auth.login` had **zero rows** live. The only writer was the PASSWORD route, and these
+carriers are legacy `telegram` auth-mode registrations that never present a password — the real
+sign-in is the mini app calling `/carrier/mini-app/auth/state` and being told `authenticated`.
+
+- New `modules/carrier/miniAppLoginAudit.ts`, called from both bootstrap and password login.
+- It deliberately does NOT reuse `telegramCtx()`: that context carries no company and no display
+  name, so every carrier login would have landed as an anonymous `telegram:<id>` with an empty
+  Company column. Bootstrap re-opens collapse; an explicit password login never does.
+- This is the carrier client bot, not the Horizon worker bot.
+
+### 3. Mytrion access logging (new security coverage)
+
+`POST /v1/audit/mytrion-access`, written by the SPA's `MytrionGuard` — the single choke point every
+workspace entry passes through (deep link, launcher tile, header switch, auto-route into a home
+Mytrion). Not admin-gated: every worker records their own row. Identity comes from the session; the
+claimed Mytrion is checked against the caller's resolved grant and stored as `granted`, so an
+ungranted claim is recorded `denied` and never collapsed rather than being silently accepted.
+
+### 4. Automation logs split out + `origin_source`
+
+- Migration `0118`: `automation_logs.origin_source` (`'Mytrion Horizon' | 'Mytrion Zoho'`), defaulting
+  to Zoho. That default is a *fallback*, not a guess — pre-existing rows came from either surface and
+  are indistinguishable after the fact, so only a caller that explicitly claims Horizon gets it.
+- Own Admin tab (`Automation Logs`) with origin / automation / agent / date filters. These rows answer
+  a different question from the audit trail and were only visible as `automation.log` with the
+  interesting parts buried in `detail`.
+- Every catalog block already logged via `runAutomation(...).then()`; the real gap was the alias map.
+  Horizon wrote `balance` / `account_status` while the Zoho widget kept writing `balance_check` (820
+  rows) / `account_status_check` (228) — same automations, same agents, two names and two partial
+  histories. Added both aliases; the widget's key wins because the history is already under it.
+
+### 5. Filters + export
+
+- `auditRepo` gained agent-name / profile / role / Zoho-role / resource / date-range / server-side
+  search, plus a `facets()` endpoint so the dropdowns are the tenant's real value space.
+- Free text is now a SERVER filter. It used to narrow only the rows already loaded, which silently
+  disagreed with the "N of M" counter and with any export taken while it was set.
+- Export (CSV + XLSX) on both tabs, re-queried server-side under the current filter so the file is the
+  whole matching set, not the pages scrolled into view. Cap 10,000 rows.
+- **CSV/XLSX formula-injection guard**: audit rows carry user-controlled text, and a cell starting
+  `=`/`+`/`-`/`@` executes on open in Excel and Sheets. Both writers force those cells to text.
+- Migration 0118 also adds the audit_log indexes these filters need — they were seq scans over 41k
+  rows/30d before.
+
+### Verified
+
+- Migration run green on a fresh throwaway DB (never prod; `.env` still points at Render).
+- Backend 2,743 tests pass, lint clean. CRM 947 pass.
+- `apps/mytrion-crm/app/` was NOT committed here: rebuilding it in this working tree also bakes in the
+  uncommitted `feature/verification-cases-intake` UI. Rebuild on a clean tree before the PR.
+
+## 2026-08-14 — Park verification ingest + Rules Strategies / Stop Factors tab
+
+### Ingest off
+
+- `automation.verification.case-ingest` stays in `ALL_JOBS` (queue still provisioned) but is in
+  `DISABLED_JOB_QUEUES`, removed from `CRON_SCHEDULES` and `MANUAL_TRIGGERABLE_QUEUES`. Boot
+  unschedules any leftover pg-boss cron. Worker stays registered; `runVerificationCaseIngest`
+  no-ops so a leftover queued job cannot create cases. Watermark in `verification_ingest_state`
+  was not touched.
+
+### Case prune (Octane app Postgres)
+
+- Prod `dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com`: 61 cases → kept freshest
+  `vc_t0bbv0dt0bq4syc78s8x8xyr` / Eric b trucking; deleted 60 cases, 600 stages, 58 inbox
+  (`zoho_record_id = vc:{id}`).
+- Local Docker `:5433` already had one row (`vc_i3aa11v9tqs0jcthgvn75f44` / Miguel Del Real Gonzalez)
+  — left in place.
+
+### Mono persistence (do not edit verification-mono)
+
+- Stop Factors: CRUD on `stop_factors` via `GET/POST/PUT /api/v1/stop-factors` (cache invalidate +
+  audit; `config_revisions` is a separate publish). Decision-stage rows get `meta.decision_rule`.
+- Rules & Strategies: the JSON list in `system_state.decision_strategies_json` via
+  `GET/POST/PUT /api/v1/decision-strategies` (own revision list in
+  `decision_strategies_revisions_json`). Not the same table as stop factors; strategies bind to
+  those rows through `rule_bindings`.
+
+### Our tab
+
+- Replaces Coming Soon Configuration Ruleset. Key stays `ruleset`.
+- Octane routes (verification department): `GET/POST /v1/verification/stop-factors`,
+  `PUT /v1/verification/stop-factors/:id`, `GET/POST /v1/verification/strategies`,
+  `PUT /v1/verification/strategies/:id`. Proxy to credit-platform `/api/v1` — no raw SQL.
+- UI: list + create/edit `ds/Dialog`, Horizon tokens, `useCachedLoad`, one skeleton per region.
+
+### Risks
+
+- Writes need a credit-platform UI key with admin / `CAP_CONFIG_EDIT`. Gateway-only
+  `CREDIT_PLATFORM_API_KEY` will 401/403 — surfaced as `CREDIT_PLATFORM_FORBIDDEN`.
+- `CREDIT_PLATFORM_BASE_URL` unset → 503. Replica/read-only DSN cannot be used (we do not write
+  verification Postgres from this tab).
+
+## 2026-08-14 — Rules / Stop Factors via verification Postgres (no CREDIT_PLATFORM HTTP)
+
+The tab 503'd because `.env` has `VERIFICATION_DATABASE_URL` (ohio Render `credit_platform`) but
+no `CREDIT_PLATFORM_BASE_URL` / API key. Mono Orchestration itself is just SQL + an in-process
+cache — we now do the same DML through the existing pools.
+
+### Live schema (read-only inspect, `johnmercer` has full DML)
+
+- `stop_factors`: id, name, stage, check_type, field_path, operator, threshold, action_on_fail,
+  action_on_missing, provider_filter, enabled, priority, meta, updated_at. **0 rows** today.
+- `system_state.key`:
+  - `decision_strategies_json` — 9 strategies (fmcsa-authority, octane-sop-hardstops, llc, …)
+  - `decision_strategies_revisions_json` — version trail
+  - `config_version` — cache-bust counter (mono `VersionedTTLCache`)
+- `config_revisions` — empty; mono does **not** insert here on ordinary CRUD (separate Publish).
+- `audit_log` — platform audit, same INSERT as mono `audit()`.
+
+### What we write
+
+- Stop factor POST/PUT: exact mono INSERT/UPDATE, `meta.decision_rule` on stage=decision,
+  `audit_log` row, then bump `system_state.config_version`.
+- Strategy POST/PUT: rewrite `decision_strategies_json` (normalize + sort), append
+  `decision_strategies_revisions_json` (cap 250, version+1 on update), `audit_log`, bump
+  `config_version`.
+- Octane routes unchanged (`/v1/verification/stop-factors*`, `/strategies*`,
+  `requireDepartment(..., 'verification')`). 503 is now `VERIFICATION_DB_UNCONFIGURED` /
+  `VERIFICATION_WRITE_DISABLED` — not CREDIT_PLATFORM_*.
+- `VERIFICATION_WRITE_ENABLED` unset defaults to on.
+
+### Cache caveat
+
+Bumping `config_version` is the row mono's HTTP `config_cache.invalidate()` writes. Core-api
+re-reads that key every ~2s, so its 30s TTL list cache drops. Processor-side `_acfg` HTTP
+caches (stop-factor / decision-engine, typically 30s) are in-process in those services and
+cannot be busted from Postgres — restart or wait TTL. Strategy evaluation in core-api reads
+`system_state` live (no cache).
+
+### UI
+
+Same Ruleset tab. Refresh loads the 9 strategies (or a true empty stop-factor list). One
+skeleton; only the active section fetches.
+
+## 2026-08-14 — Decision rules polish (Finish Review)
+
+Operate refinement of Verification → Decision rules (was “Rules Strategies / Stop Factors”).
+
+### IA
+- Inbox sits directly under Main in `TABS` and `VERIFICATION_TABS`.
+- ModuleShell now groups consecutive `tab.group` values into rail sections: Queue (Inbox, Cases),
+  Policy (Decision rules), Roster (Existing clients, Tickets). Main stays ungrouped under Verification.
+- Tab label is **Decision rules** so the rail no longer clips. Icons: Home / Inbox / ClipboardCheck /
+  Scale / Building2 / Ticket. Inbox tone is sky; Main stays violet. No `SlidersHorizontal`.
+- Page head on this tab has no Decisioning kicker — the title carries the page.
+
+### List + dialogs
+- Active / Disabled pills (`--tint-good` vs muted), dimmed disabled rows, no Yes/No.
+- Search + Active/Disabled filters; stop-factor stage chips kept. Client-side filter over one SWR
+  fetch per resource (both lists load once on the tab).
+- Dialogs stay on `ds/Dialog`. Subtitles / empty states / PageHead: “Applies on the next run.”
+  Sections are human titles; Path / Operator / Value rows have icons; chips for stage scope.
+  Footer uses `ds/Button` primary + secondary so Save is visible in light (`.ms-btn.is-primary`
+  was an unstyled no-op).
+
+### DML
+- Still direct verification Postgres (`verificationOrchestrationDb` + write pool). No CREDIT_PLATFORM HTTP.
+- Stop-factor INSERT now sets `updated_at = NOW()` with the rest of the mono column list.
+- Did not write live: `.env` points at Render `credit_platform`. Proof is unit tests (insert/audit/
+  version bump; strategy append onto an existing JSON list).
+
+## 2026-08-14 — Decision rules + cases polish (Operate)
+
+Flicker on row→modal: `ds/Dialog` mounted `open` with `phase='closed'`, so the first paint had no
+children; a `useEffect` then `showModal()` and swapped in a skeleton. Open now uses
+`useLayoutEffect`, children stay mounted while `open`, and case/strategy dialogs keep last-known
+row data in the header/body. No second fetch, no height/bounce motion.
+
+Decision rules: 2-line word-boundary summary + title tooltip; table wrap inset; Grotesk only on
+`--font-head`; nav/avatar no longer neon cyan on dark (`--text-primary` / `--text-secondary`).
+
+Cases: tinted status/queue/stage/pipeline/carrier pills; same table inset; case modal opens on
+preview then fills stages; `ds/Button` footer. Detector bans removed from files touched
+(`transition: width` dead decl, `--ease-spring` on the tab bar, accent-glow on the active rail).
+
+## 2026-08-14 — Verification Existing clients: badge air + modal keep-children
+
+List cards and the client modal shared one cramped badge language (`2px 8px` pad, `6px` row gap,
+modal flags had no flex gap). Same tokens now: pad `--space-1` / `--space-2_5`, icon-label
+`--space-1_5`, row gap `--space-2`. LOC / Prepay / cycle use `--tint-*`; aggregator marks keep
+`--tone-*`. Card wash and per-item hover hue removed so the grid is not a rainbow. Grotesk stays
+on the company name only. Client dialog stays mounted with last-known row (ruleset/cases pattern).
+
+## 2026-08-14 — Verification sidebar + first-paint count chips
+
+Two UI-only fixes. No ingest, no credit-platform handoff.
+
+1. Sidebar: Main is ungrouped (`group` omitted). `groupModuleTabs` no longer falls back to
+   `navLabel` ("Verification"), so the all-caps VERIFICATION heading above Main is gone. Queue /
+   Policy / Roster stay labelled. MytrionShell already skips empty `section.label`.
+2. Aggregate chips: first visit shimmers a pill-sized `.vf-sk` (same box as the loaded chip; label
+   holds width; ink transparent). Never "—", "0", or a spinner. SWR remount / refresh keeps last
+   numbers. Cases also keep last aggregates across filter-key changes (aggregates are unfiltered).
+
+Chips: cases open / shared / in progress / awaiting decision / unmatched; ruleset N strategies|rules
++ N active; clients on file / not flagged / debtors; first-visit aggregator filter chips.
+
+## 2026-08-14 — Task 0: FMCSA `failed` is a no-hit mapping bug (not DOT quality)
+
+Read-only on credit_platform (`dpg-d8glv2j7uimc73aij70g-a.ohio-postgres.render.com`). Last 7 days:
+852 `fmcsa: failed` of cases that reached the stage; 849 empty `stage_flow.stages.fmcsa.error`;
+those 849 are all `step_results.fmcsa.status=NOT_FOUND` + `no_hit=true`. The 3 readable errors are
+timeouts / delivery unavailable. 833 no-hits used `LEGAL_NAME_STATE`; 12 USDOT; 6 MC. `ran` is
+almost all `OK` (1211) plus 3 `SKIPPED` (no identifiers). Temp query scripts deleted; no writes,
+no ingest, no `AUTO_STAGE_RUNNER` flip, no commit.
+
+**Cause:** `_run_fmcsa_step` treats HTTP 404 as a business no-hit (`NOT_FOUND`, not in
+`_STAGE_ERROR_STATUSES`). `run_decision_desk_stage` then maps anything outside
+`{COMPLETED, PASSED, OK, SKIPPED}` to stage `failed` and leaves `error=""`. Hydrate marks
+`NOT_FOUND` as `terminal_bad` (but `NO_MATCH` as ok). Tasks 1–3 (patch_payload / run_stage /
+disable auto-runner) do **not** fix this — CP must treat `NOT_FOUND`/`no_hit` as `ran` first.
+
+## 2026-08-14 — First-run triggering (Mytrion side)
+
+Mytrion owns WHEN the first run happens. credit_platform still owns HOW (and still creates
+`requests` via Zoho poll → `submit_request_payload`). No ingest start, no `requests` INSERT,
+no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
+
+### Inbox writes
+
+- `insertPayloadPatch` / `insertRunStage` in `src/integrations/creditPlatformInboxWrites.ts`.
+- Same `kxd.sales_agent_updates` insert + `VERIFICATION_WRITE_ENABLED` kill switch.
+- Patch whitelist: `dot_number`, `mc_number`, `carrier_name`, `state`. Rejects applicant/ssn/status.
+- Run-stage whitelist: `stop_factor_pre`, `blacklist`, `fmcsa`. Rejects billable
+  (`isoftpull`, `creditsafe`, `plaid_bs`) before INSERT.
+- Actor stamp: `mytrion:<userOrSystem>`.
+- Poll helper `waitForInboxSettled` (no webhook). Consumer does not handle these kinds yet —
+  we still enqueue so CP can wire `kxd_inbox_consumer.py`.
+
+### Orchestrator
+
+- `maybeAdvanceFirstRun` / `driveFirstRun` after a local case exists, DWH enrich produced
+  DOT/MC, and `caseSync` bound a CP `request_id`.
+- Sequence: `patch_payload` → wait `applied` → `run_stage` one at a time
+  (`stop_factor_pre` → `blacklist` → `fmcsa`). Never enqueue the next row until the current
+  inbox row is `applied`. Inbox `error` is recorded on the case and stops the loop.
+- Idempotency: `first_run_status` on `verification_cases` (`idle` / `in_flight` /
+  `completed` / `error`) plus compare-and-set `claimFirstRun`. Completed or in-flight
+  pending no-ops. Timeout leaves `in_flight` (same inbox id) so a later call resumes.
+- Wired from case **refresh** (advance, no long poll) and ingest-after-bind (when ingest is
+  later re-enabled). Automation route `POST /v1/verification/cases/:id/first-run` waits
+  through the sequence (RBAC + audit). Human Run does **not** use this path.
+
+### Other API
+
+- Reset: `POST /v1/verification/cases/:id/stages/:stageId/reset` → CP
+  `.../decision-desk/stages/{id}/reset`.
+- Optional `GET .../manual-review/{id}/stage-readiness` on case detail (2s fail-soft).
+- Case attachments: list from `file_attachments`; upload via existing
+  `insertBankStatementFiles`; download scoped to the bound request.
+
+### Ingest guardrail
+
+- `createAndStartRequest` removed from `zohoDealIngest.ts`. Ingest no longer POSTs
+  `/api/v1/requests`. `request_id` stays null until `caseSync` binds a CP row.
+- `automation.verification.case-ingest` remains in `DISABLED_JOB_QUEUES`.
+
+### Schema
+
+- Hand-written `0119_verification_first_run.sql` (verification_cases is not in
+  drizzle.config — stale snapshot, same as 0117). Columns: `first_run_status`,
+  `first_run_step`, `first_run_inbox_id`, `first_run_error`, `cp_owner_username`.
+  Generated file only; not applied to Render.
+
+### Case modal
+
+- Stages grouped Auto (first run) vs Manual.
+- Empty `failed` + `step_status=NOT_FOUND` / `no_hit` renders as “No hit”, not an outage.
+- Subtitle/chip: CP `manual_review_owner_username` as claimed vs Auto (unclaimed); Zoho
+  owner stays as a mute chip.
+- Reset + Run/Approve stay on HTTP. Billable Run gated by readiness, or disabled with
+  desk/HTTP copy when readiness is missing.
+- Attachments reuse the sales write-back inbox + `file_attachments` download.
+
+### Blocked on the credit-platform agent
+
+- Inbox consumer `patch_payload` / `run_stage` branches (Tasks 1–2).
+- FMCSA `NOT_FOUND`/`no_hit` must map to stage `ran`, not empty `failed`.
+- Flip `AUTO_STAGE_RUNNER_ENABLED=0` only after Task 2 is proven (not us).
+
+## 2026-08-14 — Decision Desk gap-close (Verification cases)
+
+Close remaining Applications / Manual queue / Plaid / BS / attachments gaps on
+Mytrion Verification cases. Builds on the first-run work above. No ingest start,
+no `requests` INSERT, no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
+
+### Applications list
+
+- Status chips: New / In progress / Hold / Approved / Rejected / Failed, plus All.
+  Counts from aggregates; first paint uses skeleton aggregators (never "—" / "0").
+- Owner chips: All / Unclaimed / Mine / Others (`cp_owner_username` vs Horizon actor).
+- Payment / cycle / limit on the table, cards, and modal Application section
+  (synced from CP `manual_review_resolution` / result).
+- Export CSV of the current filter (`GET /v1/verification/cases/export`, cap 2000):
+  Company, Zoho id, DOT, Status, Queue, Owner, Limit, Payment, Cycle.
+
+### Manual queue
+
+- Claim / Release via existing CP HTTP
+  `POST /api/v1/manual-review/{id}/claim|release` with `X-User-Name` = Horizon
+  `userName` (fallback zoho id). Not inbox. Not a first-run prerequisite.
+- Transfer stubbed: CP deleted `/transfer`. UI disabled + `501 TRANSFER_UNAVAILABLE`.
+- SLA copies desk `MANUAL_REVIEW_STALE_MINUTES` (default **30**): claimed and idle
+  that long (idle from `cp_review_updated_at` || `cp_claimed_at` || last sync /
+  created). Stale rows tint warn. No second policy.
+
+### First 3 stages
+
+- Auto group: “System-run. Does not claim.” + Start first run (inbox).
+- Manual group: “Analyst work. HTTP Run claims the case.”
+- HTTP Run on auto stages stays available and warns it will claim.
+- `NOT_FOUND` / empty failed still renders as No hit.
+
+### Billable / Plaid / BS / files
+
+- Paid Run gated by stage-readiness: `paid && !ready`, already paid, circuit open.
+  `plaid_bs` in `bank_statement` mode is exempt (parse path).
+- Plaid generate/regenerate uses `insertPlaidLinkAction` (inbox), not HTTP stage run.
+  Hosted URL only (tracking `/api/v1/plaid/link/` stripped). Copyable in the modal.
+- Bank-statement parse: `POST /api/v1/manual-review/{id}/decision-desk/plaid-bs/parse`.
+- iSoftPull Run-all + Equifax / TransUnion / Experian chips (CP routes exist).
+- Documents grouped Bank statement vs Analyst note; empty + skeleton; last-known
+  files kept. No Decision Desk deep-link (`CREDIT_PLATFORM_ADMIN_URL` not set).
+
+### Schema
+
+- Hand-written `0120_verification_case_desk.sql`: `approved_limit`, `payment_type`,
+  `billing_cycle`, `plaid_status`, `plaid_link_url`, `plaid_mode`, `cp_claimed_at`,
+  `cp_review_updated_at`. Generated file only; not applied to Render (same as 0119).
+
+### Guardrails still hold
+
+- First-run is still inbox `patch_payload` / `run_stage` only. No claim. No
+  `POST /api/v1/requests`.
+- `automation.verification.case-ingest` stays in `DISABLED_JOB_QUEUES`.
+- Human claim/run/approve/reset/decision stay on HTTP.
+
+### Blocked on Claude / credit-platform
+
+- Transfer HTTP + analyst roster (deleted on CP).
+- Inbox consumer for `patch_payload` / `run_stage` / `generate_plaid_link`.
+- FMCSA `NOT_FOUND` → stage `ran`.
+- CreditSafe readiness entry (desk readiness returns plaid_bs / isoftpull / fmcsa).
+- `AUTO_STAGE_RUNNER` flip (not us).
+
+## 2026-08-14 — 0119/0120 on Octane prod + CP Task 0
+
+Applied `0119_verification_first_run` + `0120_verification_case_desk` to Oregon Octane app Postgres (`dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com` / `mytrion_ops_db`) via `ALLOW_REMOTE_DB_MIGRATE=1 pnpm db:migrate`. Those two were the only pending journal entries (0117/0118 already applied). Not the Ohio credit-platform host. Verified live: `first_run_*`, `cp_owner_username`, offer/Plaid/SLA columns present; pending count 0.
+
+CP confirmed Task 0: `STAGE_NO_HIT_IS_INFORMATIONAL = {fmcsa}` — FMCSA no-hit is informational; iSoftPull / Creditsafe no-hit stays `failed`.
+
+## 2026-08-14 — Verification ingest activate (fresh-only) + desk polish
+
+CP is deployed. Mytrion case flow is on again for **new Zoho deals only**.
+
+### Fresh-only ingest
+
+- Removed `automation.verification.case-ingest` from `DISABLED_JOB_QUEUES`.
+- Restored `*/30 * * * *` cron and Admin manual trigger.
+- COQL is now `Stage IN (…) AND Created_Time >= watermark` (not `Application_Date`).
+- Legacy YYYY-MM-DD watermarks (the old 30-day lookback) are pinned to **now** at jobs boot
+  (`pinLegacyToNow`) and again at ingest start (`resolveFreshIngestWatermark`). Optional floor:
+  `VERIFICATION_INGEST_SINCE`.
+- In-code `isDealAfterWatermark` rejects missing/old `Created_Time`. Dedup on Zoho deal id holds.
+- Still no `createAndStartRequest` / `POST /api/v1/requests`. After insert: `caseSync` bind, then
+  first-run inbox (`patch_payload` → Pre-stop → Blacklist → FMCSA).
+
+### Race (do not flip CP)
+
+`AUTO_STAGE_RUNNER` may still be on. Inbox `run_stage` is outside the advisory lock. Acceptable for
+a fresh-case test if first-run is idempotent. Do not edit verification-mono.
+
+### Impeccable / desk crit (Operate, refinement)
+
+Method: dual-agent critique (A: design · B: detector). Detector: 0 findings. No live overlay
+(no Puppeteer / browser MCP). Heuristics after fixes **28/40** Good.
+
+Fixed in scope (Horizon glass preserved):
+
+- Approve/Reject confirm in the case footer (Hold stays one-click).
+- Status pill soup reduced; first-run + stage count in subtitle and a live progress strip.
+- Auto-stage HTTP Run hidden until first-run completes/errors; isoftpull bureaus behind
+  `<details>`. Transfer ghost button replaced with Decision Desk copy.
+- Summary pills filter the queue; closed status chips de-emphasized.
+- Inbox rows with `/verification/cases/:id` open the case; empty copy no longer names a person.
+- Chip-field + file input labels; first-run `is-live` pulse (opacity, reduced-motion off).
+
+Not redesigned: ModuleShell Queue / Policy / Roster, first-run / desk / inbox architecture.
+
+### Residual
+
+Ingest stays off in prod until this branch merges to `build` then `main`. Widget `app/` must ship
+with the CRM `src/` change.
+
+Git: rebase onto `origin/build` was aborted — hashed `apps/mytrion-crm/app/` rename conflicts.
+Merged `origin/build` instead, then rebuilt the widget. Push of `feature/UltraMytrion` needs
+local GitHub credentials (`git push -u origin HEAD`); this session could not authenticate.
+
+## 2026-08-14 — Billing + CS in the Telegram Mini App
+
+The Horizon bot opens `apps/mytrion-crm` — the same SPA and the same bundle as the
+desktop CRM — so Billing and Customer Service ship to a phone exactly as designed for
+1280px. Brief was explicit: fix the phone, change nothing on laptops.
+
+**Rule 0, and it is what shaped everything else.** Every change is either CSS inside
+`(width < 640px)`, a render branch behind `useIsPhone()`, or a deletion of code proven
+dead. The 640–1200 band was frozen — untouched — because several of Billing's and CS's
+existing breakpoints (700/720/760/768/820/860/900/1080/1100/1150/1180) govern tablet
+and small-laptop layout, and re-pointing them at the ladder is how "only mobile"
+becomes a desktop regression.
+
+**Both browser gates for that rule turned out to be unusable, measured not assumed.**
+`audit:shots` advertises a byte-identical before/after comparison but is not
+byte-stable on Billing/CS/Sales at the same commit — entrance animations plus skeleton
+shimmer, two consecutive runs differing by 200–8000 bytes. A full-DOM geometry
+fingerprint failed for a different reason: this dev stack points at the RENDER
+PRODUCTION database, so the data changes between runs — a KPI badge went 77px → 65px
+wide mid-check and shifted every sibling after it, 4863 of 37684 boxes "changing" with
+no code change. Both were sampling a live system. Desktop invariance does not need
+sampling: it is a property of the source. The gate that worked compares, per
+stylesheet, the set of declarations reachable at ≥640px before vs after — 100% of the
+change, immune to a badge that moved. It ends at PASS with 276 declarations unchanged.
+Two escape hatches, both earned: a removal whose selector targets a class no `.tsx`
+renders (checked against every TSX file), and an addition of a property that cannot
+move a pixel (`overscroll-behavior-x`, `-webkit-overflow-scrolling`).
+
+**What was actually wrong, which was not what the plan predicted.**
+
+- Billing already had a careful phone audit — its own comments say "checked at 320 and
+  375 in the browser". Returns and Ledger already reflow rows into cards. The plan's
+  claim that Ledger "reverts to px at every width" read the base rule and missed the
+  `<760` override. Most of the planned Phase A for Billing was already done and was
+  dropped rather than written twice.
+- CS's split panes were likewise a non-issue: they stack at 900/1100/1180, so their
+  fixed `340px` / `minmax(290px, 340px)` tracks never apply on a phone. Dropped.
+- CS's `shared-responsive.css` was 57 lines of which two of three media blocks held
+  nothing but four EMPTY rules, on off-ladder `max-width` breakpoints. That is how CS
+  came to have no phone layer while reading as covered in review.
+- Both modules imported their phone sheet BEFORE `overrides.css`, the Horizon layers
+  and `mounted.css` — four later sheets beating it at equal specificity. Now last.
+- `.db-kpi-grid` was set 2-up in the module sheet and 1-up in `responsive-tables.css`
+  at identical specificity, so which applied depended on whether the lazy chunk loaded
+  after `global.css`. Single-sourced.
+- **The real remaining defect was invisible to every overflow check.** Debtors and
+  Prepay re-flex the shared `.db-col-*` frame to RATIOS, so at 375px the row does not
+  overflow — it divides the width by seven and crushes. `audit:mobile` and a per-tab
+  probe both PASS these tabs while the header renders
+  "CARRIERCOMPANY CYCLESTATUS OLDEST DEBT INVREMAINING" and a row reads
+  "5776662 Semi-Weekly Pending 172d 2$90,878", company name squeezed to *invisible*
+  and the amount cut short of its cents. Fixed with the wrap-into-a-card recipe Returns
+  and Ledger already use, plus `::before` labels for the numeric columns the hidden
+  header stopped naming, plus `contain-intrinsic-size` restated at 108px so scrollbar
+  geometry does not drift against a 3-line card.
+- CS Applications is 28 columns × inline px `minWidth` ≈ 3,644px (measured: the row is
+  really 3,352px at 1280). Below 640 it now renders `ds/DataTable` in card mode. NOT a
+  migration — DataTable's table mode would restyle the desktop — mounted phone-only, so
+  the desktop path is byte-identical. One column definition, two renderings: it maps
+  the same `columnsFor()` array and delegates every cell to the same `AppCell`.
+
+**Two false alarms worth recording.** The interactive browser pane reports
+`visibilityState: hidden`, so Chrome freezes animation clocks at currentTime 0; with
+`csFadeUp`'s `fill-mode: backwards` that pins a `translateY(11px)` on `.cs-panel`
+permanently, makes it a containing block for `position: fixed`, and puts the modal
+911px off-screen. I nearly filed that as a defect — in a visible page both panels
+settle to `transform: none`. Separately, measuring a modal the instant it mounts
+catches `csModalIn` mid-flight: `scale(0.97)` reads as a 6px inset (375 × 0.97 = 364).
+
+**Also worth knowing:** neither audit script can reach a deep tab. Tab state is
+component-local `useState` (billing/Shell.tsx:62, customer-service/Shell.tsx:60) with
+no URL, so `audit:mobile` only ever measures each Mytrion's LANDING tab — Billing's
+Data Center and CS's Home. Everything else in this session was audited by clicking
+through, including opening the MobileTabBar "More" drawer for destinations past the
+fourth. 14 tabs checked at 375: all clean. `data-center`, `inbox`, `tickets` and
+`service-center` are `soon: true` and unreachable by design; CITI Fuel did not resolve
+and is the one gap left unchecked.
+
+**Still open:** Billing's remaining tables (DataCenter is the virtualised one and needs
+`ds/Table` + its own windowed card list, not DataTable), CS Analytics' leaderboard, and
+converting the 14 hand-rolled modals to `ds/Dialog` — that last one restyles the
+desktop, so it needs its own PR and its own review. No real-device pass yet: the
+`--tg-viewport-stable-height` first paint, `--kb-inset`, and rotation all still need a
+phone in Telegram.
+
+## 2026-08-14 — Verification ingest disabled again
+
+Ingest disabled again; no new cases until re-enabled. `automation.verification.case-ingest` is back in `DISABLED_JOB_QUEUES` (no cron, no Admin trigger). Worker no-ops leftover queued jobs. First-run / refresh HTTP on existing cases kept. Did not delete the existing case, start ingest, or POST `/api/v1/requests`.
+
+## 2026-08-14 — CI: verification unused-var + CRM breakpoint budgets
+
+- Removed unused `asRecord` in `verificationOrchestrationDb.ts` (eslint error).
+- Verification search/sort fields: dropped `font-size` on `input`/`select` (`font: inherit`) so the
+  input-font-size budget went 45 → 43.
+- Ratcheted CRM breakpoint budgets: off-ladder 70 → 69, max-width 89 → 88, input font-size 44 → 43.
+- ESLint now ignores gitignored `ds-bundle/` so local `pnpm lint` matches CI.
+
+## 2026-08-15 — New Era Verification: Mytrion-owned underwriting flow (Sales → Verification)
+
+Rebuilt Verification against `Octane_New_Applicant_Underwriting_Flow`, on our own Postgres.
+Dependence on the external `credit_platform` DB/API is retired, not deleted.
+
+**Why the data model changed.** The old `verification_cases` was a Zoho-Deal mirror whose pipeline
+truth lived in someone else's database. The SOP describes per-phase decisions, typed financial
+findings, a local blacklist and a capacity calculation — none of which that shape can hold. So:
+one extended table plus 11 new ones (migration `0121_verification_new_era`, hand-written and
+idempotent; `verification_cases` is deliberately absent from `drizzle.config.ts`).
+
+**The shared record.** `verification_cases` is now the one row both desks work, the way
+`retention_cases` already is: lookup tables for phases/statuses, `board_column` as the Sales
+projection, and two thin department-scoped read models over the same rows. Sales fills intake
+(`/v1/verification/applications*`, sales-gated); Verification underwrites
+(`/v1/verification/flow/*`, verification-gated).
+
+**`verification_process` is the gate.** False = red, Sales still owes intake, and the desk cannot
+work it. It is computed server-side from stored state on every mutation and is absent from the
+intake patch type, so a client cannot set it. The gate only OPENS on an explicit submit — a form
+that happens to be complete stays a draft, because releasing work to another department is a
+decision, not a side effect of typing the last field.
+
+**Decisions worth remembering.**
+- Moderate/Weak risk factors seed as NULL on purpose. `computeRecommendedLimit` refuses and names
+  the tier rather than inventing a number. A wildcard default would approve limits nobody set.
+- Avg weekly net cash flow is DERIVED from its two inputs, never accepted from the client — it
+  gates the unsecured LOC. The banking form previews it; the route never forwards it.
+- Fuel is added back in step 2 because the card displaces that spend. `assertFuelNotDoubleCounted`
+  refuses when fuel exceeds total recurring expenses, which means it was recorded outside them.
+- Hard stops route to deposit/prepaid, never to decline. The SOP is explicit and so is the code.
+- A confirmed blacklist decline WRITES the blacklist. Without that the decision was cosmetic.
+- Full SSN/DL are not stored. Last 4 only; the card and licence are Dropbox documents (own root,
+  `dropbox_verification`, provider stamped per row). Screening hashes identifiers rather than
+  holding them — which is a weaker match, which is why every hit needs a human verdict.
+
+**Gotcha that cost a fix — read this before touching Verification UI.**
+`sales/redesign/theme.css` declares `--text`, `--text2`, `--muted`, `--faint`, `--alt`, `--ok`,
+`--warn`, `--accent-rgb` under `.ss-root`. The Verification Mytrion renders through `ModuleShell`
+and never enters that scope, so those names resolve to nothing there and CSS drops the whole
+declaration silently. `styles/tokens.test.ts` cannot see it — it checks a token is declared
+somewhere under `src`, and they all are. The first cut of the phase rail shipped 11 such
+references. Fixed by `verification/flow/style.ts` (local `s()` + global token names) and guarded by
+`verification/flow/tokenScope.test.ts`, which fails on any `.ss-root` token used in that tree and
+on any interactive control under a 44px touch target.
+
+**Legacy quarantine.** `src/modules/verification/killSwitches.ts` gates at the integration layer's
+`isConfigured()` seams, not per call site — every consumer already degrades gracefully there.
+Legacy tabs are UNDECLARED, not merely hidden, because `tabRegistry.test.ts` requires a declared
+tab to render and a declared-but-dead tab could be granted in a permission set.
+`verification-kill-switches.test.ts` proves the quarantine beats a fully-populated environment,
+which is the realistic mistake — a deployment still holding the old DSN and API key.
+
+**Verified.** `scripts/verificationFlowSmoke.ts` walks the whole SOP against a throwaway DB —
+red/green gate, WEX cutoff at 21 cards, banking-first at 10 trucks, owner-operator skipping phases
+4 and 8 with stated reasons, pending-docs returning to the phase that ASKED, derived cash flow,
+the policy refusal, capacity 5700 × 0.80 = 4560, and the blacklist round-trip catching a repeat
+EIN. All checks pass. Backend 2986 tests, CRM 1000, lint 0 errors, typecheck 0 both. Widget rebuilt.
+
+**Still open:** no external API calls anywhere yet — FMCSA/QCmobile (Phase 4), Highway (Phase 8),
+the credit bureau and Plaid are all manual entry by design for the prototype. The Phase 8 Highway
+pane is a checklist rather than a data pull for the same reason. Moderate/Weak risk factors need a
+policy decision before those tiers can be priced at all.
+
+## 2026-08-15 — Second read of the underwriting PDF: six SOP gaps closed
+
+Re-reading the flow document line by line against the implementation found six places the code
+was close but not faithful. All six are fixed and covered by `scripts/verificationFlowSmoke.ts`.
+
+1. **Phase 1 wanted the documents, not the digits.** Intake required `ssn_last4` / `dl_last4` but
+   not the SSN card and licence themselves — and Phase 2 exists to cross-check the application
+   *against* them, so an application could reach the desk with nothing to compare. Both are now
+   required for Flow A only.
+2. **"Additional verification" was unreachable.** The outcome existed in the model; no screen
+   offered it, so Phase 2's "INCONSISTENT → Additional Verification / Manager Review" could only
+   land on half its destinations. They are different asks and both are on the decision bar now.
+3. **Collections was never informed.** Phase 3 ends "Decline + Blacklist → Inform Collections
+   Department". Nothing did — and a comment in `screening.ts` claimed it did, which is worse than
+   silence. `verificationFlow/notify.ts` now files a high-priority inbox message tagged
+   `collection`. Best-effort: a notification failure must not leave a confirmed fraud un-declined.
+4. **Only banking gated the risk assessment.** Phase 5 says *both* reviews must complete first.
+   Banking alone still produced a number, and a capacity computed with no credit profile looks
+   exactly as authoritative as a correct one. Now refused, naming which review is outstanding.
+5. **Nine of eleven manager-review indicators.** The two missing ones are judgement-shaped rather
+   than numeric — large related-account transfers, and banking inconsistent with reported
+   operations — so an analyst who spotted them had nowhere to put them. Migration 0122 adds the
+   flag the second needs.
+6. **The underwriting summary was write-only.** It carried eight of the sixteen facts the SOP
+   enumerates and had no surface at all — assembled on every risk assessment, stored, unreadable.
+   Now complete (Highway findings, supporting documents, management exceptions included) and
+   rendered at Phase 10, where the decision is actually made.
+
+### UI/UX audit, second pass
+
+- **`role="radio"` on a button is a promise.** It tells a screen-reader user to expect arrow keys
+  and one tab stop; buttons deliver neither, so the announced affordance did not exist and each
+  option was its own tab stop. `_shared/useRovingRadio.ts` restores both (roving tabindex, arrows
+  with wrap, Home/End) for all three pickers — applicant type, risk tier, final decision.
+- Two plain-text loaders replaced with the desk's own `vf-sk` shimmer plus `aria-busy` and an
+  `sr-only` status, matching `VerificationCases`. The workspace skeleton is shaped like the
+  workspace, so the layout does not jump when data lands.
+- Impeccable detector clean on both surfaces.
+
+### A flake worth chasing rather than retrying
+
+`data-center-routes.test.ts` began failing ~1 run in 3 — an unrelated RingCentral test. It turned
+out to perform two pieces of **unmocked I/O**: `zohoCrmRecords.getRecord` (the file's stub shadows
+only "what each test drives", and the ended-call test drives `getRecord` too) and
+`mytrionCallRepo.create` with no database in a unit run. The route swallows both by design, but
+only after waiting for a socket that was never going to connect — which fits inside the default 5s
+budget on an idle machine and does not on a busy one. Verified against the pre-work commit
+(3/3 green) versus this branch (~1/3 failing): this branch's extra ~140 tests and two more
+`buildApp()` calls were simply enough load to expose it. Both are stubbed now — removing the I/O
+rather than widening the timeout, since a slower machine would find the same edge again. Full
+suite 5/5 clean after.
+
+**Reference:** the process and its Horizon wiring are written up as a shared artifact (10 phases,
+the red/green gate, the capacity formulas and the policy refusal, what is deliberately manual).
+
+## 2026-08-15 — Verification existing-clients: Dropbox attachments keyed on carrier id
+
+The existing-clients modal was read-only DWH profile. Reviewers needed the same attach/list/download
+the CRM already has on Maintenance cases, but tied to the **carrier id** (an existing client often
+has no verification case).
+
+### How Dropbox attachments already worked (unchanged)
+
+One Dropbox app, three root folders, one `ObjectStorage` seam (`storageFor(row.storageProvider)`):
+
+| Pipeline | Table | Root | Env switch |
+| --- | --- | --- | --- |
+| Comms chat | `file_assets` + `mytrion_thread_attachments` | `/comms` | `COMMS_STORAGE_PROVIDER` |
+| Maintenance cases | `maintenance_case_attachments` | `/maintenance` | `MAINTENANCE_STORAGE_PROVIDER` |
+| Verification applicant docs | `verification_case_documents` | `/verification` | `VERIFICATION_STORAGE_PROVIDER` (default Dropbox) |
+
+Auth is the refresh-token grant in `src/integrations/dropbox.ts`. The provider is stamped **on the
+row** so flipping env cannot 404 an old file. Download links are `get_temporary_link` (~4h), fetched
+on click, never embedded in a list. Telegram Mini App cannot open a cross-origin signed URL, so each
+surface also has a `/bytes` proxy.
+
+`file_assets` is the wrong table here (agent-gateway shape, comms provider type). Case documents are
+the wrong table too (keyed on `case_id`).
+
+### What shipped
+
+New `carrier_attachments` table (tenant + `carrier_id`). Bytes go through the existing
+`dropbox_verification` adapter. Storage key:
+
+`{tenantId}/carriers/{carrierId}/{id}-{filename}` → Dropbox `/verification/...`
+
+Routes on the existing roster (verification department, not sales):
+
+- `GET/POST /v1/verification/roster/:carrierId/attachments`
+- `GET .../attachments/:attId/download` (temporary link)
+- `GET .../attachments/:attId/bytes` (Telegram)
+- `DELETE .../attachments/:attId`
+
+CRM: client modal now has Details / Attachment sub-tabs. Attachment fetch starts when that tab
+opens. Upload is a file picker (multi); download opens the temporary link (or `/bytes` in Telegram).
+
+Migration `0123_carrier_attachments` is hand-written + idempotent — `carrier_attachments` is not in
+`drizzle.config.ts` (stale snapshot, same reason as 0101). Apply with `pnpm db:migrate`.
+
+Left the in-flight verificationFlow files (`applicationService`, `deskService`,
+`verificationFlowRepo`, `verificationFlowBundleRepo`) alone.
+
+## 2026-08-15 — Existing-client modal: local attachments + match New Applications
+
+The Attachment tab's "Run pnpm db:migrate" banner was truthful for the DB the API was using, not a false
+positive. `.env` `MYTRION_OPS_DATABASE_URL` is Render; `0123_carrier_attachments` was applied only to
+local Docker `:5433`. The reused `pnpm dev:all` process never picked up the local migrate.
+
+Fixes (did **not** migrate Render, did **not** set `ALLOW_REMOTE_DB_MIGRATE`):
+
+- `LOCAL_OPS_DATABASE_URL` in gitignored `.env` so `pnpm dev` uses localhost:5433. Same convention as
+  `pnpm dev:local-db` / `USE_LOCAL_OPS_DB=1`.
+- Unmigrated 503 now names the connected host and points at `pnpm dev:local-db`, matching verification
+  cases. The CRM treats `CARRIER_ATTACHMENTS_UNMIGRATED` as an unavailable empty state — no panic
+  banner, no stacked empty, Details still paint immediately.
+- Attachment list uses `useCachedLoad` and fetches only when the Attachment chip is selected. Return
+  visits are cache hits (no skeleton flash).
+
+UI revert (same day): Existing Clients list/modal were briefly flattened toward New Applications.
+User rejected that. Restored incumbent card grid, AggregatorMark multi-color, `vf-tag` badges, and
+the `ds/Dialog` + `vf-stat` modal from HEAD. Kept Attachment tab + cache/unavailable-state only.
+
+## 2026-08-15 — Sales Create: drop the Application tab
+
+Sales Mytrion → Create no longer starts a credit application. The Application sub-tab (and its
+"Who is applying?" intake panel) is unhooked from `CreateTab`. Ticket / Escalate / Lead stay.
+
+Intro copy is the existing `NAV_DESC.create` plus the per-mode sentence — no "Start a credit
+application" line. Sales Verification empty-state no longer points at Create → Application.
+
+Left intact: `applicationIntake.tsx` / `applicationFields.tsx` (still opened from Sales
+Verification for an existing case), Verification Mytrion, and the verificationFlow backend.
+
+## 2026-08-15 — Existing-client modal: Details / Attachment tab chrome only
+
+The two chips in the verification client modal were `ds/Tabs` `size="sm"`: 28px hit target, filled
+Material `description` vs thin `attach_file`, cyan line underline. Restyled **that control only**.
+
+- Lucide `IdCard` / `Files`, both 20px stroke 2 — same family as Existing Clients marks, no fill.
+- Local `.vf-modal-tabs` pill track: full-width, 44px tabs, `--text-base`, `--hz-pane-*` +
+  `--surface-raised` selected. No accent, no cyan, no glow.
+- Left the roster, AggregatorMark, LOC/Prepay tags, `vf-stat` / payment chrome, and attachment
+  upload/download / carrier-id keying alone. Did not flatten toward New Applications.
+
+## 2026-08-15 — Mytrion Watch: behavioural scoring for existing carriers
+
+New tab inside the **Verification** Mytrion (`Queue` group, beside New applicants). New applicants
+are scored once at intake; every carrier already on the books is now re-scored weekly from its own
+payment and fuelling behaviour. Built from `scoring_all_in_one.sql` (logistic regression on WoE,
+model `forward_all_clean_v1`). No escalation wired — this is a watchlist, not a workflow.
+
+### Weights live in a table, not in code
+
+`mytrion_watch_models` (intercept + score scaling + band cut-points) and `mytrion_watch_model_bins`
+(58 WoE bins, seeded by migration `0124`). A retrain is an INSERT with a new `model_version`, and
+every historical score stays explainable against the weights that actually produced it.
+
+### Why we snapshot instead of scoring on request
+
+`verification_staging.postlimit_default_list` is **mutated in place** — `payment_date` /
+`payment_amount` are filled in when a bill is paid — so scoring a past Monday off it uses knowledge
+from the future, and its archive holds one week. Every week not snapshotted is history that is gone.
+Observed live: the same 2026-08-04 cut re-scored ~20 minutes apart moved 3 carriers between
+improved/worsened. That is the table changing under us, not a bug — and it is the whole argument for
+`mytrion_watch_scores` existing.
+
+Weekly pg-boss job `automation.verification.watch-scoring`, cron `10 6 * * 1`.
+
+### The grain decision (highest-risk call in the whole feature)
+
+Source is `octane.mart_transaction_line_items` per the standing decision, but that table is at
+LINE-ITEM grain (1.33M rows) while the model was trained at TRANSACTION grain (971k).
+`median_fuel_31d` is a median over transactions and `night_weekend_ratio_31d` counts them, so line
+items would inflate both and shift carriers into the wrong bins. Validated against the training
+source over 2026-04-01..05-04 joined on `transaction_id`:
+
+- `transaction_fuel_quantity` == trained `fuel_quantity` → **72,340 / 72,340 (100%)**
+- `SUM(line_item_fuel_quantity)` → 48,844 / 72,340 (67%)
+
+So the query does `DISTINCT transaction_id` and reads the transaction-level columns. Same 72,340
+rows also agree on the hour with `Asia/Tashkent` and agree on ZERO with UTC — the reference SQL's
+`EXTRACT(HOUR …)` was session-timezone dependent; ours is deterministic.
+
+Two deliberate departures from the reference SQL:
+
+- `pay_ratio_31d` and `avg_invoiced_14d` are computed in **separate CTEs**. The original joined both
+  invoice windows to `base` in one query, which multiplies the two sets together.
+- The night/weekend **double count is reproduced on purpose** (a 02:00 Sunday swipe counts twice, so
+  the ratio spans 0–2). The published bins top out at 0.816986, which only makes sense on that
+  scale. Do not "fix" it without retraining.
+
+`pickBin` returns `null` when nothing matches instead of contributing zero, and the run logs
+`unmatchedFeatures` — the reference SQL made a data gap indistinguishable from a neutral carrier.
+
+### Surface
+
+`verification/watch/` — queue (`MytrionWatch.tsx`), detail (`WatchDetail.tsx`), history chart. Built
+on the desk's own language, not a second one: `--hz-pane` surfaces, `--vf-r-panel` corners,
+`translate` not `transform` on hover. The one new idea is a **risk ramp** — the four bands run
+emerald → amber → orange → red so severity reads before the label does, declared once on `.mw` so
+the queue, the chart and the detail cannot disagree.
+
+- Aggregators and the band bar always describe the WHOLE snapshot, never the current filter — a
+  counter that changes when you filter by it cannot be used to check your work.
+- Filtering is server-side. The book is larger than one page, so filtering the page in the browser
+  would hide matches that fell past the limit. Search is debounced 300ms.
+- Detail answers the questions in the order they are asked: score → history (with the band
+  cut-points drawn as guides) → diverging contribution bars → the raw feature values. Bars are
+  scaled against the largest ABSOLUTE contribution, so a feature raising risk by 1.6 visibly dwarfs
+  one protecting by 0.2; scaling each side separately would draw them equal and invert the story.
+- Skeletons reuse the real boxes, so nothing shifts when data lands.
+
+### Verified
+
+728 carriers scored in ~6s locally / ~77s against Render. Golden case (carrier 5745870) pinned in
+`tests/unit/mytrion-watch-scoring.test.ts`: sum −0.83734 → logit −3.711708 → PD 0.0238 → score 594.2.
+Routes smoke-tested over HTTP: 200 on list/detail/band/movement/search/runs, 403 for a Sales worker,
+401 anonymous, 403 for a non-admin POST to `/run`. Backfilled 3 weekly snapshots on prod so movement
+is populated before the first cron.
+
+### Trap worth recording
+
+`asWatchSchemaError` reported `MYTRION_WATCH_NOT_MIGRATED` while prod demonstrably had the tables.
+The guard was right and the DB was wrong: a concurrent session had added
+`LOCAL_OPS_DATABASE_URL=…localhost:5433/octane_assistant` to `.env` for `carrier_attachments`, and
+`databaseUrl` prefers it whenever `NODE_ENV=development`. The API in dev reads the local docker
+Postgres, not Render. Migration `0124` is now applied to both.
+
+## 2026-08-15 — Mytrion Watch: pagination, honest labels, and the missing half of the explanation
+
+Second pass on Mytrion Watch after review of the live desk. The cosmetic complaint turned out to be
+sitting on top of a correctness bug.
+
+### The labels were wrong, not just ugly
+
+`WATCH_FEATURE_LABEL` asserted a DIRECTION per feature — "Low payment ratio", "High night / weekend
+activity", "Abnormal payment gap". Three of the eight were then false roughly half the time, because
+these WoE tables are **not monotonic**. Checked against the seeded bins:
+
+- `night_weekend_ratio_31d` — bin 0 (≤0.381) risky, bin 1 protective, bin 3 protective, bin 4 risky.
+  A carrier at 0.333 sits in the LOWEST bin and the desk printed "High night / weekend activity".
+- `payment_gap = null` (no payment history at all) printed "Abnormal payment gap" — a behavioural
+  claim about a carrier we have nothing on.
+- `avg_invoiced_14d` and `median_fuel_31d` alternate across all seven bins.
+
+Direction now comes off the BIN, not the feature: `describeDriver()` reads the bin bounds and emits
+"Very low X" / "Very high X" / "X in a higher-risk range", and the NaN bin gets its own sentence from
+`WATCH_FEATURE_MISSING` ("No payment history yet") because a gap is not a behaviour. A feature with a
+single bin is both ends at once and honestly claims no direction.
+
+Trap inside the fix: the first cut treated a null bound as "skip this comparison", which made every
+bin satisfy `highest` — the top bin's open end matched everything. Unbounded ends are ±Infinity.
+
+Labels are now neutral and unit-bearing (`Invoices paid (31 days)`, `Time on the book`), with
+`WATCH_FEATURE_UNIT` + `WATCH_FEATURE_HELP` shipped alongside the score. Units live with the model,
+not in the client: only the model knows 26 is days and 0.333 is a ratio that runs to **2**. Both
+databases re-scored so the stored `risk_drivers` carry the corrected phrasing.
+
+Also corrected: `mob` is DAYS since first transaction, not months. The bin ladder (13.5 / 30.5 / 44.5
+/ 57.5 / 86.5 / 210.5) only makes sense as days, and "Young account: 5" hid the question entirely.
+
+### Were we showing the values to full extent? No.
+
+Stored and previously unshown: the bin each value fell in, the model's intercept and scaling, the
+band cut-points, `sum_contribution`, `logit`, and the run metadata. Added:
+
+- **Bin bounds travel with each contribution** (joined from `mytrion_watch_model_bins` in the detail
+  query). A weight of +1.60 is arbitrary until you can see the value landed in "up to 47%".
+- **The model comes down with the score**, so `bandCuts()` reads 520/580/640 from the row that
+  produced the score instead of the frontend hardcoding them.
+- **"How this score was reached"** — evidence, baseline, log-odds, probability, score. A credit
+  decision a carrier may appeal has to be reproducible on paper.
+- **Last run** ships with the queue page: scored count and duration, so "is this current" is part of
+  reading the list.
+
+### Pagination
+
+Was `limit: 200` with a footnote; 528 of 728 carriers were unreachable. Now server-side offset paging,
+50 a page, numbered with first/last always present. `pageWindow()` has its own test — which caught
+that an ellipsis was standing in for a single hidden page (same width, one more click).
+
+### Impeccable polish
+
+- **Merged two panes into one.** "What is driving it" and "Behaviour on file" listed the same eight
+  features twice with different columns. One table now: measure + help, value with unit, bucket,
+  effect bar.
+- **3px coloured `border-left` removed** from rows and hero (craft floor refuses a colour rail above
+  1px). Severity is carried by the score colour and the band pill, which already do that job.
+- **Hero facts became labelled pairs.** "Carrier 5840150 Limit $4,000 Default risk 47.5% First
+  snapshot Scored Aug 11" was one run of same-weight text.
+- **Score scale ribbon** — the score drawn against the model's own band zones, so 490 has a size.
+- **Single-snapshot chart replaced.** One dot in an empty frame read as broken; under two points it
+  now says a trend needs two runs.
+- Legend chips are filters like the bar above them; skeleton widths set per context so nothing shifts.
+
+### Artifacts
+
+Two matched explainers published — *New Applicant Underwriting* (the intake lifecycle: shared record,
+red/green gate, ten phases, the capacity formula worked through, six outcomes) and *Mytrion Watch*
+(the existing-client lifecycle: scope, eight measures with units, bands, one score worked end to end,
+why snapshots).
+
+## 2026-08-16 — Applications are cron-generated, and Sales can see the underwriting
+
+Architecture correction. Applications were being hand-created (Sales drafted one); they must come
+from the **same cron that used to generate verification cases**, appear on both desks, and Sales
+must be able to watch the underwriting and act when it stops.
+
+### Creation moves to the poller
+
+`automation.verification.case-ingest` is un-parked (`VERIFICATION_ZOHO_INGEST_ENABLED = true`,
+removed from `DISABLED_JOB_QUEUES`, cron `*/20 * * * *`, manually triggerable for a backfill). It is
+now the **only** path that creates an application:
+
+- New `verificationFlow/dealIntake.ts` writes the new-era record: `origin='zoho_deal'`,
+  `verification_process=false`, phase `p1_intake`, status `intake_incomplete`, phase rail seeded,
+  missing list computed immediately so the red card is not empty on first open.
+- The credit_platform-era follow-ups were **removed** from that path, not flag-guarded:
+  `verificationCaseStageRepo.seedForCase(DECISION_DESK_STAGE_IDS)`, `syncCaseFromVerificationDb`
+  and `maybeAdvanceFirstRun` are gone. Carrier enrichment stays — it reads the DWH broker snapshot,
+  which phases 2 and 4 genuinely use.
+- `POST /v1/verification/applications` is now **admin-only**, kept as a backfill/support hatch. A
+  second creation path is how the two desks end up with divergent records.
+
+### The ownership bug this exposed
+
+`listForSalesAgent` scoped on `submitted_by_zoho_user_id OR owner_zoho_user_id`, and the old ingest
+put the **Verification** owner on the row. A cron-created application would therefore have been
+invisible to the only person who can complete it. Sales scoping now also matches `zoho_owner_id`
+(the Deal's owner), extracted as `salesOwnership()` so the list, the count and `assertSalesMayEdit`
+cannot drift apart.
+
+A Deal with **no owner** in Zoho still creates the application — it is real work — owned by the desk
+so the NOT NULL column is satisfied, but `zoho_owner_id` stays null so the Sales list does not claim
+an agent who does not exist. Logged loudly; the fix is in Zoho.
+
+`inferApplicantType` only guesses on a confident signal: MC/DOT → carrier, an incorporated name
+without either → company (the SOP's "LLC / corporation without MC/DOT"), otherwise null so the agent
+picks. Guessing wrong selects the wrong intake form and the wrong phase set.
+
+### Sales can now see the underwriting
+
+`ApplicationDetail` carries the ten-phase rail. `buildRail()` was extracted from `deskService` into
+`phases.ts` so both desks render from one builder — building it twice is how the two sides end up
+disagreeing about whether phase 4 was *skipped* or *never reached*.
+
+New `sales/redesign/VerificationProgress.tsx`: read-only rail with Sales-facing words (Cleared /
+In progress / **Waiting on you** / With a manager / Not applicable), and the blocking phase lifted
+out above the timeline — a stop is the only part an agent can act on, so it is stated rather than
+left to be spotted among ten rows. Dimmed before submit, always present: an agent should never have
+to ask another department for a status.
+
+Editing when it goes red was already right — `assertSalesMayEdit` permits `pending_docs` — and the
+document-request/upload path to Dropbox already existed, so "they see it and upload" needed the
+ownership fix and the progress view, not new plumbing.
+
+### Trap worth recording
+
+`pnpm test` showed **115 failures across 16 files**. Stashing proved 108 of them reproduce on a
+clean tree: **Docker Desktop had stopped**, so the local test Postgres on :5433 was gone and every
+route test that resolves a session timed out into a 500. Started Docker, `docker compose up -d
+postgres`, and the count dropped to the 7 that were genuinely mine — all tests asserting the old
+position (ingest parked, Sales creates), rewritten to assert the new invariant rather than flipped.
+A/B before blaming your own diff.
+
+## 2026-08-16 — Poll on Application_Date, batch the duplicate check, tell both desks
+
+### The query
+
+```
+select id, Application_Date from Deals
+ where Stage in (...7 stages...)
+ and Application_Date >= '{watermark}'
+ order by Application_Date asc limit 0, {limit}
+```
+
+Filtered on **Application_Date**, not `Created_Time`. The application date is when the carrier
+actually applied, which is the event this job exists to react to — a Deal created months ago that
+only now gets an application date was invisible to the old cursor. Only `id` and `Application_Date`
+are selected; the full record is fetched per deal afterwards, and only for deals we do not have.
+
+### The cursor is now a DATE, which makes duplicate handling load-bearing
+
+`Application_Date` is a date, so the cursor is `YYYY-MM-DD` and every run re-reads at least one
+whole day. The cursor deliberately rests **on** the last date seen rather than advancing past it —
+a deal applied later that same day must still be picked up — so most of what comes back is already
+ingested. Three things absorb that:
+
+1. **One batched existence check.** `verificationCaseRepo.findExistingDealIds(ctx, ids)` replaces a
+   `findByDealId` per row — up to 1000 round trips against a database ~300ms away before a single
+   new application could be created. Selects the id column only.
+2. **Filter before fetching.** Watermark check and page-local dedupe run first, then the batch
+   query, and only then `getRecord`. A steady-state run where the whole page is known now costs one
+   query and **zero** Zoho record fetches.
+3. **Page-local dedupe.** Zoho can return the same deal twice across a boundary; a `Set` keeps the
+   batch lookup honest and stops two inserts racing the same id. The partial unique index on
+   `zoho_deal_id` is still the backstop.
+
+Date comparison is done on `YYYY-MM-DD` **strings**, not parsed Dates, so no timezone can shift the
+boundary by a day. `resolveFreshIngestWatermark` inverted meaning: a date cursor is now the correct
+form and a leftover `Created_Time` datetime is truncated to its day rather than discarded, so a
+running deployment does not skip an interval. Found and deleted a stale second `maxApplicationDate`
+at the bottom of `zohoDealMap.ts` — a leftover from the original Application_Date design.
+
+**Known consequence:** a Deal in a listed stage with a NULL `Application_Date` never matches
+`Application_Date >= x` and is never ingested. That follows from the filter field; flagged rather
+than worked around.
+
+### Inbox goes to BOTH desks
+
+`notifyApplicationCreated` posts two messages, not one — different people, different jobs, and the
+inbox is per-owner:
+
+- **Sales agent** (the Deal owner): *"Application to complete · <company>"* → `/sales/verification/:id`
+- **Verification agent** (`VERIFICATION_CASE_OWNER_ZOHO_USER_ID`): *"New application · <company>"* →
+  `/verification/applicants/:id`
+
+`zohoRecordId` is unique per tenant, so the rows are suffixed `:sales` / `:verification`. That
+uniqueness doubles as the idempotency guard — a re-run cannot double-post either. Each recipient is
+best-effort: one inbox failing must not cost the other its message, and neither is worth failing the
+ingest over, because the application row already exists.
+
+A Deal with no owner still notifies Verification, at **high** priority and saying so — an
+application nobody has been asked to complete would otherwise sit red forever.
+
+## 2026-08-16 — Attachments were write-only. Fixed, and the pages smoke-tested.
+
+### The hole
+
+Files uploaded fine and were then **unreachable from the product**:
+
+- The Verification desk had **no download route at all**. `/verification/flow/*` had
+  `documents/request` and `documents/resume` but nothing to open a file. The workspace showed a
+  document *count* and the summary listed filenames as plain text.
+- The Sales route `/verification/applications/:id/documents/:documentId/download` existed but
+  **nothing called it** — no client function, no UI link. The received-file row rendered the
+  filename as a `<span>`.
+
+So bytes reached Dropbox and neither desk could get them back. Every phase from 2 onward is a
+cross-check against those documents, which makes this the underwriting job, not a convenience.
+
+### Fixed
+
+- `GET /verification/flow/cases/:id/documents/:documentId/download` — **read**-gated, not write:
+  reading a bank statement *is* the work. Returns a short-lived link, matching the Sales route so
+  both desks resolve the same document the same way. Audit-logged.
+- `api/verificationFlow.ts`: `getDocumentLink(desk, caseId, docId)` and `openDocument(...)`. One
+  call for both desks — the caller says which, rather than the two surfaces growing separate
+  download code. The tab is opened BEFORE the await: Safari and Firefox block `window.open` after
+  an async gap because it is no longer attributable to the click.
+- Sales: the filename is now a button that opens the file.
+- Verification: new `flow/CaseDocuments.tsx` under the phase pane — received files open on click,
+  requested-but-not-uploaded rows shown dashed and greyed, because "what am I still waiting on" is
+  the other half of the same question.
+
+### Proven end to end, against real Dropbox
+
+Not just route wiring — the actual bytes:
+
+```
+SALES upload            -> 201   (multipart, as the browser sends it)
+  stored: smoke-statement.pdf  status=received  size=193
+VERIFICATION download   -> 200
+  link host: …dl.dropboxusercontent.com
+  FETCHED  http=200  bytes=193  identical=true
+SALES download          -> 200
+SALES -> verif route    -> 403   (gate holds)
+CLEANUP delete          -> 200
+```
+
+The first attempt was rejected `415 VERIFICATION_DOC_UNSUPPORTED` for a `.txt` — the MIME allowlist
+doing its job.
+
+### Page smoke — no 500s
+
+Every endpoint both Mytrions call on load, with real worker tokens:
+
+| | |
+|---|---|
+| flow/cases, flow/cases/:id, flow/policy | 200 |
+| watch/scores, watch/scores/:carrierId, watch/runs | 200 |
+| verification/roster | 200 |
+| applications, applications/:id | 200 |
+| download of a nonexistent document | 404 (correct, not 500) |
+| Sales token → flow routes | 403 |
+| Verification token → applications | 403 |
+
+Nothing 5xx. Worth recording: the earlier 500 storm was Docker being down, not code — see the
+previous entry.
+
+## 2026-08-16 — Dropbox view paths audited across every Mytrion (CS excluded)
+
+Ran a 28-agent audit (5 surfaces → adversarial verify) over every Dropbox-backed attachment surface,
+asking one question: can a user actually OPEN the file, every time.
+
+### It caught a regression in the previous commit
+
+`openSignedFile` claimed the tab with `window.open('', '_blank', 'noopener,noreferrer')`. Per the
+HTML spec's window-open steps, **"if noopener is true, then return null"** — and `noreferrer`
+implies `noopener`. So the tab was created but the handle was always `null`: the tab-before-await
+protection was **inert**, every click leaked an orphan `about:blank`, and the code fell through to
+`window.location.href` — navigating the user's own workspace tab at the file. Strictly worse than
+the bug it replaced.
+
+The unit test passed because the mock returned a fake handle. **A mock cannot catch this.** The
+test now asserts on the ARGUMENTS — no `noopener`, no `noreferrer` in the features string — which
+is the only thing that would have failed. Fix is `window.open('about:blank', '_blank')` + severing
+`opener` by hand, the shape `RecordsTab.tsx:297` has used for the Telegram mini-app all along.
+
+### Fixed
+
+- **Existing clients (carrier attachments)** — the user's actual question. `window.open` sat AFTER
+  the awaited presign call, so Safari and Firefox discarded it: the Download button did literally
+  nothing, no error, no spinner. Now routed through `openSignedFile`. The `/bytes` proxy route is
+  gated behind `isTelegramWebView()` and was never a desktop fallback.
+- Button now shows in-flight state and reads **Open** rather than Download — resolving a Dropbox
+  link is a real network round trip, and a silent slow button gets clicked again.
+- `documentService` gained the storage precondition `carrierAttachmentService` already had:
+  unconfigured Dropbox now returns **503 STORAGE_NOT_CONFIGURED** instead of a raw 500 from inside
+  the adapter. Verified by unsetting the env.
+
+### Verified end to end against real Dropbox
+
+Carrier attachments: upload 201 → presign 200 → fetched from `dl.dropboxusercontent.com`,
+**69 bytes, byte-identical** → `/bytes` proxy 200, also identical → Sales token 403 → delete 200.
+
+### Reported, deliberately NOT touched — Customer Service
+
+Both carry the identical post-await `window.open` bug and both are one-line fixes with
+`openSignedFile`, but they are CS surfaces:
+
+- `mytrions/customer-service/MaintenanceAttachments.tsx:68`
+- `features/comms/ChatThread.tsx:241` (shared comms console — used by CS as well as Sales)
+
+### Dead code, not fixed
+
+`VerificationDetail.tsx:286` and `VerificationCaseDocuments.tsx:35` both swallow download failures
+with a bare `void`. Neither is mounted: `VerificationDetail` has no mount point at all, and the
+`VerificationCaseModal` chain hangs off the Inbox/Cases tabs that `verificationTabs.ts` deliberately
+does not declare.
+
+### HR — there is no HR Dropbox implementation
+
+Worth recording plainly, since the assumption was that there is one. HR has exactly ONE object-store
+surface: the employee avatar (`hr_employees.photo_file_id` → `file_assets`). The attendance CSV is
+built in memory and returned in a JSON envelope; the account profile picture is a data URL column.
+There is no `/hr` root, no `dropboxHrStorage`, no `dropbox_hr` provider.
+
+HR photos DO reach Dropbox — by riding the generic `file_assets` pipeline, whose destination is
+`FILE_STORAGE_PROVIDER=dropbox` → `dropboxStorage`, rooted at **`/comms`**. So HR headshots land in
+the comms folder mixed with chat attachments, which contradicts the "each service gets its own named
+subfolder" rule the storage module documents. Only ONE HR photo exists (`file_assets`
+`gnhvyysz18njinypzqik3ppi`), and 0 of 222 `hr_employees` rows reference one, so this is cheap to
+correct now and expensive later — but it needs a decision plus an object move, so it is left as a
+recommendation.
+
+Second HR finding: a team lead holding attendance-only access can open the Attendance tab but every
+avatar request 403s, silently falling back to initials. Cosmetic today (no photos exist) and the fix
+widens an RBAC gate, so it is reported rather than taken unilaterally.
+
+## 2026-08-16 — HR files onto their own object-storage root; profile modal reworked
+
+### Employee files now have their own Dropbox folder
+
+HR photos rode the generic `file_assets` pipeline, so `fileStorageProvider()` sent them wherever
+`FILE_STORAGE_PROVIDER` pointed — in prod, `dropbox` → the **`/comms`** root, mixed in with chat
+attachments.
+
+- New `dropbox_hr` provider + `dropboxHrStorage` rooted at `DROPBOX_HR_ROOT_PATH` (default `/hr`).
+- `HR_STORAGE_PROVIDER` is separate from `FILE_STORAGE_PROVIDER` on purpose: employee photos must
+  not be moved by a change to the general file pipeline's env.
+- `hrPeople.routes.ts` pins the provider explicitly rather than falling through.
+- Migration `0125` widens the `file_assets_storage_provider_chk` CHECK. **Additive only — no
+  UPDATE.** Because the provider is recorded per row, the one photo already in prod keeps
+  `storage_provider='dropbox'` and still resolves to `/comms`, which is where its bytes are. Nothing
+  had to be moved. Applied to local and prod.
+
+Proven end to end against real Dropbox: stored → `storage_provider=dropbox_hr`, path
+`/hr/octane/upload/2026-08/…/hr-root-smoke.png` → presign → fetch **22 bytes, byte-identical** →
+delete. (Two false alarms on the way: `storeFile`'s return has no `s3Key`, and a synthetic ctx
+without `departments` crashes `fileVisibilityFilter` — both were my harness, not the product.)
+
+### Optimised the read
+
+`HrAvatar` resolved one link per face, so a twenty-person team panel made twenty API calls, each of
+which made its own Dropbox `get_temporary_link` round trip. Added
+`POST /hr/employees/photo-links` (max 100 ids, per-employee failures yield no entry rather than
+failing the batch) plus `prefetchHrPhotoLinks`, which warms the SAME module cache `HrAvatar`
+already reads. `HrPersonView` warms it once per team. Deliberately NOT "presign the whole
+directory" — the single-employee route's comment explains why that is wrong, and this does not
+change it; it batches only what is on screen.
+
+### Profile modal
+
+`/impeccable` polish plus `modern-web-guidance`. Note: **there is no `karpathy` skill installed** in
+this project or globally — said rather than silently substituted.
+
+Measured before changing anything: `--text-muted` is **5.12–5.59:1** on dark and **6.31:1** on
+light. Contrast passes AA everywhere. The problem was hierarchy and sizing, not contrast.
+
+- `@media (max-width: 560px)` → `@media (width < 640px)`. A fifth breakpoint value in a four-value
+  ladder, in the inclusive spelling. Both budgets ratcheted in the same commit: off-ladder 69 → 68,
+  legacy max-width 88 → 87.
+- `gap: 2px` → `var(--space-0_5)`; `letter-spacing: 0.08em` → `var(--tr-caps-micro, …)`.
+- **One type size across the field grid.** `.mono` dropped a whole step to `--text-xs` while
+  `.value` was `--text-sm`, so a two-column grid rendered at two sizes depending on which column a
+  value landed in. Mono now differs by family and tabular figures only.
+- The email — the line that identifies the account — was the smallest, faintest thing in the dialog
+  (`--text-xs`, muted). Now `--text-sm`, `--text-secondary`.
+- Hero `padding-bottom` was `--space-5`, the same step as the body gap, so the rule under it sat in
+  double the spacing of every other seam. Now `--space-4`.
+- `.hint` had `margin-top` fighting the parent's flex gap. Spacing moved into a `.panel` wrapper.
+- Removed the `count: 9` badge on the Employee tab — it read as nine things needing attention; it
+  was the number of read-only fields.
+- **The tab strip no longer shifts.** The Employee tab was appended after the HR fetch resolved,
+  moving the strip under the pointer. The slot is now held disabled with a title while loading, and
+  the floating "Loading employee record…" line under the tabs is gone.
+- Mobile: hero gains a gap when stacked and the photo buttons fill the row.
+
+Not verified in a browser: jsdom does no layout, and `audit:mobile` drives routes, not a modal
+opened from the account menu. The token, ladder and budget claims are machine-checked; the visual
+result is not.
+
+## 2026-08-16 — ds/Tabs owned neither the seam nor its own hairline
+
+Reported as "no padding between the tab and its content" on the profile modal. It was two defects in
+`ds/Tabs`, not one, and both affected every consumer.
+
+**1. No seam.** `.root` is a column flex with no `gap`, and `.panel` sets only `min-inline-size`. The
+panel sat flush against the rail, so a field label rendered directly under the selected-tab
+indicator and the control read as part of the content. Added `--tabs-gap`, scaled with the control
+like `--tabs-h`: `--space-4` at `md`, `--space-3` at `sm`.
+
+**2. The hairline was under the PANEL.** `.root[data-variant='line']` put `border-block-end` on the
+root — which contains the rail *and* the panel — so the rule painted under the panel's last line of
+content. Meanwhile the selected-tab indicator is positioned `inset-block-end: calc(-1 *
+var(--tabs-ring-pad))` with a comment saying it "sits flush on top of the hairline", and had nothing
+beneath it. Moved the border to `.list`, where the rail's bottom edge actually is.
+
+`verificationModal.css` had been compensating with `padding-block-start: var(--space-4)` on
+`[role='tabpanel']` — a local workaround for a gap the component should own. Removed, or it would
+now double.
+
+### Verified in a real browser, not jsdom
+
+jsdom does no layout, so the suite could not see either defect. Captured the component clipped from
+`/kitchen` over CDP, before and after, using the harness's documented before/after workflow:
+
+- **before** — indicator, then panel content flush beneath it; a stray rule at the bottom of the
+  panel. Clip height **145px**.
+- **after** — indicator, hairline directly under the rail, clear gap, then content. Clip height
+  **161px**.
+
++16px, exactly `--space-4`. The profile modal uses `size="sm"`, so it gets the 12px seam.
+
+## 2026-08-16 — Karpathy guidelines installed natively for all three assistants
+
+### What they actually are
+
+Not a document Karpathy wrote. They are a community distillation of
+[his observations](https://x.com/karpathy/status/2015883857489522876) on LLM coding pitfalls, from
+[`forrestchang/andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills)
+(MIT). Reproduced **verbatim** rather than paraphrased, and the provenance is stated in the file —
+attributing invented text to a named person would have been worse than not installing them.
+
+### Installed where each tool actually looks
+
+"By default" means a different file per assistant, so six artifacts:
+
+| Surface | Tool | Mechanism |
+| --- | --- | --- |
+| `.claude/skills/karpathy-guidelines/SKILL.md` | Claude Code | canonical copy |
+| `.agents/skills/…` · `.cursor/skills/…` | Codex · Cursor | mirrors, byte-identical |
+| `CLAUDE.md` | Claude Code | auto-loaded; **hard rule 10** + full principles inline |
+| `AGENTS.md` | Codex, Cursor | auto-loaded cross-tool standard |
+| `.cursor/rules/karpathy-guidelines.mdc` | Cursor | `alwaysApply: true` |
+
+Six copies drift, so `tests/unit/karpathy-guidelines-install.test.ts` asserts the mirrors are
+byte-identical to the source, every auto-loaded file carries all four principles, the Cursor rule is
+`alwaysApply: true` rather than glob-scoped, and the attribution line survives.
+
+The skill also carries an "In this repo" section for the two places the guidelines could be
+misread: `repos/` and `ToolManifest` are tenant-isolation and RBAC boundaries, not speculative
+abstraction; and "verify" here means the repo's own gates plus `audit:mobile` / `audit:shots` for
+UI, because jsdom does no layout.
+
+### Reviewing my own recent work against them
+
+Impeccable's detector is clean (exit 0) on `ds/Tabs` and `_shared`. The honest findings are from the
+guidelines, not the detector:
+
+- **Simplicity, violated.** `mytrion_watch.ts` carries FIVE parallel `Record<WatchFeature, …>` maps
+  — LABEL, UNIT, HELP, MISSING, NOUN — that must stay in sync by hand, when the API already
+  assembles them into one object per feature (`featureMeta`). One
+  `Record<WatchFeature, {label, unit, help, noun, missing}>` is the same information with the sync
+  problem deleted. Recorded, not refactored: guideline 3 says don't refactor what isn't broken, and
+  this is covered by tests and working. Worth doing next time this file is opened.
+- **Goal-driven, violated — already paid for.** The `openSignedFile` regression shipped because the
+  success criterion was "the unit test passes" and the test mocked `window.open`. A mock cannot
+  observe that `noopener` makes the real call return null. Weak criteria are exactly what principle
+  4 warns about; the fix was to assert on the ARGUMENTS and to check the rendered result in a real
+  browser.
+- **Scope, minor.** `CaseDocuments` also renders requested-but-not-uploaded rows. Beyond the literal
+  ask ("verification agent can access files"), justified as the other half of the same question, but
+  it is an addition and worth naming.
+
+Surgical held elsewhere: the `ds/Tabs` change reached a shared component and another consumer's
+override, which is fixing the cause rather than the symptom — and the override removal was cleaning
+up a double-space MY change would have created.
+
+## 2026-08-16 — Mytrion Watch identity was coming from the wrong table
+
+Asked to inspect `octane.dim_company` and check nothing on the Watch desk is false. It was.
+
+### What dim_company actually is
+
+A true dimension: **8,256 rows, 8,256 distinct carrier_id**, one row per carrier, carrying
+`company_name`, `credit_limit` (numeric), `agent` / `agent_zoho_user_id` / `agent_email`,
+`payment_terms`, `is_debtor`, `first_swipe_date`, `credit_score`, `trucks`, `dot` and more. It covers
+**728/728** scored carriers: 728 with a name, 726 with an agent, 724 with a positive limit.
+
+### The defect
+
+Watch took company name, agent and credit limit from `MAX()` over
+`verification_staging.postlimit_default_list` — an **overdue export**, not a company record. Measured
+over the 2,913 carriers present in both:
+
+| field | disagreement |
+| --- | --- |
+| agent | **2,272 of 2,913** differ; 476 missing there entirely |
+| company_name | 771 differ — but 591 of those only by casing |
+| credit_limit | 529 differ; 460 carriers have a limit ONLY in the overdue list |
+
+And a latent bug: that CTE's `WHERE` also filtered on a parseable `credit_limit`, so a carrier whose
+overdue rows carried no numeric limit **lost its name and agent too**.
+
+Against what was actually stored for 2026-08-11: **496 of 728 agents changed, 281 of which had no
+agent at all.** Real corrections, e.g. carrier 5745870 "Alicia McNeil" → "Manal Alqassimi". The desk
+was attributing two-thirds of the book to the wrong sales agent.
+
+### Fixed, and deliberately narrowly
+
+Identity now reads `octane.dim_company`. `credit_limit` prefers the dimension and falls back to the
+overdue list — the dimension's limit is populated for all 2,429 LOC carriers but null/zero elsewhere,
+and dropping the fallback would blank 460 carriers. Re-scored both databases: **728 carriers,
+avgScore 598.4 and the band distribution unchanged** — this touched no model input. Exposure at risk
+moved $2,448,699 → $2,433,699, which is the 10 corrected limits.
+
+### NOT changed — a business decision, not a refactor
+
+`dim_company` also exposes `payment_terms` and `is_debtor`, which look like better versions of the
+two exclusion filters. They are not interchangeable:
+
+- **prepay** — tag-based 751, `payment_terms='Prepay'` 733, agree on 728.
+- **debtor** — tag-based 1,243, `is_debtor` 786, **agree on only 671**.
+
+These filters define who gets scored, and the model was trained on the tag-based population.
+Swapping the debtor rule would silently re-score hundreds of carriers against a model fitted to a
+different population. Surfaced rather than picked — `mytrion-watch-feature-sql.test.ts` pins the
+current definitions so the choice stays deliberate.
+
+### Trust / UI review
+
+Impeccable detector clean (exit 0) on `verification/watch`. The surface degrades honestly — no
+company name renders as "Carrier N", no agent as "Unassigned", no limit as an em dash — so a gap
+never reads as a figure.
+
+One recorded, not built: the detail's score ribbon spans `highCut-80 .. watchCut+120` (440–760) and
+clamps its marker. Today min is 489.96 and max 693.19, so nothing clamps, and the exact score sits
+beside the ribbon regardless. Building for it now would be error handling for a scenario that does
+not occur.
+
+## 2026-08-16 — Watch: the search box was a 70px form field, and filter switching blanked the list
+
+### Search input
+
+`.mw-search` used `--vf-field-h`, which is **70px** — the verification desk's big application-form
+input — and `flex: 1 1 14rem` stretched it across the row. The control that filters a list was the
+tallest element on the page. Now `--vf-control-h` (34px), `flex: 0 1 20rem` so it does not grow, and
+a leading Search icon in a positioned wrapper. Below 640 it takes the full row, which it no longer
+has to share.
+
+### The flicker
+
+Reported as happening "initially", and that word was the clue. `useCachedLoad` keys its cache on the
+filter, so Worsened → Improved is a cache MISS. Reading the hook rather than guessing: a different
+key with no cache does `setData(null)` and then, because `hasData` was just cleared,
+`setLoading(true)`. So the populated list fell to `RowSkeletons` for the length of one request —
+**only the first time**, because the second visit to that filter is a cache hit that swaps instantly.
+That is exactly the house rule's "do not blank a populated panel back to a skeleton".
+
+Two of the three symptoms were worse than the skeletons:
+
+- the header fell back to **"No snapshot yet"**, and
+- the empty-state guard read `data?.scoringDate`, so it could render **"Nothing scored yet"** over a
+  desk with 728 carriers in it.
+
+Fix: hold the last payload in a ref and render `data ?? lastGood`, marking the carried rows stale
+(dimmed, `pointer-events: none`, `aria-busy`) rather than replacing them. The aggregate tiles matter
+most — they describe the whole snapshot and are identical for every filter, so there is never a
+correct moment to blank them.
+
+`MytrionWatch.test.tsx` covers it, and the tests are honest about the cache: `beforeEach` calls
+`invalidateSwrCache`, because a warm cache makes the fix look unnecessary — which is precisely why
+this only ever reproduced on the first switch. **A/B verified: 3 of the 4 fail with the fix
+reverted.** The fourth (the "Nothing scored yet" guard) passes either way, because the skeleton
+branch short-circuits before reaching it — that flicker was latent, not visible.
+
+## 2026-08-16 — Watch runs daily, refreshes on demand; intake fields were 70px
+
+### Daily, not weekly
+
+Cron `10 6 * * 1` → `10 6 * * *`. Two things had to move with it, or the change would have been
+silently wrong:
+
+- **`mondayOf` → `scoringDateFor`.** The default scoring date snapped to the Monday. Correct while
+  weekly; the moment it went daily every run would have overwritten the same Monday row and the
+  date on the desk would never have moved.
+- **Cadence copy.** "score fell since last week" → "since the previous run"; the detail's
+  "Since last week" → "Since previous run". The delta was always computed against the most recent
+  EARLIER snapshot whatever its date, so only the words were wrong — but they would have been wrong
+  on every row.
+
+### Refresh — the trap
+
+`POST /verification/watch/run` awaited `runScoring` **inline**. A full run is ~77 seconds against
+Render, so a button wired to it would hit the proxy timeout and report failure while the run carried
+on — the user retries, and only the queue stops a stampede. It now enqueues the existing pg-boss job
+and answers **202**; the desk polls `lastRun.finishedAt`.
+
+Gate moved from admin-only to verification **write**: refreshing the desk you are reading is a desk
+action, and the singleton queue policy is what makes it safe to expose. Flagged in case admin-only
+was deliberate. `mytrion-watch-run-route.test.ts` pins all of it, including that `runScoring` is
+never called from the request.
+
+### Last update, promoted
+
+It was a muted footnote in the header. Now its own surface: **"Last updated · 4 hours ago"** with the
+run's carrier count and duration under it, and the Refresh button beside it. While a run is in
+flight the value reads "scoring now…", the button spins and disables, and the page polls every 6s —
+giving up after 4 minutes with "it will finish on its own" rather than spinning forever.
+
+### Intake fields
+
+`.vfx-input` / `.vfx-select` / `.vfx-textarea` stood on `--vf-field-h`, which is **70px** — the
+roster's big display-field token — so an application form of twelve of them read as a wall. That is
+more than double the app's own control: `ds/Input` is **32px**. Now a local `--vfx-field-h: 36px`,
+which keeps a comfortable target for a form the desk types into all day without inventing a height
+nothing else uses. Same root cause as the Watch search box last commit.
+
+Impeccable detector clean (exit 0) across `mytrions/verification`.
+
+## 2026-08-16 — Reviewed the invoice / CMP tables for Mytrion Watch. Recommendation: do not switch.
+
+Asked whether the invoice and CMP integration data could help Watch. Inspected rather than assumed.
+**No code changed** — the answer is a negative result, and it is worth writing down so nobody
+(including me) does this later on the assumption it would be an improvement.
+
+### What is there
+
+`octane` / `dbt` carry a full CMP mirror — ~48 `stg_cmp_*` tables plus marts. The relevant ones:
+
+| table | shape |
+| --- | --- |
+| `octane.stg_cmp_invoice` | 53,952 invoices, 2,598 carriers, `carrier_id` direct, `invoice_date`, `due_date`, `total_amount`, `total_paid`, `status` |
+| `octane.stg_cmp_invoice_payment` | 53,214 payments — **one row per payment**, with `payment_date`, `amount`, `payment_source`, `is_failed` |
+| `octane.intm_invoices`, `intm_invoice_payment_roll_base` | modelled layers over the same |
+
+The payment table is a genuine **append-only ledger**: 52,045 of 53,214 payments (97.8%) were created
+on the same day they are dated, only 157 backdated by 2+ days. Structurally better than
+`postlimit_default_list`, whose `payment_date` is overwritten in place.
+
+### Why it still cannot replace what Watch uses
+
+**`postlimit_default_list` is not an invoice table.** For July 2026 it holds 13,083 rows over only
+6,800 distinct `(carrier, invoice_date)` pairs — roughly two rows per invoice-date — and its columns
+(`contract_id`, `exage`, `exage2`, `exage3`, `list_type_soft`, `ld1..ld4`) show what it is: a
+purpose-built overdue-analysis list with one row per grace-period variant. Watch's observation date
+is literally `invoice_date + exage3`, and **`stg_cmp_invoice` has no equivalent of exage3**.
+
+The two do not reconcile. Over 1,350 carriers present in both for July 2026:
+
+- row counts match for **158 of 1,350** (12%)
+- amounts match for **152** (11%)
+- postlimit averages 9.7 rows per carrier against the invoice table's 5.2
+
+So this is not a drop-in source swap. The WoE bins were fitted to feature distributions computed
+from postlimit; feeding them a different distribution would produce scores that look identical and
+mean something else. **Switching is a retraining project, not a refactor.**
+
+### Three specific hopes, each killed by the data
+
+- **Failed payments as a credit signal.** `is_failed` is **0 across all 53,214 rows**. The column
+  exists; the signal does not.
+- **`due_date` as a better grace period.** Present on 100% of invoices, but averages **1.27 days**
+  after `invoice_date` (range 0–14). It is an invoicing artifact, not a net-30 style due date, and is
+  not a substitute for `exage3`.
+- **Reconstructible history.** The ledger would make past dates deterministic — but `stg_cmp_invoice`
+  only starts **2026-01-09**, while postlimit reaches back to **2025-07-16**. The deeper history is
+  in the source we already use.
+
+### What it WOULD be good for
+
+Context that is not a model input, and therefore carries no retraining risk: unpaid-invoice count and
+`status` per carrier, and the partial-payment picture postlimit collapses (2,974 invoices — 6% — have
+more than one payment). That is a display feature on the carrier detail, not a scoring change. Not
+built, because it was not asked for.
+
+## 2026-08-16 — Invoice context panel, and an honest read on business impact
+
+### The panel
+
+`GET /verification/watch/scores/:carrierId/invoices` → `WatchInvoices`. Open invoices, amount, paid,
+outstanding, status, and — the thing the score's source cannot show — **payment count per invoice**,
+because `stg_cmp_invoice_payment` is a ledger while `postlimit_default_list` collapses partial
+payments into one figure.
+
+Deliberately its OWN route and its own fetch. Every other Watch read comes from our snapshot and
+never touches the warehouse; folding a live CMP query into the carrier detail would give that
+property up for the whole page. Loaded separately, the panel fails alone and says so — "the score
+above is unaffected — it is read from our own snapshot."
+
+Trap on the way: the DWH driver returns column names verbatim, and Postgres folds unquoted aliases to
+lower case. `as invoice_date` under a camelCase interface compiled fine and produced `undefined` on
+every field at runtime. Aliases are quoted now.
+
+### Does this move the needle on bad debt? Measured, not asserted.
+
+The position, from `octane.dim_company`: **786 debtors, 361 bad debtors, $7.58M total debt,
+$1.87M bad debt**, bad debtors averaging **139 days** overdue. **$1.42M of the $1.87M (76%) sits on
+LOC carriers** — which is Watch's population, so the surface is pointed at the right book.
+
+But the discrimination test comes back **inconclusive, and it is important to say so**. Of the 728
+carriers in the 2026-08-11 snapshot:
+
+| band | n | debtors | debt |
+| --- | --- | --- | --- |
+| High | 12 | 0 | $0 |
+| Elevated | 204 | 3 | $2,100 |
+| Watch | 406 | 8 | $6,398 |
+| Low | 106 | 0 | $0 |
+
+Mean score with debt **589.5** (n=10) vs without **598.5**. Nine points, on a scale where 20 points
+is a doubling of odds, with ten cases. That is not evidence of skill; it is not evidence of failure
+either. It is no evidence.
+
+**The reason is structural: the debtor exclusion removes the outcome population.** Watch scores
+carriers who have *not* gone bad, which is correct for how the model was fitted, but it means the
+desk cannot validate itself from its own snapshots.
+
+### What would actually settle it
+
+A backtest. Score the book as of a date 4–6 months back, then check whether the carriers who
+subsequently entered `is_bad_debtor` were in the bottom bands at that time. `postlimit_default_list`
+reaches back to 2025-07-16, and the feature query already filters payments to `< scoringDate`, so
+this is computable — one script, no new infrastructure. Until it is run, the honest claim for Watch
+is "ranks the book and shows why", not "predicts default".
+
+## 2026-08-16 — Backtest: would Watch have caught the bad debt? Yes, and my first answer was wrong.
+
+### The result (corrected methodology)
+
+Scored three past dates with the production scorer and `forward_all_clean_v1` weights, debtor
+exclusion removed (it filters on CURRENT tags and would have dropped exactly the carriers who later
+went bad). Ground truth is **`octane.mart_bad_debt_history`** — a genuine daily snapshot with
+per-invoice `is_bad_debt`, 892 carriers ever flagged.
+
+At-risk = in the scored population AND never flagged bad on or before T. Positive = first-ever
+bad-debt flag within a **fixed 90-day window** (equal horizons at every date).
+
+| as of | at-risk | base | **High** | Elevated | Watch | **Low** | bottom two caught | median lead |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-02-16 | 1090 | 7.3% | **3.46x** (25.4%) | 1.37x | 0.50x | **0.9%** | 78%, $218k/$292k | **46d** |
+| 2026-03-16 | 1200 | 8.3% | **3.29x** (27.5%) | 1.57x | 0.67x | **0.0%** | 70%, $200k/$334k | **43d** |
+| 2026-04-13 | 1269 | 9.1% | **4.97x** (45.5%) | 1.50x | 0.66x | **0.0%** | 69%, $165k/$227k | **22d** |
+
+**Monotone at all three dates** — high > elevated > watch > low, which the first attempt never
+achieved. Low band: **1, 0, 0** defaults out of 107 / 180 / 193.
+
+### I got it wrong first, in the conservative direction
+
+v1 used `dim_company.max_debt_days` to decide "already bad at T". Adversarial review established
+what that column actually is, from `octane.intm_carrier_debtors`: `CURRENT_DATE - due_date` of the
+carrier's **oldest still-open invoice**. So it **resets** when that invoice clears (40 of 345 bad
+debtors understate their first-bad date by >15 days, worst by 181) and is **hard-censored** because
+`stg_cmp_invoice` holds nothing before 2026-01-11, capping it at ~217 days — which bites hardest at
+the earliest date, the one carrying the claim.
+
+Consequence: ~31% of the "predictions" were carriers already flagged bad, while 5/10/15 genuine
+future defaulters were wrongly discarded. The reported **1.46x was an artifact**. Reproduced the
+reviewers' corrected figures independently before believing them.
+
+### Lead time — the sharpest remaining objection, tested
+
+"A carrier ten days late that crosses the threshold next week is tautology, not prediction." Real,
+and bounded: of the caught defaulters, **≤15 days out is 18% / 24% / 39%**, and the **median lead is
+46 / 43 / 22 days**. Most of the catch is weeks ahead, not days.
+
+### Still unresolved — do not present this as settled
+
+Five of six reviewers flagged inflation risks in classes the lead-time check does not close:
+features read the **mutated** `postlimit_default_list`, so point-in-time purity is assumed not
+proven; the backtest population (1090-1269 at-risk) is **not** the live desk population (728 with
+the debtor exclusion on); and `is_bad_debt` is partly mechanical (~15 days past due), so some of
+what is "predicted" is an accounting threshold rather than economic loss.
+
+Honest claim: **strong directional evidence** — monotone bands, 3.3-5.0x in the top band, near-zero
+default in Low, 69-78% capture at ~40% coverage, median 3-6 weeks of warning. Not yet an audited
+number to underwrite policy on.
+
+## 2026-08-16 — Watch: read-only proof, portfolio timeline, reference artifact
+
+### The DWH is read-only, and now provably so
+
+The standing constraint ("Mytrion Watch should NOT insert/update in the DWH — we are read-only")
+was already true and is now pinned. `src/integrations/dwh.ts` exposes exactly one data method,
+`query()`. 34 call sites, zero writes against any warehouse schema. New
+`tests/unit/dwh-is-read-only.test.ts` (3 tests) fails the build if an INSERT/UPDATE/DELETE is ever
+aimed at `octane.` / `dbt.` / `verification_staging.` / `verification_public.`, or if a write helper
+appears on the client, or if `watchService` stops routing persistence through `mytrionWatchRepo`.
+
+### Portfolio timeline
+
+`mytrion_watch_scores` already held one row per carrier per date, so the book's history was in the
+table and simply unread. Added `mytrionWatchRepo.history()` (one grouped query, 180 dates max),
+`watchService.history()`, `GET /v1/verification/watch/history`, and `WatchTimeline.tsx` mounted as a
+`ds/Tabs` sub-view beside the watchlist.
+
+Three deliberate calls in that component:
+
+- **Proportional band columns, not counts.** The scored population moves week to week, so raw
+  counts would show the book "improving" simply because fewer carriers fuelled.
+- **Zero-based money axis.** A truncated exposure axis exaggerates every wobble.
+- **Under two snapshots it refuses to draw a trend** and says so, rather than joining two dots and
+  calling it a line.
+
+Polish pass on the same file found four real defects, all fixed:
+
+1. `fmtMoneyShort` prints no sign, so a $120k **fall** in exposure at risk rendered identically to a
+   $120k rise — on that tile, the difference between good news and bad. Added `signed()`.
+2. The snapshot span read "Sep 15 → Aug 10" once the backfill crossed a year boundary, which reads
+   backwards. `fmtSpan()` now shows years only when the range crosses one.
+3. The band columns carried their numbers on `title=` only — unreachable with a finger. Added
+   `BandLegend`, which writes out the latest snapshot and doubles as the colour key.
+4. `WatchTimeline` used `.mw-pane` / `.mw-chart-*` while importing neither stylesheet; it worked only
+   because `MytrionWatch` statically imports `WatchDetail`. Now imports `watchDetail.css` itself.
+
+### Backfill
+
+`scripts/backfillWatchHistory.ts` running 49 Mondays 2025-09-15 → 2026-08-11 with production
+semantics (debtor exclusion ON). ~17 dates / 14.6k rows in at the time of writing; the timeline
+deepens as it lands, with no code change needed.
+
+### Artifact
+
+Republished the Mytrion Watch reference to the same URL, now the full document: every warehouse
+table it reads and why that one, the actual CTEs from `WATCH_FEATURE_SQL`, the invoice-context
+query, all eight measures with units, a worked score, the five tables we write, the daily pipeline,
+the API surface, and the backtest evidence with its three unresolved biases stated in the same
+breath.
+
+### Gates
+
+`pnpm lint` 0 errors / 23 pre-existing warnings · `pnpm typecheck` clean · `pnpm test` 3111 passed
+(1 skipped) · CRM typecheck clean · CRM test 1029/1029 · `pnpm build:widget` rebuilt and committed.
+
+## 2026-08-16 (later) — the backfill exposed a real scoring defect: a weekday artifact
+
+The 48-Monday backfill finished (48/48, 0 failed) and immediately showed something wrong. Backfilled
+**Mondays** averaged 615 with ~2 carriers in High; the three live **Tuesdays** one day later averaged
+598 with 9-15 in High and **double** the exposure at risk. Three consecutive Mon/Tue pairs, same
+direction, same code path (`backfillWatchHistory.ts` calls the identical `runScoring`).
+
+### Cause — established, verified independently before acting
+
+Invoices in `postlimit_default_list` fall due on exactly **two weekdays**: every one of the 247,513
+rows has an `observation_date` that is a Monday (139,039) or a Thursday (108,474). Zero on any other
+day. `pay_31` was right-open on the scoring date, so the DENOMINATOR admitted an invoice the moment
+it came due while the NUMERATOR could not admit a payment that had not happened yet. A Monday anchor
+never saw anything fresher than 4 days; a Tuesday anchor saw Monday's batch at **one day old**.
+
+Measured over the 724 carriers scored on 2026-08-10, in score points from `pay_ratio_31d` alone:
+
+    Mon 16.75   Tue 0.68   Wed 14.25   Thu 15.66   Fri 13.28   Sat 16.19   Sun 16.69
+
+452 of 724 carriers penalised on the Tuesday against 17 on the Monday. That 16.07-point gap IS the
+observed 614.53 -> 598.37. The model, the bins and the cut-points are not implicated — correct maths
+on a contaminated input. Under the daily cron this would have rendered as a weekly **sawtooth**.
+
+### Fix — one line
+
+`observation_date < $1::date` becomes `observation_date < $1::date - INTERVAL '3 days'`, in `pay_31`
+only. 3 days is the minimum lag that gives every anchor weekday the 4-day maturity a Monday anchor
+always had, which makes it a **provable no-op on shipped history**: 2026-08-10 re-scores bit-identical
+(mean 16.75, 17 penalised, 691 in the top bin) and the weekday spread collapses 16.07 -> 0.47.
+
+**The backtest is unaffected.** 2026-02-16, 2026-03-16 and 2026-04-13 are all Mondays, so 3.46x /
+3.29x / 4.97x stand exactly as reported.
+
+Rejected, with measurements: widening the window to 28 or 35 days "so it is a multiple of 7" — batch
+AGE is the operative variable, not batch COUNT, and 28 days left Tuesday at -0.63 with the same 452
+penalised carriers. Also rejected: snapping the cron back to Mondays (hides it behind one lucky
+anchor), and extending the payment cutoff past `$1` (flattens everything, but it is future knowledge).
+
+### Second defect, independent — stale movement columns
+
+`runScoring` computes movement once at write time, and the backfill inserted earlier dates AFTER the
+Tuesdays. Result: 716/717 rows on 2026-07-28 stored `prev_credit_score` NULL despite a snapshot
+existing the day before, plus 639 and 658 wrong on 08-04 and 08-11. Fixed by re-running the affected
+dates in ASCENDING order — no new machinery, because under a forward-only cron the write-time
+computation is correct.
+
+### Third defect, found while verifying the repair — a re-run merged instead of replacing
+
+`upsertScores` corrects the carriers it is handed and is blind to the rest, so a carrier who left the
+population between two runs of the same date kept their row forever — while `replaceContributions`
+had already deleted the explanation behind it. Five orphans (`GSA EXPRESS INC` on all three dates,
+plus two more), scored 501-570 in High/Elevated with zero contributions. **Not backfill-only:**
+"Refresh scoring" re-runs today, so a carrier tagged a debtor after the morning run would simply stay
+on the watchlist. Added `mytrionWatchRepo.pruneScoresNotIn`, called only on a full-book run — never
+on a single-carrier rescore, which would delete the other ~700.
+
+### The local-DB trap, again
+
+My first repair reported "scored 716" five times and changed **nothing** in prod: a concurrent session
+had re-added `LOCAL_OPS_DATABASE_URL` to `.env` after the backfill ran, so `NODE_ENV=development`
+redirected the writes to localhost (6s/date instead of 90s). The backfill script prints its target;
+the repair script did not. It now prints the resolved host and refuses a local one outright. There is
+no local DB in this project — only prod.
+
+### Result in prod
+
+Tuesdays now sit alongside the Mondays across the whole fortnight — 614.1-615.4, exposure $1.16M-$1.61M,
+High down from 9/15/12 to 3/3/1 — and every Monday is byte-identical to before the fix.
+
+## 2026-08-16 (later still) — the training script arrived; scoring verified against it
+
+The user supplied `scoring_all_in_one.sql` (LogReg + WoE, forward_all_clean_v1). It is the
+specification, so I verified our implementation against it rather than describing it.
+
+### Verified EXACT
+
+| check | result |
+|---|---|
+| 58 WoE bins — bounds, is_nan, woe, coef | all 58 identical |
+| intercept | -2.874368 = -2.874368 |
+| score anchors | base 600 / odds 50 / PDO 20 |
+| bin selection (lower exclusive, upper inclusive, bin_id order, NaN bin) | `pickBin` matches |
+| **full run, 2026-04-27** | **873 / 873 carriers — same population, same credit_score** |
+
+Ported the script verbatim, changing only schema names (`public.dbt_stg_cmp_transactions` ->
+`verification_public.…`, `staging.` -> `verification_staging.`), session TZ pinned to Asia/Tashkent
+because the training source is `timestamptz` and the original leans on the reader's session TZ — its
+own header flags that line. Kept as `scripts/verifyWatchAgainstTraining.mjs`; it writes nothing.
+
+Date choice matters: `verification_public.dbt_stg_cmp_transactions` is a FROZEN training snapshot
+ending 2026-05-04, so 2026-04-27 is the last Monday it can score. At 2026-08-10 it returns 0 rows.
+
+### The open question from this morning is CLOSED
+
+The script's default scoring date is 2026-05-11 — a **Monday** — and its header instructs replacing
+it with «нужный понедельник» (the desired Monday). **The model is Monday-anchored by design.** That
+is why the weekday artifact never appeared in training, and it confirms the 3-day maturity lag is
+consistent with the fitted convention: measured at feature level on 2026-04-27, our lag changes
+`pay_ratio_31d` for **0 of 873** carriers and moves **0** across a bin.
+
+### One latent divergence found and fixed
+
+Training's `ov_31`:      `payment_date IS NULL OR payment_date < $1`  -> count payment_amount
+Ours had:                `payment_date IS NOT NULL AND payment_date < $1`
+
+Inverted for the NULL arm: a payment with an AMOUNT but no DATE counts as paid in training and did
+not for us. It produced **0 value differences across all 873 carriers** on the tested Monday, so
+nothing shipped wrong — but 1,208 rows table-wide carry an amount with no date, worth $2.14M, so it
+was a latent divergence from the model's own definition. Now verbatim, and pinned by a test along
+with the payment_gap / recovery_speed split (`exage3 > 0`), which is the other clause an
+"obvious simplification" would destroy.
+
+Also re-confirmed harmless: splitting `pay_ratio_31d` and `avg_invoiced_14d` into separate CTEs. The
+original LEFT JOINs both windows to base in one query, which fans out — but one feature is a RATIO
+and the other an AVERAGE, so uniform replication cancels in both. Equivalent, and 873/873 proves it.
+
+### Backticks in a SQL comment, again
+
+Adding the comment above broke the build: the JS template literal terminated on a backtick inside
+SQL. Same trap as earlier this session. No backticks in `WATCH_FEATURE_SQL` comments.
+
+### Same bug, second time: a hand-maintained upsert column list
+
+`active_cards` shipped NULL across all 725 rows of the latest snapshot even after a full re-score.
+`upsertScores` uses `onConflictDoUpdate` with a hand-enumerated `set` list; the column was added to
+the INSERT and not to the SET, so it would persist on a first write and be silently discarded on
+every re-run — and since the row already existed, every write WAS a re-run. The owner-operator
+filter would have matched nothing.
+
+This is the second defect today from the same shape (the first was `upsertScores` never pruning
+carriers who left the population). The new test derives the expected column set FROM
+`src/db/schema/mytrion_watch.ts` rather than a hand-written list, so a future column fails until it
+is refreshed or explicitly listed immutable. Confirmed it fails on the real bug by reverting the
+one-line fix: `expected [ 'activeCards' ] to deeply equal []`.
+
+Process note worth keeping: typecheck and 3,118 tests were green while the feature was broken,
+because nothing in the suite reads a real row. A single verification query against prod would have
+caught it BEFORE the commit, not after. Verify data-backed features against data.
+
+Populated after the fix, 2026-08-11: 259 owner-operator / 454 company / 12 with no active card
+(left out of both buckets rather than guessed into one). At-risk split: 40 of 259 owner-operators,
+65 of 454 companies.
+
+### The size filter looked broken; it was empty data with a misleading empty state
+
+Reported as "filter is not working at all" — both chips returned "No carriers match". The filter SQL
+was correct. The dev API reads the LOCAL database (NODE_ENV=development + LOCAL_OPS_DATABASE_URL),
+whose latest snapshot 2026-08-16 was scored BEFORE migration 0126 added `active_cards`, so all 725
+rows were NULL and both buckets matched zero. Prod was fine throughout (2026-08-11: 259/454).
+
+Re-scored local (725 in 8.7s) -> 260 owner-operator / 453 company.
+
+The real defect was the EMPTY STATE, not the filter. A chip that silently returns nothing says "there
+are no owner-operators", which is a different and wrong claim from "this snapshot predates the
+filter". Both counts now come down with the aggregates and render on the chips, matching the
+Worsened/Improved pattern: a snapshot without card data reads "Owner-operator 0" instead of looking
+like a broken filter.
+
+Third time today that the local/prod split produced a bogus symptom. The durable fix is removing
+`LOCAL_OPS_DATABASE_URL` from `.env` — left to the user, since a concurrent session is using it.
+
+## 2026-08-16 — removed the local-database override entirely
+
+Standing instruction, stated three times: **there is no local database. Everything, including
+localhost, uses the real prod database.** It kept coming back because the override lived in code, so
+removing the `.env` line alone would not have held.
+
+Removed the mechanism, not just the value:
+
+- `.env` and `.env.example` — the `LOCAL_OPS_DATABASE_URL` line is gone.
+- `src/config/env.ts` — the zod key, the `usingLocalOpsDatabase` flag, and the branch in
+  `databaseUrl`. It is now unconditionally `env.MYTRION_OPS_DATABASE_URL || env.DATABASE_URL`.
+- `src/server.ts` — the `localOpsOverride` boot log field.
+- `package.json` — the `dev:local-db` script.
+- `scripts/dev-local.sh` — the `USE_LOCAL_OPS_DB` export block.
+- Operator-facing 503 messages in `verificationCases.ts` and `carrierAttachmentService.ts` no longer
+  advertise pointing at a different database — those are read by someone at 2am and telling them to
+  switch database is how the wrong one gets used.
+
+Verified: with `NODE_ENV=development` the app resolves to the Render host, and it STILL resolves
+there when `LOCAL_OPS_DATABASE_URL` is re-exported in the shell. The override cannot be reinstated
+by environment alone.
+
+`tests/unit/no-local-db-override.test.ts` (3 tests) pins all of it.
+
+**What this cost before it was removed**, all in one day, each looking like a code bug and each
+actually being "which database am I reading":
+1. A repair script reported "scored 716" five times and wrote nothing to prod.
+2. A 503 was blamed on an unmigrated prod database that was already migrated.
+3. The owner-operator filter was reported broken while reading an empty local snapshot.
+
+Consequence to know: `pnpm db:migrate` now always targets a remote host, so it needs
+`ALLOW_REMOTE_DB_MIGRATE=1`. That guard stays — it is a deliberate confirmation, not an obstacle.
+
+## 2026-08-17 — Today's attendance card said "No shift scheduled" for people who have a shift
+
+Reported (screenshot showed the app's Today card, 2026-08-14): the **Today** card in the attendance
+week showed `Unscheduled` / `No shift scheduled` / `0h 00m` even for a night worker who is on a shift.
+It should show the shift.
 
 **Root cause: `Unscheduled` was overloaded to mean two different things.** In `summary.ts` the status
 ladder returned `Unscheduled` both when (a) no shift covers the day AND (b) a shift covers it but its

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { requestBlob } from '@/api/transport';
-import type { CardLookupRow } from './autoLive';
+import { deliverExport } from '@/lib/deliverExport';
+import { maskCard, type CardLookupRow } from './autoLive';
 import { s } from './dc';
-import { deliverBlob } from './txnExportLibs';
 import { AUTO_BUSY_LABEL } from './autoControls';
 
 type Format = 'pdf' | 'xlsx';
@@ -24,7 +24,7 @@ async function downloadCardLookup(
     timeoutMs: 60_000,
   });
   const date = new Date().toISOString().slice(0, 10);
-  deliverBlob(blob, `Octane_Card_Lookup_${date}.${format}`);
+  await deliverExport(blob, `Octane_Card_Lookup_${date}.${format}`);
 }
 
 export function AutoCardLookupPanel({
@@ -76,7 +76,7 @@ export function AutoCardLookupPanel({
           {message.text}
         </div>
       )}
-      <div className="ss-scroll" style={s('overflow:auto;border:1px solid var(--border);border-radius:var(--radius-md)')}>
+      <div className="ss-scroll" data-table-scroller style={s('overflow:auto;border:1px solid var(--border);border-radius:var(--radius-md)')}>
         <div style={s('min-width:940px')}>
           <div style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;background:var(--surface-2);font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
             {['Card ID', 'Card #', 'Unit', 'Driver ID', 'Driver Name', 'X-Ref', 'Status', 'Override'].map((header) => <span key={header}>{header}</span>)}
@@ -84,7 +84,7 @@ export function AutoCardLookupPanel({
           {rows.map((row, index) => (
             <div key={`${row.cardId}-${row.cardNumber}-${index}`} className="ss-row-h" style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;border-top:1px solid var(--border2);font-size:var(--ss-text-xs);align-items:center')}>
               <span style={s("font-family:var(--font-mono)")}>{row.cardId || '—'}</span>
-              <span style={s("font-family:var(--font-mono);font-weight:700")}>{row.cardNumber ? `•••• ${row.cardNumber.slice(-6)}` : '—'}</span>
+              <span style={s("font-family:var(--font-mono);font-weight:700")}>{maskCard(row.cardNumber)}</span>
               <span>{row.unit || '—'}</span>
               <span>{row.driverId || '—'}</span>
               <span>{row.driverName || '—'}</span>

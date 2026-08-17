@@ -146,7 +146,7 @@ export function Dialog({
       {/* Content is mounted only while the surface is on screen. That keeps a closed dialog's
           fields out of the accessibility tree and the tab order entirely, and means reopening
           starts from a clean form rather than from whatever the user abandoned last time. */}
-      {phase === 'closed' ? null : (
+      {phase === 'closed' && !open ? null : (
         <section className={styles.panel} ref={panelRef}>
           <ModalChrome
             titleId={titleId}

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { PermissionSets } from './PermissionSets';
 import type { AdminTabKey } from './adminTabs';
-import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
+import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle, VitestIcon } from '../../components/icons';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
+import { AutomationLogs } from './AutomationLogs';
 import { CarrierUsers } from './CarrierUsers';
 import { ClientNews } from './ClientNews';
 import { CmpDatabase } from './CmpDatabase';
@@ -18,6 +19,7 @@ import { KnowledgeBrowser } from './KnowledgeBrowser';
 import { KpiData } from './KpiData';
 import { MytrionDatabase } from './MytrionDatabase';
 import { OctaneScope } from './scope/OctaneScope';
+import { OctaneTelegramUsers } from './OctaneTelegramUsers';
 import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
@@ -65,6 +67,7 @@ export default function AdminMytrion() {
           active: tab === 'kb',
           onClick: () => setTab('kb'),
           keywords: ['rag', 'docs', 'sources'],
+          primary: true,
         },
         {
           key: 'train',
@@ -98,6 +101,16 @@ export default function AdminMytrion() {
           active: tab === 'access',
           onClick: () => setTab('access'),
           keywords: ['rbac', 'workers', 'permissions'],
+          primary: true,
+        },
+        {
+          key: 'octane-telegram-users',
+          tone: 'var(--tone-sky)',
+          label: 'Octane Telegram Users',
+          icon: <UsersIcon />,
+          active: tab === 'octane-telegram-users',
+          onClick: () => setTab('octane-telegram-users'),
+          keywords: ['telegram', 'horizon', 'mini-app', 'zoho', 'link'],
         },
         {
           key: 'permission-sets',
@@ -116,6 +129,7 @@ export default function AdminMytrion() {
           active: CARRIER_TABS.includes(tab),
           onClick: () => setTab('carriers'),
           keywords: ['companies', 'invites', 'mini-app'],
+          primary: true,
           children: [
             {
               key: 'carriers-registered',
@@ -206,6 +220,25 @@ export default function AdminMytrion() {
           active: tab === 'audit',
           onClick: () => setTab('audit'),
           keywords: ['history', 'trail'],
+          primary: true,
+        },
+        {
+          key: 'vitest-logs',
+          tone: 'var(--tone-amber)',
+          label: 'Vitest Logs',
+          icon: <VitestIcon size={18} />,
+          active: tab === 'vitest-logs',
+          onClick: () => setTab('vitest-logs'),
+          keywords: ['vitest', 'ci', 'fixture', 'test'],
+        },
+        {
+          key: 'automation-logs',
+          tone: 'var(--tone-pink)',
+          label: 'Automation Logs',
+          icon: <HistoryIcon size={18} />,
+          active: tab === 'automation-logs',
+          onClick: () => setTab('automation-logs'),
+          keywords: ['automation', 'runs', 'triggers', 'horizon', 'zoho'],
         },
         {
           key: 'jobs',
@@ -288,13 +321,16 @@ export default function AdminMytrion() {
       {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
       {tab === 'browser' && <KnowledgeBrowser />}
       {tab === 'access' && <UserManagement />}
+      {tab === 'octane-telegram-users' && <OctaneTelegramUsers />}
       {tab === 'permission-sets' && <PermissionSets />}
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
       {tab === 'news' && <ClientNews />}
       {tab === 'deals' && <Deals />}
       {tab === 'escalation-routing' && <EscalationRouting />}
-      {tab === 'audit' && <AuditLog />}
+      {tab === 'audit' && <AuditLog source="human" />}
+      {tab === 'vitest-logs' && <AuditLog source="vitest" />}
+      {tab === 'automation-logs' && <AutomationLogs />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'kpi-data' && <KpiData />}
       {tab === 'data-loader' && <DataLoader />}

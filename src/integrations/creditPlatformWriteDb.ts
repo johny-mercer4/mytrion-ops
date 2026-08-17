@@ -2,20 +2,26 @@
  * Credit-platform WRITE pool — the only place Mytrion writes to the `credit_platform` Postgres.
  * Opens the SAME VERIFICATION_DATABASE_URL as the read pool (verificationDb.ts, `johnmercer`
  * credential, Render TLS) but a WRITABLE session (no `default_transaction_read_only`), gated by the
- * VERIFICATION_WRITE_ENABLED kill switch. Its writes are confined to the two INSERT-only
- * inbox tables (`kxd.sales_agent_updates`, `kxd.sales_agent_files`) a flag-gated credit-platform
- * consumer drains — Mytrion never mutates live case rows directly. All INSERTs go through the module
- * functions below (never inline SQL in a route). Postgres dialect: `$1` placeholders.
+ * VERIFICATION_WRITE_ENABLED kill switch.
+ *
+ * Writes: (1) INSERT-only inbox tables (`kxd.sales_agent_updates`, `kxd.sales_agent_files`) a
+ * flag-gated consumer drains; (2) Orchestration config (`stop_factors`, `system_state`,
+ * `audit_log`) matching verification-mono. Never mutates live case / request rows. All SQL goes
+ * through the helpers below (never inline in a route). Postgres dialect: `$1` placeholders.
  */
 import pg from 'pg';
-import type { Pool } from 'pg';
+import type { Pool, QueryResultRow } from 'pg';
 import { env } from '../config/env.js';
+import { VERIFICATION_CP_WRITEBACK_ENABLED } from '../modules/verification/killSwitches.js';
 import { logger } from '../lib/logger.js';
 
 let pool: Pool | null = null;
 
 /** True when write-back is enabled (VERIFICATION_WRITE_ENABLED) and the DB URL is set. */
 export function isWriteConfigured(): boolean {
+  // Two flags on purpose: a read-only legacy desk is a coherent state to want, writing into a
+  // system we no longer own is not. Either one being off stops the writes.
+  if (!VERIFICATION_CP_WRITEBACK_ENABLED) return false;
   return env.VERIFICATION_WRITE_ENABLED && Boolean(env.VERIFICATION_DATABASE_URL);
 }
 
@@ -37,6 +43,50 @@ function getWritePool(): Pool {
   return pool;
 }
 
+/** Run a write query against credit_platform. Used by orchestration config + inbox helpers. */
+export async function writeQuery<T extends QueryResultRow>(
+  text: string,
+  params: readonly unknown[] = [],
+): Promise<T[]> {
+  const result = await getWritePool().query<T>(text, params as unknown[]);
+  return result.rows;
+}
+
+export type WriteQueryFn = <T extends QueryResultRow>(
+  text: string,
+  params?: readonly unknown[],
+) => Promise<T[]>;
+
+/** One writable transaction (BEGIN/COMMIT/ROLLBACK). */
+export async function withWriteTransaction<T>(fn: (query: WriteQueryFn) => Promise<T>): Promise<T> {
+  const client = await getWritePool().connect();
+  try {
+    await client.query('BEGIN');
+    const query: WriteQueryFn = async <R extends QueryResultRow>(
+      text: string,
+      params: readonly unknown[] = [],
+    ) => {
+      const result = await client.query<R>(text, params as unknown[]);
+      return result.rows;
+    };
+    const out = await fn(query);
+    await client.query('COMMIT');
+    return out;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      logger.warn(
+        { err: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr) },
+        'credit-platform-write rollback failed',
+      );
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * Queue an applicant-field edit for the credit-platform consumer. INSERT-only; the consumer applies
  * it through the same encrypted-profile + loans-sync path the analyst's Decision Desk edit uses.
@@ -55,6 +105,23 @@ export async function insertApplicantUpdate(input: {
   );
   const id = result.rows[0]?.id;
   if (id == null) throw new Error('[credit-platform-write] applicant update insert returned no id');
+  return { id };
+}
+
+export async function insertPlaidLinkAction(input: {
+  requestId: string;
+  agent: string;
+  regenerate?: boolean;
+}): Promise<{ id: number }> {
+  const kind = input.regenerate ? 'regenerate_plaid_link' : 'generate_plaid_link';
+  const result = await getWritePool().query<{ id: number }>(
+    `INSERT INTO kxd.sales_agent_updates (request_id, agent, changes, kind)
+     VALUES ($1, $2, '{}'::jsonb, $3)
+     RETURNING id`,
+    [input.requestId, input.agent, kind],
+  );
+  const id = result.rows[0]?.id;
+  if (id == null) throw new Error('[credit-platform-write] plaid-link action insert returned no id');
   return { id };
 }
 

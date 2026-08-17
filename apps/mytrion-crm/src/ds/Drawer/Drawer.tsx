@@ -106,7 +106,7 @@ export function Drawer({
       onAnimationEnd={handleAnimationEnd}
       {...rest}
     >
-      {phase === 'closed' ? null : (
+      {phase === 'closed' && !open ? null : (
         <section className={styles.panel} ref={panelRef}>
           <ModalChrome
             titleId={titleId}

@@ -133,16 +133,22 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
 
   return (
     <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && requestClose()}>
-      <div className="bm-modal-box" style={{ maxWidth: 660 }}>
+      <div
+        className="bm-modal-box"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bm-return-match-title"
+        style={{ maxWidth: 660 }}
+      >
         <div className="bm-modal-header">
-          <div className="bm-modal-title">
+          <h3 className="bm-modal-title" id="bm-return-match-title">
             Match Return — {ret.customerName || ret.referenceNumber || 'Unknown'}
             <span className="text-danger" style={{ fontFamily: "var(--font-mono)" }}>
               {' '}
               · -{fmtCurrency(ret.amount)}
             </span>
-          </div>
-          <button className="bm-modal-close" onClick={requestClose}>
+          </h3>
+          <button type="button" className="bm-modal-close" onClick={requestClose} aria-label="Close">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_ICON} />
             </svg>
@@ -174,6 +180,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
                 }
               }}
               placeholder="Search by reference, payment id, or customer name — empty shows suggestions"
+              aria-label="Search by reference, payment id, or customer name"
               autoComplete="off"
             />
             <button

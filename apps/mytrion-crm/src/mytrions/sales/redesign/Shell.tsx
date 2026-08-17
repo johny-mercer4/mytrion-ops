@@ -16,7 +16,9 @@ import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { MytrionShell, type NavSection } from '../../_shared/MytrionShell';
 import { ClientModal, type ClientModalTab } from './ClientModal';
-import { NAV, NAV_GROUPS, TICKETS_ENABLED } from './salesData';
+import { NAV, NAV_GROUPS, TICKETS_ENABLED, isSectionParked } from './salesData';
+import { isAdmin } from '@/access/resolveAccess';
+import { useUserContext } from '@/context/UserContextProvider';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
@@ -31,6 +33,7 @@ import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 import './ss-horizon.css';
 import './verification.css';
+import './verificationForms.css';
 // After ss-horizon so the tier card shell wins over the generic .ss-card-h surface.
 import './dc-clients.css';
 // Last: the shared page scaffold (head / metrics / sub-tabs / empty / pager) wins over the
@@ -121,7 +124,10 @@ export function SalesRedesign() {
   // Collapsible sidebar (icons-only), persisted. Full-bleed tabs (Tickets) fill the whole panel.
   const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState('home');
-  const parkedSection = NAV.some((n) => n.id === section && n.comingSoon === true);
+  // Admin sees the Sales-side Verification tab; everyone else gets Coming soon. Verification's own
+  // Mytrion is unaffected — this is the Sales projection of it only.
+  const admin = isAdmin(useUserContext());  // hook call is unconditional — same position every render
+  const parkedSection = isSectionParked(section, admin);
   const fullBleed = FULL_BLEED.has(section) && !parkedSection;
   const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
@@ -272,7 +278,7 @@ export function SalesRedesign() {
     id: g.id,
     label: GROUP_LABEL[g.id] ?? g.id,
     items: g.items.map((n) => {
-      const soon = n.comingSoon === true;
+      const soon = isSectionParked(n.id, admin);
       const count = badgeCounts[n.id];
       return {
         key: n.id,
@@ -283,6 +289,10 @@ export function SalesRedesign() {
         ...(count ? { trailing: count } : {}),
         ...(NAV_TONE[n.id] ? { tone: NAV_TONE[n.id]! } : {}),
         ...(soon ? {} : { onClick: () => go(n.id) }),
+        ...((n.id === 'home' || n.id === 'inbox' || n.id === 'records' || n.id === 'verification')
+          ? { primary: true }
+          : {}),
+
       };
     }),
   }));
@@ -298,7 +308,7 @@ export function SalesRedesign() {
         contentScroll="content"
       >
         <div className={`ss-root ${theme === 'light' ? 'light' : ''}`}>
-          <main className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
+          <div className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers).
                 Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
@@ -337,7 +347,7 @@ export function SalesRedesign() {
                 </Suspense>
               )}
             </div>
-          </main>
+          </div>
 
         {/* DETAIL MODAL */}
         {detail && (
@@ -352,8 +362,9 @@ export function SalesRedesign() {
               /* Three rows, and only the middle one moves. `max-height:100%` respects the overlay's
                  own --space-6 gutter (a vh cap does not, which is how a long detail body used to push
                  the panel's top edge off-screen); `flex:none` stops the panel being shrunk below that
-                 cap and handing the overflow back to the page. The 3px accent border-top stays. */
-              style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+                 cap and handing the overflow back to the page. Accent is 1px — same as DetailSheet —
+                 so the radius stays honest. */
+              style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:1px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
             >
               <div style={s('flex:none;display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Icon name={detail.icon} size={19} /></div>

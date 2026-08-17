@@ -9,6 +9,7 @@
  * `Verification_Decision` being a FILE, not a decision value).
  */
 import { request, requestBlob, requestMultipart } from './transport';
+import { deliverExport } from '../lib/deliverExport';
 
 const V_HEADERS = { 'x-department-access': 'sales' } as const;
 
@@ -117,7 +118,8 @@ export interface PipelineRequirementField {
   label: string;
   type: PipelineRequirementFieldType;
   required: boolean;
-  placeholder?: string;
+  /** Platform flag copy — render as a field warning, never as the HTML placeholder. */
+  hint?: string;
   options?: string[];
 }
 export interface PipelineRequirementResponse {
@@ -166,6 +168,13 @@ export interface PipelineApplicant {
   dotNumber: string;
   mcNumber: string;
 }
+export interface PipelinePlaid {
+  status: string | null;
+  linkState: string | null;
+  linkUrl: string | null;
+  lastActionStatus: string | null;
+  lastActionError: string | null;
+}
 export interface PipelineSnapshot {
   requestId: string;
   status: string;
@@ -176,6 +185,7 @@ export interface PipelineSnapshot {
   events: PipelineTimelineEvent[];
   attachments: PipelineAttachment[];
   applicant?: PipelineApplicant;
+  plaid?: PipelinePlaid;
   source: 'mock' | 'credit_platform';
 }
 
@@ -269,16 +279,20 @@ export async function uploadBankStatements(input: {
   })) as { status: string; uploaded: number; inboxIds: number[] };
 }
 
+export async function generatePlaidLink(input: {
+  requestId: string;
+  dealId: string;
+  regenerate?: boolean;
+}): Promise<{ status: string; inboxId: number }> {
+  return (await request('POST', '/verification/plaid-link', {
+    body: { requestId: input.requestId, dealId: input.dealId, ...(input.regenerate ? { regenerate: true } : {}) },
+    headers: V_HEADERS,
+  })) as { status: string; inboxId: number };
+}
+
 export async function downloadVerificationAttachment(id: string, fileName: string): Promise<void> {
   const blob = await requestBlob(`/verification/attachments/${id}/download`, { headers: V_HEADERS });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName || `attachment-${id}`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  await deliverExport(blob, fileName || `attachment-${id}`);
 }
 
 export async function sendVerificationResponse(input: {

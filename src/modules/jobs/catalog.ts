@@ -219,6 +219,39 @@ export const verificationRecheckJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/**
+ * Mytrion Watch — DAILY behavioural scoring of every active carrier.
+ *
+ * Was weekly, on the argument that the model is defined on Monday cuts. It is daily now because a
+ * credit agent looking at Thursday's book should not be reading Monday's numbers. The Monday
+ * convention still matters — the model was fitted on Monday anchors — which is why `pay_31` carries
+ * a 3-day maturity lag: without it the score depends on which weekday the job happens to run.
+ *
+ * The reason to run it on a schedule rather than on demand is that HISTORY CANNOT BE RECONSTRUCTED —
+ * the warehouse's overdue table is mutated in place, so a day we do not capture is a day whose true
+ * state is gone.
+ */
+export const mytrionWatchScoringJob = defineJob({
+  name: 'automation.verification.watch-scoring',
+  schema: z.object({
+    scoringDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 2, expireInSeconds: 900, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/**
+ * Zoho Deals COQL → verification_cases. The ONLY path that creates an application.
+ * Writes the new-era shared record red, owned by the Deal's Sales agent, phase rail seeded.
+ */
+export const verificationCaseIngestJob = defineJob({
+  name: 'automation.verification.case-ingest',
+  schema: z.object({
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 1500, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 /** Daily: decay agent-memory importance and evict faded/expired rows. */
 export const memoryDecayJob = defineJob({
   name: 'maintenance.memory-decay',
@@ -286,6 +319,8 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   salesBocaRequestJob,
   billingLedgerSnapshotJob,
   verificationRecheckJob,
+  verificationCaseIngestJob,
+  mytrionWatchScoringJob,
   checkpointSweepJob,
   platformKnowledgeSyncJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
@@ -334,7 +369,14 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   { name: retentionCaseSyncJob.name, cron: '0 * * * *' },
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
+  // Every 20 minutes: Zoho Deals -> applications. Frequent because a Sales agent who just moved a
+  // Deal expects the application to be waiting for them, not to appear tomorrow. Singleton, and the
+  // Created_Time watermark makes a re-run cheap.
+  { name: verificationCaseIngestJob.name, cron: '*/20 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
+  // 06:10 DAILY — after the warehouse's overnight load, before the desk opens. Was weekly; a
+  // credit agent looking at Thursday's book should not be reading Monday's numbers.
+  { name: mytrionWatchScoringJob.name, cron: '10 6 * * *' },
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
@@ -354,6 +396,9 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,
   referralBonusCalcJob.name,
+  verificationCaseIngestJob.name,
+  // The desk's "Refresh scoring" button enqueues this rather than running it inline.
+  mytrionWatchScoringJob.name,
   verificationRecheckJob.name,
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
