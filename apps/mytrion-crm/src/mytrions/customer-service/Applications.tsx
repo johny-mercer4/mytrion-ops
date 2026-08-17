@@ -85,7 +85,7 @@ export function Applications() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<AppFilters>(emptyFilters);
   const [queryFilters, setQueryFilters] = useState<AppFilters>(emptyFilters);
-  const [facets, setFacets] = useState<CsApplicationsFacets>({ stage: [], biz: [], agent: [], wex: [] });
+  const [facets, setFacets] = useState<CsApplicationsFacets>({ stage: [], biz: [], agent: [], wex: [], loves: [] });
   // Bulk Love's-clearance selection (QA feedback 2026-08-07) — ids only, resolved back to rows via
   // `rows` below so the bar always reflects the currently loaded page's data.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

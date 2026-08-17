@@ -17926,3 +17926,59 @@ Rebuilt and committed `apps/mytrion-crm/app/` per the vendored-bundle rule; conf
 and the loves-verification/bulk route string are both present in the rebuilt JS.
 
 Branch: `fix/cs-applications-required-fields-loves-bulk`, off `build`. Committed locally, not pushed.
+
+## 2026-08-17 (later) — Love's Verification: real display + a Pending-status worklist
+
+Two follow-ups from the same feedback, both on the same branch.
+
+**Fixed the "always shows '—'" bug in the Loves Verification field.** The backend already drains
+`Loves_Verification` from the linked Deal into every row (`applicationsList.ts`'s `applyDeal`), but
+`liveApplications.ts`'s `mapAppRow()` never picked it into the `Application` view-model, and
+`ApplicationModal.tsx`'s field was hardcoded `get: () => null` — so the modal rendered "—"
+unconditionally, even right after the new bulk push had just set a real value. Added
+`lovesVerification` to `Application` (`data.ts`), mapped it in `mapAppRow`, and read the real value
+in the modal (still read-only there — editing stays the bulk action). Verified live: opened records
+until finding one with `Loves_Verification` actually set, confirmed the modal shows "Approved" instead
+of "—".
+
+**Then asked: "new apps go straight to the Carrier ID stage without waiting for Love's — can we
+integrate that into Mytrion?"** Investigated before writing anything:
+- Confirmed the mechanism: `isClient()`/the Apps↔Clients tab split is literally `Carrier_ID !== ''`.
+  `Carrier_ID` is written automatically by `servercrm/jobs/wexSalesforceSync.js`'s 30-minute cron the
+  moment **WEX** (external) produces the physical cards — not anything Octane's code decides. Grepped
+  every Deluge workflow/validation rule plus the sync job itself: there is no gate anywhere checking
+  `Loves_Verification` before that write (a comment in `servercrm/routes/wexRoutes.js` literally says
+  "no gate on SF status"). Conclusion: the actual WEX event can't be blocked from here — Octane can
+  only flag/track state, not withhold the graduation.
+- Confirmed "the Love's sheet" doesn't exist as an artifact anywhere in `mytrion-ops`, `servercrm`, or
+  `zoho-octane` — no spreadsheet, checklist, or extra fields beyond the single `Loves_Verification`
+  picklist. Asked the user directly rather than guess; confirmed it's just company + status
+  (Approved/Declined/Pending), and that "integrate it" means a worklist view inside Mytrion — not an
+  attempt to block the WEX-driven Carrier_ID write itself.
+
+**Shipped: a `loves` filter + facet + table column, reusing the sort/filter architecture from the
+2026-08-13 rewrite rather than building a new screen.** `Loves_Verification` only has two real
+values (Approved/Declined) — blank means undecided, so added a `LOVES_PENDING = 'Pending'` sentinel
+(`applicationsListQuery.ts`, mirrors the existing `NOT_ASSIGNED` pattern for agent) so filtering to
+"Pending" surfaces every Client still owed a Love's decision. Wired straight through the existing
+pipe: `ApplicationsQueryParams`/`ApplicationsFacets` (backend) → `csDeluge.ts` paramsSchema →
+`toApplicationsQueryParams()` → `touchpointTypes.ts` → `applicationsFilters.ts` → a new dropdown in
+`ApplicationsFilterPanel.tsx` (facet-driven, no hardcoded option list — same as Stage/Business Type)
+→ a new "Love's" column on both tabs (`FIELD_GET` + `CLIENT_COLUMNS`/`APPS_COLUMNS` in
+`ApplicationsTable.tsx`, no inline `minWidth` — same ratchet-budget reasoning as the select column).
+
+**Missed one wiring spot on the first pass, caught by live verification, not by tests:**
+`liveApplications.ts`'s `loadApplications()` builds the touchpoint's request params by explicit
+field-by-field enumeration (not a spread), and the new `loves` field wasn't added to that list — so
+the filter dropdown changed correctly in the UI and even sent the right value into `filtersToParams`,
+but the actual network request never carried it, and the result silently didn't change. Unit tests
+all stayed green throughout (they test the pure functions, not this specific wiring point) — only
+caught by watching the real request body in a live browser. Fixed and re-verified: filtering to
+"Pending" now shows only blank cells, filtering to "Approved" shows only "Approved" — confirmed
+against real prod data, where **3,698 of the ~4,400 Clients-tab records are still Pending** (Love's
+picklist also carries some historical noise beyond Approved/Declined/blank — '0', 'FALSE', 'Not
+Approved' — surfaced as-is via the facet, same as any other picklist drift elsewhere in this data).
+
+New tests: 6 backend (`lovesStatusOf`, the `loves` filter, the `loves` facet — `cs-applications-list.test.ts`),
+2 frontend (`applicationsFilters.test.ts`). Full suites green (2,700+/1,046), same two pre-existing
+unrelated failures as before. Bundle rebuilt and committed.

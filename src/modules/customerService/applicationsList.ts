@@ -42,6 +42,7 @@ export function toApplicationsQueryParams(params: Record<string, unknown>): Appl
     biz: typeof params.biz === 'string' ? params.biz : '',
     agent: typeof params.agent === 'string' ? params.agent : '',
     wex: Array.isArray(params.wex) ? params.wex.filter((w): w is string => typeof w === 'string') : [],
+    loves: typeof params.loves === 'string' ? params.loves : '',
     page: typeof params.page === 'number' ? params.page : 1,
     perPage: typeof params.perPage === 'number' ? params.perPage : 200,
     fresh: params.fresh === true,

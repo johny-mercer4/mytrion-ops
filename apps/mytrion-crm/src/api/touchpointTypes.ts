@@ -637,6 +637,7 @@ export interface TouchpointMap {
       biz?: string;
       agent?: string;
       wex?: string[];
+      loves?: string;
       fresh?: boolean;
     };
     result: CsApplicationsList;
@@ -900,6 +901,7 @@ export interface CsApplicationsFacets {
   biz: string[];
   agent: string[];
   wex: string[];
+  loves: string[];
 }
 
 export interface CsApplicationsList {

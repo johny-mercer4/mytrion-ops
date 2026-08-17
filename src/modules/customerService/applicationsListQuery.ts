@@ -26,6 +26,7 @@ export interface ApplicationsQueryParams {
   biz: string;
   agent: string;
   wex: string[];
+  loves: string;
   page: number;
   perPage: number;
 }
@@ -36,6 +37,19 @@ export const NOT_ASSIGNED = 'not assigned';
 export function agentNameOf(row: RawApplicationRow): string {
   const name = row._dealOwner?.name?.trim();
   return name || NOT_ASSIGNED;
+}
+
+/**
+ * `Loves_Verification` is only ever written as 'Approved'/'Declined' (the picklist has no third
+ * option) — blank means nobody has decided yet. QA feedback (Dina Carter, 2026-08-07): new
+ * Applications graduate to a Carrier_ID (the Clients tab) the moment WEX produces cards, with
+ * nothing here gating that on Love's clearance — so this sentinel is what turns "Clients" into a
+ * worklist: filter to Pending to find everyone still owed a Love's decision.
+ */
+export const LOVES_PENDING = 'Pending';
+
+export function lovesStatusOf(row: RawApplicationRow): string {
+  return row.Loves_Verification?.trim() || LOVES_PENDING;
 }
 
 function digitsOf(v: string | null): string {
@@ -70,6 +84,7 @@ export interface ApplicationsFacets {
   biz: string[];
   agent: string[];
   wex: string[];
+  loves: string[];
 }
 
 function distinct(values: Array<string | null | undefined>): string[] {
@@ -84,12 +99,13 @@ export function computeFacets(rows: RawApplicationRow[]): ApplicationsFacets {
     biz: distinct(rows.map((r) => r.Type_of_Business)),
     agent: distinct(rows.map(agentNameOf)),
     wex: distinct(rows.map((r) => r.WEX_Status)),
+    loves: distinct(rows.map(lovesStatusOf)),
   };
 }
 
 export function matchesFilters(
   row: RawApplicationRow,
-  f: Pick<ApplicationsQueryParams, 'company' | 'dateFrom' | 'dateTo' | 'stage' | 'biz' | 'agent' | 'wex'>,
+  f: Pick<ApplicationsQueryParams, 'company' | 'dateFrom' | 'dateTo' | 'stage' | 'biz' | 'agent' | 'wex' | 'loves'>,
 ): boolean {
   const company = f.company.trim().toLowerCase();
   if (company && !(row.Name ?? '').toLowerCase().includes(company)) return false;
@@ -97,6 +113,7 @@ export function matchesFilters(
   if (f.biz && row.Type_of_Business !== f.biz) return false;
   if (f.agent && agentNameOf(row) !== f.agent) return false;
   if (f.wex.length > 0 && !(row.WEX_Status && f.wex.includes(row.WEX_Status))) return false;
+  if (f.loves && lovesStatusOf(row) !== f.loves) return false;
   if (f.dateFrom || f.dateTo) {
     // Date_Filled is a Zoho DATE field ('YYYY-MM-DD'), same shape as the filter bounds — a plain
     // string compare is exact and inclusive on both ends, no timezone parsing involved.

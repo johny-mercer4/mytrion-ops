@@ -88,7 +88,7 @@ export interface AppsPage {
   truncated: boolean;
 }
 
-const EMPTY_FACETS: CsApplicationsFacets = { stage: [], biz: [], agent: [], wex: [] };
+const EMPTY_FACETS: CsApplicationsFacets = { stage: [], biz: [], agent: [], wex: [], loves: [] };
 
 /** Short TTL cache — tab switches / revisits skip another round-trip. Matches the backend's own
  *  90s per-params read-cache TTL (touchpoints.routes.ts) rather than trying to outlive it. */
@@ -134,6 +134,7 @@ export async function loadApplications(
       biz: queryParams.biz,
       agent: queryParams.agent,
       wex: queryParams.wex,
+      loves: queryParams.loves,
       fresh,
     },
     { force: fresh },

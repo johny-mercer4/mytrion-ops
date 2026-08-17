@@ -23,15 +23,19 @@ export interface AppFilters {
   agent: string;
   /** Empty set = no WEX Status filter. Multi-select — QA asked for "wex statuses", plural. */
   wex: Set<string>;
+  /** '' = no filter; otherwise 'Approved' | 'Declined' | the backend's Pending sentinel — the
+   *  worklist for QA feedback (Dina Carter, 2026-08-07): filter Clients to Pending to find every
+   *  record that graduated to a Carrier_ID without a Love's decision yet. */
+  loves: string;
 }
 
 export function emptyFilters(): AppFilters {
-  return { company: '', dateFrom: '', dateTo: '', stage: '', biz: '', agent: '', wex: new Set() };
+  return { company: '', dateFrom: '', dateTo: '', stage: '', biz: '', agent: '', wex: new Set(), loves: '' };
 }
 
 export function activeFilterCount(f: AppFilters): number {
   return (
-    [f.company, f.dateFrom || f.dateTo, f.stage, f.biz, f.agent].filter(Boolean).length +
+    [f.company, f.dateFrom || f.dateTo, f.stage, f.biz, f.agent, f.loves].filter(Boolean).length +
     (f.wex.size > 0 ? 1 : 0)
   );
 }
@@ -46,6 +50,7 @@ export interface ApplicationsQueryParams {
   biz: string;
   agent: string;
   wex: string[];
+  loves: string;
 }
 
 /**
@@ -64,6 +69,7 @@ export function filtersToParams(f: AppFilters, sortKey: SortKey, sortDir: SortDi
     biz: f.biz,
     agent: f.agent,
     wex: [...f.wex].sort(),
+    loves: f.loves,
   };
 }
 

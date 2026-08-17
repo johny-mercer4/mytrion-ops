@@ -95,6 +95,21 @@ export function ApplicationsFilterPanel({
             ))}
           </select>
         </div>
+        <div className="cs-app-filter-field">
+          <label className="cs-app-filter-label">Love's Verification</label>
+          <select
+            className="cs-form-input"
+            value={filters.loves}
+            onChange={(e) => setFilters((f) => ({ ...f, loves: e.target.value }))}
+          >
+            <option value="">All</option>
+            {facets.loves.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </div>
         {filterCount > 0 ? (
           <button
             type="button"
