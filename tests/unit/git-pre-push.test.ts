@@ -67,6 +67,31 @@ describe('Cursor deny-protected-push hook', () => {
       permission: 'deny',
     });
   });
+
+  it('denies --all / --mirror / --branches even when HEAD is a feature branch', () => {
+    for (const command of [
+      'git push --all',
+      'git push origin --all',
+      'git push --mirror origin',
+      'git push --branches',
+    ]) {
+      expect(JSON.parse(cursorShell(command, 'feature/foo').stdout)).toMatchObject({
+        permission: 'deny',
+      });
+    }
+  });
+
+  it('denies dest refspecs that rename onto build/main', () => {
+    expect(
+      JSON.parse(cursorShell('git push origin feature/x:main', 'feature/x').stdout),
+    ).toMatchObject({ permission: 'deny' });
+    expect(
+      JSON.parse(cursorShell('git push origin refs/heads/main', 'feature/x').stdout),
+    ).toMatchObject({ permission: 'deny' });
+    expect(
+      JSON.parse(cursorShell('git push origin HEAD:refs/heads/build', 'hotfix/x').stdout),
+    ).toMatchObject({ permission: 'deny' });
+  });
 });
 
 describe('Claude Code push permissions', () => {
@@ -80,11 +105,17 @@ describe('Claude Code push permissions', () => {
     expect(settings.permissions.allow).toContain('Bash(git push:*)');
   });
 
-  it('denies push of build/main and force', () => {
+  it('denies push of build/main, force, all-branch, and dest refspecs', () => {
     expect(settings.permissions.deny).toEqual(
       expect.arrayContaining([
         'Bash(git push origin build:*)',
         'Bash(git push origin main:*)',
+        'Bash(git push origin refs/heads/main:*)',
+        'Bash(git push origin *:main:*)',
+        'Bash(git push --set-upstream origin main:*)',
+        'Bash(git push --all:*)',
+        'Bash(git push --mirror:*)',
+        'Bash(git push --branches:*)',
         'Bash(git push --force:*)',
         'Bash(git push origin HEAD:build:*)',
         'Bash(git push origin HEAD:main:*)',

@@ -15,6 +15,8 @@ const FLAGS_TAKE_VALUE = new Set([
   '--receive-pack',
   '--exec',
 ]);
+/** These take no refspecs but still update every local branch, including build/main. */
+const ALL_BRANCH_FLAGS = new Set(['--all', '--mirror', '--branches']);
 
 function done(payload) {
   process.stdout.write(JSON.stringify(payload));
@@ -92,9 +94,16 @@ function pushRefspecs(tokens) {
   return refs;
 }
 
+function hasAllBranchFlag(tokens) {
+  return tokens.some((token) => ALL_BRANCH_FLAGS.has(token.split('=')[0]));
+}
+
 function shouldDeny(command) {
-  const refs = pushRefspecs(command.trim().split(/\s+/));
+  const tokens = command.trim().split(/\s+/);
+  const refs = pushRefspecs(tokens);
   if (refs === null) return false;
+  // --all / --mirror / --branches leave refs empty but still update build/main.
+  if (hasAllBranchFlag(tokens)) return true;
   if (refs.length === 0) return PROTECTED.has(currentBranch());
   for (const spec of refs) {
     const dest = destName(spec);
