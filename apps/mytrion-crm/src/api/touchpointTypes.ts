@@ -630,7 +630,6 @@ export interface TouchpointMap {
       perPage?: number;
       sortKey?: 'date' | 'appId' | 'carrierId';
       sortDir?: 'asc' | 'desc';
-      company?: string;
       dateFrom?: string;
       dateTo?: string;
       stage?: string;

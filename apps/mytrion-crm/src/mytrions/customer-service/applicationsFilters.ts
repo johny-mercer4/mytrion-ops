@@ -14,7 +14,6 @@ export const SORT_OPTIONS: { id: SortKey; label: string }[] = [
 ];
 
 export interface AppFilters {
-  company: string;
   /** Both YYYY-MM-DD (from <input type="date">), inclusive range. */
   dateFrom: string;
   dateTo: string;
@@ -30,12 +29,12 @@ export interface AppFilters {
 }
 
 export function emptyFilters(): AppFilters {
-  return { company: '', dateFrom: '', dateTo: '', stage: '', biz: '', agent: '', wex: new Set(), loves: '' };
+  return { dateFrom: '', dateTo: '', stage: '', biz: '', agent: '', wex: new Set(), loves: '' };
 }
 
 export function activeFilterCount(f: AppFilters): number {
   return (
-    [f.company, f.dateFrom || f.dateTo, f.stage, f.biz, f.agent, f.loves].filter(Boolean).length +
+    [f.dateFrom || f.dateTo, f.stage, f.biz, f.agent, f.loves].filter(Boolean).length +
     (f.wex.size > 0 ? 1 : 0)
   );
 }
@@ -43,7 +42,6 @@ export function activeFilterCount(f: AppFilters): number {
 export interface ApplicationsQueryParams {
   sortKey: SortKey;
   sortDir: SortDir;
-  company: string;
   dateFrom: string;
   dateTo: string;
   stage: string;
@@ -62,7 +60,6 @@ export function filtersToParams(f: AppFilters, sortKey: SortKey, sortDir: SortDi
   return {
     sortKey,
     sortDir,
-    company: f.company,
     dateFrom: f.dateFrom,
     dateTo: f.dateTo,
     stage: f.stage,

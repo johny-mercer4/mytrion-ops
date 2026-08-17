@@ -127,7 +127,6 @@ export async function loadApplications(
       perPage: APPLICATIONS_PAGE_SIZE,
       sortKey: queryParams.sortKey,
       sortDir: queryParams.sortDir,
-      company: queryParams.company,
       dateFrom: queryParams.dateFrom,
       dateTo: queryParams.dateTo,
       stage: queryParams.stage,

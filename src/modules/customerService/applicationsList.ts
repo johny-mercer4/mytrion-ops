@@ -35,7 +35,6 @@ export function toApplicationsQueryParams(params: Record<string, unknown>): Appl
     search: typeof params.search === 'string' ? params.search : '',
     sortKey: params.sortKey === 'appId' || params.sortKey === 'carrierId' ? params.sortKey : 'date',
     sortDir: params.sortDir === 'asc' ? 'asc' : 'desc',
-    company: typeof params.company === 'string' ? params.company : '',
     dateFrom: typeof params.dateFrom === 'string' ? params.dateFrom : '',
     dateTo: typeof params.dateTo === 'string' ? params.dateTo : '',
     stage: typeof params.stage === 'string' ? params.stage : '',

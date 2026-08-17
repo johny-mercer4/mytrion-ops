@@ -64,7 +64,6 @@ function baseParams(overrides: Partial<ApplicationsQueryParams> = {}): Applicati
     search: '',
     sortKey: 'date',
     sortDir: 'desc',
-    company: '',
     dateFrom: '',
     dateTo: '',
     stage: '',
@@ -148,10 +147,6 @@ describe('matchesFilters', () => {
     mkRow({ id: '2', Name: 'Bravo Freight', Stage: 'Application', Type_of_Business: 'Corporation', _dealOwner: null, WEX_Status: 'Pending Decision', Date_Filled: '2026-08-15' }),
   ];
 
-  it('matches company name case-insensitively as a substring', () => {
-    expect(rows.filter((r) => matchesFilters(r, { ...baseParams(), company: 'acme' })).map((r) => r.id)).toEqual(['1']);
-  });
-
   it('filters by an exact stage match', () => {
     expect(rows.filter((r) => matchesFilters(r, { ...baseParams(), stage: 'Application' })).map((r) => r.id)).toEqual(['2']);
   });
@@ -212,9 +207,10 @@ describe('computeFacets', () => {
     expect(computeFacets(rows).agent).toEqual(['Jane', NOT_ASSIGNED]);
   });
 
-  it("loves facet includes the Pending sentinel for blank rows, never drops it like a real empty value would", () => {
-    const rows = [mkRow({ Loves_Verification: 'Approved' }), mkRow({ Loves_Verification: null })];
-    expect(computeFacets(rows).loves).toEqual(['Approved', LOVES_PENDING]);
+  it("loves facet is always the field's fixed vocabulary, not derived from the data — legacy junk values ('0', 'FALSE', 'Not Approved') must never appear as options", () => {
+    const rows = [mkRow({ Loves_Verification: '0' }), mkRow({ Loves_Verification: 'Not Approved' })];
+    expect(computeFacets(rows).loves).toEqual(['Approved', 'Declined', LOVES_PENDING]);
+    expect(computeFacets([]).loves).toEqual(['Approved', 'Declined', LOVES_PENDING]); // even with zero rows
   });
 });
 

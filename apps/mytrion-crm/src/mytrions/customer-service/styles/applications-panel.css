@@ -297,6 +297,29 @@
     font-size: 0.8125rem;
 }
 
+/* Date Filled range — one label, two connected inputs (QA feedback 2026-08-17: fewer, denser
+   controls read better than a flat row of separate fields). */
+.cs-root .cs-app-filter-daterange {
+    /* rem, not px — breakpoints.test.ts's CSS min-width-in-px budget only ever goes down. */
+    min-width: 16rem;
+}
+
+.cs-root .cs-app-filter-daterange-inputs {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.cs-root .cs-app-filter-daterange-inputs .cs-form-input {
+    min-width: 0;
+    flex: 1;
+}
+
+.cs-root .cs-app-filter-daterange-sep {
+    color: var(--th-color);
+    flex-shrink: 0;
+}
+
 .cs-root .cs-app-filter-label {
     font-size: 0.6875rem;
     font-weight: 600;

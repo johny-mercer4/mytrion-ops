@@ -54,7 +54,6 @@ export const csDelugeTouchpoints: Touchpoint[] = [
       perPage: limit(500, 200),
       sortKey: z.enum(['date', 'appId', 'carrierId']).default('date'),
       sortDir: z.enum(['asc', 'desc']).default('desc'),
-      company: z.string().max(200).default(''),
       dateFrom: z.union([ymdDate, z.literal('')]).default(''),
       dateTo: z.union([ymdDate, z.literal('')]).default(''),
       stage: z.string().max(160).default(''),

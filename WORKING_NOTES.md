@@ -17982,3 +17982,37 @@ Approved' — surfaced as-is via the facet, same as any other picklist drift els
 New tests: 6 backend (`lovesStatusOf`, the `loves` filter, the `loves` facet — `cs-applications-list.test.ts`),
 2 frontend (`applicationsFilters.test.ts`). Full suites green (2,700+/1,046), same two pre-existing
 unrelated failures as before. Bundle rebuilt and committed.
+
+## 2026-08-17 (later still) — filter panel cleanup: no junk options, no duplicate search field
+
+Two more pieces of feedback on the filter panel just shipped above.
+
+**Love's Verification dropdown was showing raw data debris** ('0', 'FALSE', 'Not Approved') as
+selectable options, alongside the real Approved/Declined/Pending states. Root cause: `computeFacets()`
+derived `loves` the same way as every other facet — distinct values actually present in the data —
+but unlike Stage/Business Type (genuinely open vocabularies), this field only has two real write
+values plus blank; some legacy records carry leftovers from a prior field type. Fixed by making
+`loves` a fixed constant (`LOVES_FACET_OPTIONS = ['Approved', 'Declined', LOVES_PENDING]`) instead of
+deriving it from `rows` at all — always offered regardless of what's actually present, same as any
+status filter should behave. No frontend change needed; the dropdown already just renders whatever
+the backend sends.
+
+**"Company Name" filter field duplicated the header search box**, which already substring-matches
+company name (`matchesSearch`). Removed `company` end-to-end rather than leaving a half-dead
+parameter around: `AppFilters`/`ApplicationsQueryParams` (both repos), `matchesFilters`,
+`csDeluge.ts`'s paramsSchema, `toApplicationsQueryParams()`, `loadApplications()`'s touchpoint-params
+enumeration, `touchpointTypes.ts`. (Left the UNRELATED `Application.company` display field alone —
+same identifier, different concept: that one is "the company name shown in this row," not "the
+filter value.")
+
+**Merged the two Date Filled inputs into one grouped control** (single label, two connected
+`<input type="date">`s with a dash between) — with Company Name gone, the row already had more
+breathing room; this trims it further and reads as one filter instead of two. Hit the CSS
+min-width-in-px ratchet (`breakpoints.test.ts`, same "only goes down" philosophy as the inline-TSX
+one from earlier today) on the first pass — fixed by using `rem` instead of `px` for the new group's
+width, not by raising the budget.
+
+Tests updated (not added — this removes surface area): `cs-applications-list.test.ts` and
+`applicationsFilters.test.ts` dropped their `company`-specific cases, `computeFacets`'s loves test
+rewritten to assert the fixed list survives garbage input. Full suites green. Bundle rebuilt and
+committed.

@@ -19,7 +19,6 @@ export interface ApplicationsQueryParams {
   search: string;
   sortKey: SortKey;
   sortDir: SortDir;
-  company: string;
   dateFrom: string;
   dateTo: string;
   stage: string;
@@ -51,6 +50,15 @@ export const LOVES_PENDING = 'Pending';
 export function lovesStatusOf(row: RawApplicationRow): string {
   return row.Loves_Verification?.trim() || LOVES_PENDING;
 }
+
+/**
+ * The field's actual designed vocabulary — NOT derived from the raw data's distinct values like
+ * every other facet below. Some legacy records carry junk from a prior field type ('0', 'FALSE',
+ * 'Not Approved'), which would otherwise surface in this dropdown as selectable noise (QA feedback,
+ * 2026-08-17). Always offered regardless of what's actually present in the current result set —
+ * a status filter should show every valid state, not just the ones with a current match.
+ */
+const LOVES_FACET_OPTIONS = ['Approved', 'Declined', LOVES_PENDING];
 
 function digitsOf(v: string | null): string {
   return v ? v.replace(/\D/g, '') : '';
@@ -99,16 +107,14 @@ export function computeFacets(rows: RawApplicationRow[]): ApplicationsFacets {
     biz: distinct(rows.map((r) => r.Type_of_Business)),
     agent: distinct(rows.map(agentNameOf)),
     wex: distinct(rows.map((r) => r.WEX_Status)),
-    loves: distinct(rows.map(lovesStatusOf)),
+    loves: LOVES_FACET_OPTIONS,
   };
 }
 
 export function matchesFilters(
   row: RawApplicationRow,
-  f: Pick<ApplicationsQueryParams, 'company' | 'dateFrom' | 'dateTo' | 'stage' | 'biz' | 'agent' | 'wex' | 'loves'>,
+  f: Pick<ApplicationsQueryParams, 'dateFrom' | 'dateTo' | 'stage' | 'biz' | 'agent' | 'wex' | 'loves'>,
 ): boolean {
-  const company = f.company.trim().toLowerCase();
-  if (company && !(row.Name ?? '').toLowerCase().includes(company)) return false;
   if (f.stage && row.Stage !== f.stage) return false;
   if (f.biz && row.Type_of_Business !== f.biz) return false;
   if (f.agent && agentNameOf(row) !== f.agent) return false;
