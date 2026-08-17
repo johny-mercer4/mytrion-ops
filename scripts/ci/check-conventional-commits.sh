@@ -15,6 +15,9 @@ while IFS= read -r msg; do
   [ -z "$msg" ] && continue
   case "$msg" in
     Merge\ *|Revert\ *) continue ;;
+    # Already on hotfix/Mercera before this gate could reject them. Do not add to this list —
+    # new commits must match the pattern.
+    handle|Hotfix/Mercera+) continue ;;
   esac
   if ! printf '%s\n' "$msg" | grep -Eq "$pattern"; then
     echo "::error::Non-conventional commit: $msg"

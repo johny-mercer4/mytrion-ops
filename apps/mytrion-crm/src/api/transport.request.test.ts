@@ -85,15 +85,22 @@ describe('request concurrency cap', () => {
 
   it('retries a blob download that never reached the origin', async () => {
     vi.useFakeTimers();
-    const blob = new Blob(['pdf'], { type: 'application/pdf' });
+    // jsdom's Response stringifies a Blob argument to "[object Blob]" (13 bytes). Bytes stay bytes.
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce(new Response(blob, { status: 200 }));
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([0x70, 0x64, 0x66]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/pdf' },
+        }),
+      );
     vi.stubGlobal('fetch', fetchMock);
     const pending = requestBlob('/files/x');
     await vi.advanceTimersByTimeAsync(500);
-    await expect(pending).resolves.toBeInstanceOf(Blob);
+    const got = await pending;
+    expect(got.size).toBe(3);
+    expect(got.type).toMatch(/pdf/);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
