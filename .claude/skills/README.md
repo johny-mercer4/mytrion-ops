@@ -29,4 +29,25 @@ Reference skills for this repo. Each `SKILL.md` is auto-surfaced by Claude Code 
 
 | Skill | Covers |
 | --- | --- |
-| [`modern-web-guidance`](modern-web-guidance/SKILL.md) | **Required by CLAUDE.md hard rule 10 before any UI/UX work.** The one token system (`theme.css` + Tailwind `@theme inline`, no `dark:` variant), per-Mytrion accents, Horizon glass primitives, motion + `prefers-reduced-motion`, the single-loader rule and skeleton patterns, composited-layer traps (`transform`/`overflow`/`transition: all` on blurred cards), and the vendored-bundle rebuild requirement. |
+| [`modern-web-guidance`](modern-web-guidance/SKILL.md) | **Required by CLAUDE.md hard rule 10 before any UI/UX work.** The one token system (`theme.css` + Tailwind `@theme inline`, no `dark:` variant), per-Mytrion accents, Horizon glass primitives, motion + `prefers-reduced-motion`, the single-loader rule and skeleton patterns, composited-layer traps (`transform`/`overflow`/`transition: all` on blurred cards), browser verify (§10), and the vendored-bundle rebuild requirement. |
+
+## Workspace product skills
+
+Live desks only. Update the skill in the same PR when that Mytrion’s schema, routes, or nav change.
+
+| Skill | Covers |
+| --- | --- |
+| [`collection-mytrion`](collection-mytrion/SKILL.md) | Collection desk: finder vs 6h Zoho cron, remaining>$100, stages, API caps, invoice error-vs-empty, `--co-pad` / `svh`. |
+| [`sales-mytrion`](sales-mytrion/SKILL.md) | Sales desk: 11 live tabs vs parked Tickets, Zoho/DWH/EFS/app-PG writes, View-as `zoho_user_id`. |
+| [`customer-service-mytrion`](customer-service-mytrion/SKILL.md) | CS desk: Applications, Maintenance, Retention Cases, Open Pool, CITI, Citifuel, Analytics. |
+| [`billing-mytrion`](billing-mytrion/SKILL.md) | Billing desk: Data Center, Transactions, Ledger, Debtors, Prepay, Returns. Not Finance Mytrion. |
+| [`hr-mytrion`](hr-mytrion/SKILL.md) | HR desk: app-PG directory/org/leave; Zoho People is admin one-way pull; attendance is Ganga. |
+| [`admin-mytrion`](admin-mytrion/SKILL.md) | Admin rail (21 tabs). Gate is `allDepartmentAccess`, not `department: 'admin'`. |
+
+## Agent tooling
+
+| Skill | Covers |
+| --- | --- |
+| [`ast-grep`](ast-grep/SKILL.md) | Optional `sg` structural search. Escalate from `rg` for syntax shapes. Missing binary is fine. |
+| [`context7`](context7/SKILL.md) | Current library API/version docs only. Not repo search. Plugin / home MCP — not this repo's `mcp.json`. |
+| [`render-logs`](render-logs/SKILL.md) | Octane Render map: `mytrion-ops` API+widget, `list_logs`, local "Backend issue" = Postgres `:5433`. |

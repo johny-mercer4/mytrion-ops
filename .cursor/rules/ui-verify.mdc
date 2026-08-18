@@ -1,0 +1,19 @@
+---
+description: Mytrion UI work is not done until a desktop + narrow live screenshot (or Impeccable audit pass)
+globs: apps/mytrion-crm/src/**/*,apps/mini-app/src/**/*
+alwaysApply: false
+---
+
+# Browser verify (existing tools only)
+
+jsdom does no layout. Collection gutters (`--co-pad`) were a screenshot bug.
+
+UI work on a Mytrion is **not done** until a **desktop** and a **narrow** screenshot of the live
+surface, or an Impeccable `audit` pass.
+
+- **cursor-ide-browser:** `lock` → `snapshot` / `screenshot` → `unlock`. ~1280 and ~375.
+- **Impeccable:** `audit` + `polish` playbooks in `.claude/skills/impeccable/`. Live: `/impeccable live`.
+- Also `pnpm audit:mobile` / `audit:shots` when the change is responsive.
+
+Do not add a browser SaaS. Do not restyle a Mytrion while verifying. Details:
+`.claude/skills/modern-web-guidance/SKILL.md` §10.

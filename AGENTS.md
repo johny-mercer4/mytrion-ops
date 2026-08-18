@@ -17,6 +17,12 @@ Borrows architecture patterns from Mytrion but is a clean, standalone codebase.
 8. Every tool call is audit-logged.
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
 
+## Workspace product skills
+
+Workspace product skills (`.claude/skills/<name>/`, mirrored to `.cursor` and `.agents`): Collection, Sales, Customer Service, Billing, HR, Admin. `.agents/` is gitignored; `git add -f` skill updates like the Zoho mirrors.
+
+Optional tooling skills: `ast-grep` (not MCP), `context7` (library docs plugin — not this repo's `mcp.json`), `render-logs` (Octane Render map). UI verify: `.cursor/rules/ui-verify.mdc`.
+
 ## Karpathy guidelines — apply to every change
 
 Full text: `.claude/skills/karpathy-guidelines/SKILL.md` (mirrored to `.agents/skills/` and
@@ -46,6 +52,9 @@ and RBAC boundaries, not speculative abstraction, so routing through them IS the
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`.
 - **UI PRs — rebuild vendored frontends before opening/pushing the PR** (see below). Source-only
   merges do **not** change production UI.
+- **Pre-push** (`.githooks/pre-push` → `scripts/git-pre-push.sh`) also runs the cheap CI PR
+  gates vs `origin/build`: conventional commits, file-size cap, CRM vitest when
+  `apps/mytrion-crm` src changed, vendored-bundle check. Not the full backend suite.
 
 ## Vendored frontend builds (REQUIRED before UI PRs)
 
@@ -80,6 +89,7 @@ committing `app/` when opening a PR to `build` / `main`.
   scripts). `tsconfig.build.json` is emit-only (`rootDir: ./src`, src only). `pnpm build` uses the
   build config.
 - **pnpm via Corepack.** If `pnpm` isn't on PATH, use `corepack pnpm ...`.
+- **ast-grep** (optional): `brew install ast-grep`, then `ast-grep --version`. Agents may shell out to `ast-grep` for syntax-shaped search. Missing binary is fine — see `.claude/skills/ast-grep/`. Not an MCP.
 
 ## Git branching & workflow
 
