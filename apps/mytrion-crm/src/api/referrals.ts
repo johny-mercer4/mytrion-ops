@@ -102,6 +102,8 @@ export interface ReferralCalculationPreview {
   state: 'tracking' | 'earned' | 'paid';
   ledgerStatus: 'calculated' | 'approved' | 'paid' | 'void' | null;
   months?: ReferralMonthPreview[];
+  /** Child deal vs the parent's own fleet. Absent on older cached payloads → treat as child. */
+  role?: 'child' | 'parent_itself';
 }
 
 export interface ReferralWorkspaceSummary {
@@ -138,10 +140,9 @@ export const getReferralWorkspace = (
   options: { refresh?: boolean; periodTo?: string } = {},
 ): Promise<ReferralWorkspace> => {
   const periodTo = options.periodTo ?? periodFrom;
-  const ranged = Boolean(periodFrom && periodTo && periodFrom !== periodTo);
   return request('GET', '/marketing/referrals/workspace', {
     query: {
-      ...(ranged
+      ...(periodFrom && periodTo
         ? { period_from: periodFrom, period_to: periodTo }
         : periodFrom
           ? { period_month: periodFrom }

@@ -138,9 +138,18 @@ describe('Flow B — carrier', () => {
     expect(missingFieldKeys(verdict)).toContain('principals');
   });
 
-  it('requires MC and USDOT', () => {
+  /**
+   * MC and USDOT are COLLECTED for a carrier but do not block completeness. The SOP's decision has
+   * a third branch beside its yes/no — "LLC / corporation without MC/DOT -> Manager Review" — so a
+   * missing authority is a ROUTE, not an omission. Requiring it here made that branch unreachable:
+   * the case could never be submitted, so it could never be routed. `stateMachine.ts`'s
+   * `requiresManagerReviewAtIntake` is the other half, and these two must stay in step.
+   */
+  it('does NOT block on MC or USDOT — their absence routes, it is not missing data', () => {
     const verdict = evaluateIntakeCompleteness({ ...CARRIER, mc: null, dot: null }, PRINCIPAL, statements(3));
-    expect(missingFieldKeys(verdict)).toEqual(expect.arrayContaining(['mc', 'dot']));
+    expect(missingFieldKeys(verdict)).not.toContain('mc');
+    expect(missingFieldKeys(verdict)).not.toContain('dot');
+    expect(verdict.complete).toBe(true);
   });
 
   it('does not require the owner-operator identity fields', () => {

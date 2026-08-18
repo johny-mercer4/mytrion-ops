@@ -296,6 +296,25 @@
   font-weight: var(--fw-bold);
   color: var(--danger);
 }
+/* Two owners, two lines: the Sales agent (the Deal's owner) and the credit agent holding the case.
+   No extra row height — the applicant cell next to it is already 15px + 12px + a gap. */
+[data-mytrion='verification'] .va-owners {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+[data-mytrion='verification'] .va-owner-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='verification'] .va-owner-sub-name {
+  color: var(--text-secondary);
+}
+
 /* Avatar plus NAME. Two initials in a circle identified nobody — see the column's own note. */
 [data-mytrion='verification'] .va-owner {
   display: flex;
@@ -311,6 +330,16 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* No Sales agent on the Deal in Zoho. Muted and italic so it reads as an absence rather than as
+   somebody called "Unassigned", and it keeps the glyph slot so the column stays aligned. */
+[data-mytrion='verification'] .va-owner[data-empty='true'] .va-owner-name {
+  font-style: italic;
+  color: var(--text-disabled);
+}
+[data-mytrion='verification'] .va-owner-none {
+  flex: none;
+  color: var(--text-disabled);
 }
 
 /* The row's tone edge. `rowState` puts the class on the <tr>; the pin lands on its first cell. */

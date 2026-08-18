@@ -16,9 +16,22 @@ import type {
   VerificationPhaseStatus,
   VerificationRoute,
 } from '@/api/verificationFlow';
+import { salesOwnerLabel, salesOwnerName } from '../../_shared/verificationSalesOwner';
 
 /** The desk's own five-day decisioning target. Shared with Main — see `main/verificationOverview`. */
 export { DECISION_SLA_DAYS } from '../main/verificationOverview';
+
+/**
+ * WHO THE SALES AGENT IS — the Deal's owner, never the row's assignee. Re-exported rather than
+ * redefined: both Mytrions read it, so the one definition lives in `_shared`.
+ */
+export {
+  salesOwnerId,
+  salesOwnerLabel,
+  salesOwnerName,
+  UNASSIGNED_SALES_OWNER,
+  verificationOwnerName,
+} from '../../_shared/verificationSalesOwner';
 
 const DAY_MS = 86_400_000;
 
@@ -233,7 +246,7 @@ export function blockedOn(row: VerificationCaseRow, slaDays: number, now: number
 
 export type StageFilter = 'all' | 'intake' | 'authority' | 'credit' | 'decision';
 export type AgeFilter = 'all' | 'today' | 'inside' | 'late';
-export type SortKey = 'age' | 'name' | 'phase' | 'status' | 'trucks' | 'cards' | 'limit';
+export type SortKey = 'age' | 'name' | 'phase' | 'status' | 'trucks' | 'cards' | 'limit' | 'owner';
 export type SortDir = 'asc' | 'desc';
 
 export interface Filters {
@@ -314,7 +327,9 @@ export function selectRows(
     if (needle) {
       const haystack = [
         caseName(row),
-        row.ownerName,
+        // The Sales agent, not the assignee: the placeholder says "owner" and an agent searching
+        // their own name expects their cases back.
+        salesOwnerName(row) ?? '',
         row.email ?? '',
         row.phone ?? '',
         row.ein ?? '',
@@ -337,6 +352,10 @@ export function selectRows(
         return phaseNumber(row.phaseCode);
       case 'status':
         return statusLabel(row).toLowerCase();
+      // The column is sortable, so the key has to exist: without a case here it fell through to
+      // `default` and sorted by age, which looks like a column that ignores its own header.
+      case 'owner':
+        return salesOwnerLabel(row).toLowerCase();
       case 'trucks':
         return numeric(row.trucksCount);
       case 'cards':

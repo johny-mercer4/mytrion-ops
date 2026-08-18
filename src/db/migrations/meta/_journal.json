@@ -897,6 +897,13 @@
       "when": 1786235000001,
       "tag": "0126_watch_active_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1786240000001,
+      "tag": "0127_collection_workspace",
+      "breakpoints": true
     }
   ]
 }

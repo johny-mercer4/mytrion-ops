@@ -40,6 +40,10 @@ export interface DealIntakeInput {
   dot?: string | null;
   mc?: string | null;
   truckCount?: string | null;
+  /** `Deals.Cards_Requested` — the SOP's "Number of fuel cards requested". */
+  cardsRequested?: string | null;
+  secondaryEmail?: string | null;
+  alternativeContact?: string | null;
   businessType?: string | null;
   zohoStage?: string | null;
   applicationStatus?: string | null;
@@ -49,23 +53,48 @@ export interface DealIntakeInput {
   zohoRaw?: Record<string, unknown> | undefined;
 }
 
-const COMPANY_HINT = /\b(llc|l\.l\.c|inc|incorporated|corp|corporation|co\.|company|ltd|limited)\b/i;
+/**
+ * Zoho's `Deals.Business_Type` values that mean a HUMAN is the applicant, not a company.
+ *
+ * These are two of the sixteen values in the picklist; everything else in it
+ * (Corporation, Limited Liability Company, LLC, Partnership, Non-profit, Trust, …) is a company.
+ * Matched exactly rather than by keyword: "Sole Proprietorship" is the value, and a substring
+ * search for "person" would also catch "Public Accounting Firm" style additions later.
+ */
+const INDIVIDUAL_BUSINESS_TYPES = new Set(['sole proprietorship', 'natural person']);
 
 /**
- * Guess the applicant type from what Zoho already knows.
+ * The applicant type from what Zoho actually KNOWS — or null, and Sales decides.
  *
- * Only a CONFIDENT signal produces a value; otherwise this returns null and the intake evaluator
- * lists "applicant type" as the first missing item. Guessing wrong is worse than asking: the type
- * decides which half of the SOP's Flow A / Flow B form the agent fills, and which phases apply.
+ * TWO types exist: `owner_operator` (Flow A, "Owner-Operator / Individual") and `carrier`
+ * (Flow B, "Carrier (Company)"). The old third value `company` is no longer produced here; it is
+ * still accepted on read because rows already carry it.
+ *
+ * WHY THIS STOPPED GUESSING. The previous version read any non-empty `mc`/`dot` as authority and
+ * otherwise ran a regex for "llc|inc|corp|…" over the company name. Both were wrong on live data:
+ * Zoho's MC field holds the literal `No assigned number` on 13 of 26 cases, so TEN cases with no
+ * authority at all were typed `carrier`; and the name regex cannot tell an owner-operator trading
+ * as "Karimov Trucking LLC" from a fleet. Truck count is no help either — a one-truck applicant is
+ * very often a company.
+ *
+ * So the only signals used are ones Zoho states rather than implies:
+ *   a real MC or USDOT      -> carrier. Only a company holds operating authority.
+ *   Business_Type is        -> owner_operator.
+ *     Sole Proprietorship
+ *     or Natural Person
+ *   anything else           -> null. Sales picks it on the intake form, which is where somebody
+ *                              who has spoken to the applicant can answer in one click.
+ *
+ * Returning null is not a failure mode: `intake.ts` surfaces "Applicant type" as the first missing
+ * item, so the case is visibly waiting on a human rather than silently mis-typed.
  */
 export function inferApplicantType(deal: DealIntakeInput): VerificationApplicantType | null {
-  const hasAuthority = Boolean(deal.mc?.trim()) || Boolean(deal.dot?.trim());
-  if (hasAuthority) return 'carrier';
+  // `mc`/`dot` reach here already stripped of Zoho's sentinels by `authorityNumber` in the mapper,
+  // so a non-empty value here really is an authority number.
+  if (deal.mc?.trim() || deal.dot?.trim()) return 'carrier';
 
-  const name = `${deal.companyName ?? ''} ${deal.businessType ?? ''}`;
-  // An incorporated name with no MC/DOT is exactly the SOP's "LLC / corporation without MC/DOT",
-  // which routes to manager review rather than through the carrier phases.
-  if (COMPANY_HINT.test(name)) return 'company';
+  const businessType = deal.businessType?.trim().toLowerCase() ?? '';
+  if (INDIVIDUAL_BUSINESS_TYPES.has(businessType)) return 'owner_operator';
 
   return null;
 }
@@ -125,8 +154,10 @@ export async function createApplicationFromDeal(
     companyName: clean(deal.companyName),
     firstName: clean(deal.firstName),
     lastName: clean(deal.lastName),
-    email: clean(deal.email),
-    phone: clean(deal.phone) ?? clean(deal.cell),
+    // Contact is a Phase-1 requirement for BOTH flows, so take the fallback Zoho already holds
+    // rather than making Sales retype something the Deal knows.
+    email: clean(deal.email) ?? clean(deal.secondaryEmail),
+    phone: clean(deal.phone) ?? clean(deal.cell) ?? clean(deal.alternativeContact),
     cell: clean(deal.cell),
     address: clean(deal.address),
     city: clean(deal.city),
@@ -137,6 +168,9 @@ export async function createApplicationFromDeal(
     mc: clean(deal.mc),
     trucksCount: parseTrucks(deal.truckCount),
     truckCount: clean(deal.truckCount),
+    // Reuses `parseTrucks`: same problem, same answer — Zoho stores the count as text, and a
+    // non-numeric or zero value is no information rather than a request for zero cards.
+    fuelCardsRequested: parseTrucks(deal.cardsRequested),
     businessType: clean(deal.businessType),
     zohoStage: clean(deal.zohoStage),
     applicationStatus: clean(deal.applicationStatus),

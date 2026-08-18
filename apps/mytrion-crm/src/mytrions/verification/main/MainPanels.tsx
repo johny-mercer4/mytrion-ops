@@ -102,8 +102,8 @@ export function NeedsTodayPanel({
                   <span className="t-eyebrow">in queue</span>
                 </span>
                 {/* The owner's mark, beside the name it depicts — decorative by Avatar's contract. */}
-                <span className="vm-need-avatar" title={row.ownerName}>
-                  <Avatar initials={initials(row.ownerName)} size="sm" />
+                <span className="vm-need-avatar" title={row.salesOwnerName}>
+                  <Avatar initials={initials(row.salesOwnerName)} size="sm" />
                 </span>
                 <Icon name="chevron_right" size="sm" />
               </span>

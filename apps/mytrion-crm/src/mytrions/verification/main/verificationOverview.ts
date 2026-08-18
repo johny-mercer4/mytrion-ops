@@ -22,6 +22,7 @@ import type {
   VerificationCaseRow,
   VerificationDeskAggregates,
 } from '@/api/verificationFlow';
+import { salesOwnerLabel, salesOwnerName } from '../../_shared/verificationSalesOwner';
 
 /**
  * The decisioning SLA, in days — the New Applicant Underwriting SOP's five-day target.
@@ -88,7 +89,8 @@ export interface NeedsRow {
   why: string;
   tone: NeedsTone;
   ageDays: number;
-  ownerName: string;
+  /** The Sales agent — the Deal's owner. See `applicants/applicantsModel#salesOwnerName`. */
+  salesOwnerName: string;
 }
 
 export interface PipelineRow {
@@ -343,7 +345,7 @@ export function buildOverview({ rows, aggregates, now }: OverviewInput): Verific
         why: whyFor(row, age),
         tone: toneFor(row, age),
         ageDays: age,
-        ownerName: row.ownerName,
+        salesOwnerName: salesOwnerLabel(row),
       };
     });
 
@@ -375,7 +377,7 @@ export function buildOverview({ rows, aggregates, now }: OverviewInput): Verific
     .map((row) => ({
       id: row.id,
       name: caseName(row),
-      meta: [APPLICANT_LABEL[row.applicantType ?? ''], row.ownerName].filter(Boolean).join(' · '),
+      meta: [APPLICANT_LABEL[row.applicantType ?? ''], salesOwnerName(row)].filter(Boolean).join(' · '),
       outcome: outcomeOf(row),
       limit: amount(row.approvedLimitAmount),
     }));

@@ -1,0 +1,23 @@
+/* Array reports — filter row only. List / detail reuse `.cc-*` from cases.css. */
+
+[data-mytrion='collection'] .ar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2_5);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='collection'] .ar-filters > * {
+  width: 168px;
+  min-width: 0;
+}
+
+@media (width < 640px) {
+  [data-mytrion='collection'] .ar-filters > * {
+    width: 100%;
+  }
+}

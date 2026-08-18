@@ -59,7 +59,7 @@ const COLUMNS: Array<{ key: keyof ReferralExportRow; label: string; width: numbe
   { key: 'frequency', label: 'Frequency', width: 13 },
   { key: 'fuelCodes', label: 'Fuel Codes', width: 18 },
   { key: 'eligibleGallons', label: 'Eligible Gallons', width: 18 },
-  { key: 'uniqueCards', label: 'Unique Cards', width: 15 },
+  { key: 'uniqueCards', label: 'New Swipes', width: 15 },
   { key: 'cumulativeGallons', label: 'Cumulative Gallons', width: 20 },
   { key: 'thresholdGallons', label: 'Threshold Gallons', width: 19 },
   { key: 'rateUsd', label: 'Rate USD', width: 13 },
@@ -73,17 +73,17 @@ function setupStatus(card: ReferralCardModel): string {
 }
 
 function rule(preview: ReferralCalculationPreview): string {
-  if (preview.bonusType === 'gallons_legacy') return '$0.01 per eligible gallon';
-  if (preview.bonusType === 'swipes_legacy') return '$50 per unique card';
+  if (preview.bonusType === 'gallons_legacy') return '$0.01 per In Station gallon';
+  if (preview.bonusType === 'swipes_legacy') return '$50 per first-use swipe';
   return `$50 at ${preview.thresholdGallons?.toLocaleString('en-US') ?? '—'} cumulative gallons`;
 }
 
 function activity(preview: ReferralCalculationPreview): { metric: string; value: number } {
   if (preview.bonusType === 'swipes_legacy') {
-    return { metric: 'Unique cards in selected month', value: preview.periodSwipes };
+    return { metric: 'New swipes (first-use cards)', value: preview.periodSwipes };
   }
   if (preview.recurring) {
-    return { metric: 'Eligible gallons in selected month', value: preview.periodGallons };
+    return { metric: 'In Station gallons in selected period', value: preview.periodGallons };
   }
   return { metric: 'Cumulative eligible gallons', value: preview.cumulativeGallons };
 }
@@ -96,7 +96,7 @@ function previewRow(
 ): ReferralExportRow {
   const primaryActivity = activity(preview);
   return {
-    period: periodFrom === periodTo ? periodFrom.slice(0, 7) : periodFileStamp(periodFrom, periodTo),
+    period: periodFileStamp(periodFrom, periodTo),
     parentReferrerId: card.referrerId,
     parentName: card.name,
     company: card.company,
@@ -139,8 +139,7 @@ export function buildReferralExportRows(
     }
     return [
       {
-        period:
-          periodFrom === periodTo ? periodFrom.slice(0, 7) : periodFileStamp(periodFrom, periodTo),
+        period: periodFileStamp(periodFrom, periodTo),
         parentReferrerId: card.referrerId,
         parentName: card.name,
         company: card.company,
@@ -215,7 +214,7 @@ export async function downloadReferralExcel(
   const paidAwards = rows.filter((row) => row.state === 'paid').length;
   summary.addRows([
     ['Referral calculation export'],
-    ['Calculation month', periodFileStamp(periodFrom, periodTo)],
+    ['Calculation period', periodFileStamp(periodFrom, periodTo)],
     ['Parent referrers', cards.length],
     ['Ready parent referrers', readyParents],
     ['Parents needing setup', setupRequired],
@@ -223,7 +222,7 @@ export async function downloadReferralExcel(
     ['Earned awards', earnedAwards],
     ['Previously paid awards', paidAwards],
     ['Eligible gallons', totalGallons],
-    ['Unique cards', totalCards],
+    ['New swipes', totalCards],
     ['Payable USD', totalPayable],
   ]);
   summary.getColumn(1).width = 26;

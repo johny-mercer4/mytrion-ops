@@ -153,34 +153,39 @@ export function SelectField({
 /**
  * The applicant-type chooser. A radio group rather than a select: it is the one answer that decides
  * which of the two flows the agent fills, so it should be visible at a glance, not folded away.
+ *
+ * TWO options, matching the SOP's two flows and the words both desks now use. The old third card,
+ * "Company without MC/DOT", asked the agent to classify themselves by a fact the case already
+ * knows — whether an MC or USDOT is on file — and the two desks read the resulting value
+ * differently. A company is a company; whether it holds authority is answered by the MC and USDOT
+ * fields a few rows below, not by which card was clicked.
+ *
+ * The Zoho poller no longer guesses either: when the Deal does not state a Business_Type of Sole
+ * Proprietorship / Natural Person and carries no authority number, it leaves the type unset and
+ * this picker is where a human who has spoken to the applicant answers.
  */
 export function ApplicantTypePicker({
   value,
   onChange,
 }: {
   value: string;
-  onChange: (v: 'owner_operator' | 'carrier' | 'company') => void;
+  onChange: (v: 'owner_operator' | 'carrier') => void;
 }) {
   const options = [
     {
       value: 'owner_operator' as const,
-      title: 'Owner-operator / individual',
+      title: 'Owner-Operator / Individual',
       body: 'One person applying in their own name. Needs licence, SSN card and residential address.',
     },
     {
       value: 'carrier' as const,
-      title: 'Carrier',
-      body: 'A company with MC and USDOT authority. Needs EIN, business address and owners.',
-    },
-    {
-      value: 'company' as const,
-      title: 'Company without MC/DOT',
-      body: 'An LLC or corporation with no operating authority. Goes to Manager Review on submit.',
+      title: 'Carrier (Company)',
+      body: 'An LLC, corporation or partnership. Needs EIN, business address and owners.',
     },
   ];
   const roving = useRovingRadio(
     options.map((o) => o.value),
-    value as 'owner_operator' | 'carrier' | 'company' | '',
+    value as 'owner_operator' | 'carrier' | '',
     onChange,
   );
   return (
