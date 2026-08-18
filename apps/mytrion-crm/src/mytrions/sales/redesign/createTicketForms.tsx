@@ -22,6 +22,7 @@ import { useLoad, loadClientCards, type ClientCardVM } from './live';
 import { loadDeals, type DealVM } from './dataCenterLive';
 import { AUTO_LIST, type Automation } from './autoLive';
 import { createDeskTicket, type CreateTicketInput } from '@/api/desk';
+import { formatPhone } from '@/lib/phone';
 import { invalidateDcCache } from './dcCache';
 import { invalidateDeduped } from './fetchDedupe';
 import {
@@ -105,14 +106,6 @@ const CR0: CrState = {
   contact: '', account: '', email: '', phone: '', ticketType: '', typeOpen: false,
   cardQ: '', card: '', cardOpen: false, subject: '', body: '', submitting: false, autoPrompt: null,
 };
-
-/** Pretty-print a 10-digit US phone; otherwise return the raw value. */
-function displayPhone(raw: string): string {
-  const d = raw.replace(/\D/g, '');
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  if (d.length === 11 && d.startsWith('1')) return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  return raw;
-}
 
 /**
  * ID chip for a deal row — Zoho `Carrier_ID` when present, else `Application_ID` (pre-conversion
@@ -387,7 +380,7 @@ export function TicketWizard() {
                       {hasPhone ? (
                         <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:14px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
                           <Icon name="calls" size={12} strokeWidth={2.2} />
-                          {displayPhone(d.phone)}
+                          {formatPhone(d.phone)}
                         </span>
                       ) : (
                         <span style={s('font-size:12px;font-weight:600;color:var(--faint)')}>No phone</span>
@@ -421,7 +414,7 @@ export function TicketWizard() {
                 <span style={s("font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md)")}>App {cr.app}</span>
               ) : null}
               {cr.phone ? (
-                <span style={s("font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>{displayPhone(cr.phone)}</span>
+                <span style={s("font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>{formatPhone(cr.phone)}</span>
               ) : null}
             </div>
             <div style={s('display:flex;gap:7px;flex-shrink:0')}><button onClick={() => patch({ step: 1 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Dept</button><button onClick={() => patch({ step: 2 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Deal</button></div>

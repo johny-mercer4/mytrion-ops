@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Files, IdCard, type LucideIcon } from 'lucide-react';
 import { Button, Dialog, Tabs } from '@/ds';
 import type { VerificationClientDetail, VerificationClientRow } from '../../api/verificationClients';
+import { formatPhone } from '@/lib/phone';
 import { AggregatorMark } from './verificationAggregators';
 import { VerificationClientAttachments } from './VerificationClientAttachments';
 import { useCarrierAttachments, useVerificationClientDetail } from './verificationData';
@@ -202,7 +203,7 @@ function ClientDetails({
         ) : (
           <dl className="vf-detail-grid">
             <Field label="Contact" value={d?.contact} />
-            <Field label="Phone" value={d?.phone} mono />
+            <Field label="Phone" value={formatPhone(d?.phone)} mono />
             <Field label="Email" value={d?.email} mono />
             <Field label="Agent" value={d?.agentName} />
             <Field label="Agent email" value={d?.agentEmail} mono />

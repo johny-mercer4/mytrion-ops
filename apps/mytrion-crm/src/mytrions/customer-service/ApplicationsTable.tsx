@@ -8,6 +8,7 @@
 import { memo, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
 
 import type { OnboardingField } from '@/api/cs';
+import { formatPhone } from '@/lib/phone';
 import { dotStyle } from './colors';
 import { type Application, fullName } from './data';
 
@@ -128,13 +129,6 @@ export function columnsFor(tab: SubTab): AppColumn[] {
 }
 
 /* ─── Formatters (widget parity) ─────────────────────────────────────────── */
-
-export function formatPhone(v: string): string {
-  if (!v) return '';
-  const d = v.replace(/\D/g, '');
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  return v;
-}
 
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
