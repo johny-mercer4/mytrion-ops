@@ -44,6 +44,7 @@ vi.mock('../../src/modules/verificationFlow/applicationService.js', async () => 
       removePrincipal: vi.fn(),
       listForAgent: vi.fn(),
       assertSalesMayEdit: vi.fn(),
+      prefillInputs: vi.fn(),
     },
   };
 });
@@ -59,6 +60,7 @@ vi.mock('../../src/modules/verificationFlow/documentService.js', async () => {
       upload: vi.fn(),
       request: vi.fn(),
       downloadUrl: vi.fn(),
+      getBytes: vi.fn(),
       remove: vi.fn(),
     },
   };
@@ -69,12 +71,17 @@ import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { AppError } from '../../src/lib/errors.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { applicationService } from '../../src/modules/verificationFlow/applicationService.js';
+import { documentService } from '../../src/modules/verificationFlow/documentService.js';
 
 const createMock = vi.mocked(applicationService.create);
 const getMock = vi.mocked(applicationService.get);
 const patchMock = vi.mocked(applicationService.patch);
 const submitMock = vi.mocked(applicationService.submit);
 const listMock = vi.mocked(applicationService.listForAgent);
+/** The prefill route reads the case LEAN — it must not run the gate refresh to read a phone number. */
+const prefillInputsMock = vi.mocked(applicationService.prefillInputs);
+/** The inline-preview proxy — the only path that can SHOW a stored document rather than download it. */
+const getBytesMock = vi.mocked(documentService.getBytes);
 
 const detail = {
   case: {
@@ -116,6 +123,7 @@ beforeEach(() => {
   patchMock.mockResolvedValue(detail);
   submitMock.mockResolvedValue(detail);
   listMock.mockResolvedValue({ items: [], total: 0 });
+  prefillInputsMock.mockResolvedValue({ case: detail.case, principalCount: 0 });
 });
 
 async function workerToken(profile: string): Promise<string> {
@@ -245,6 +253,24 @@ describe('prefill from the warehouse', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ match: null, suggestions: [] });
+  });
+
+  /**
+   * A read must not run a WRITE. `applicationService.get` re-derives the gate and persists the
+   * verdict, so answering the prefill through it meant every open of an application issued the whole
+   * six-statement refresh — and, on a case whose verdict had moved, an UPDATE — before the warehouse
+   * scan even started, for a panel the form does not wait for.
+   */
+  it('reads the case lean rather than through the gate refresh', async () => {
+    findBrokerMock.mockResolvedValue(MATCH);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/prefill',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(prefillInputsMock).toHaveBeenCalledTimes(1);
+    expect(getMock).not.toHaveBeenCalled();
   });
 
   it('reports a warehouse failure as 502, not a 500', async () => {
@@ -420,5 +446,103 @@ describe('route wiring', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().error?.message ?? res.json().message).toMatch(/EIN/);
+  });
+});
+
+/**
+ * The INLINE PREVIEW proxy.
+ *
+ * `…/download` returns a Dropbox `get_temporary_link`, and Dropbox serves that link with
+ * `Content-Disposition: attachment` and no CORS headers — so clicking a bank statement opened a blank
+ * tab and downloaded the file. An underwriter could not look at the document they were underwriting.
+ *
+ * These assert the three headers that make the browser RENDER the bytes instead of saving them, and
+ * that the route is gated like every other Sales door.
+ */
+describe('document bytes — inline preview', () => {
+  const PDF = Buffer.from('%PDF-1.7 fake');
+
+  beforeEach(() => {
+    getBytesMock.mockResolvedValue({ fileName: 'feb-statement.pdf', mime: 'application/pdf', buffer: PDF });
+  });
+
+  it('serves the bytes with the row’s real MIME and Content-Disposition: inline', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/documents/doc_1/bytes',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+    // The real MIME matters: `X-Content-Type-Options: nosniff` is set globally, so a wrong or absent
+    // content type renders as a blank frame rather than as a PDF.
+    expect(res.headers['content-type']).toContain('application/pdf');
+    expect(res.headers['content-disposition']).toBe('inline; filename="feb-statement.pdf"');
+    // Bank statements and identity documents must not sit in a shared cache.
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.rawPayload.equals(PDF)).toBe(true);
+    expect(getBytesMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'doc_1');
+  });
+
+  it('strips CR/LF and quotes out of the filename header', async () => {
+    getBytesMock.mockResolvedValue({
+      fileName: 'jan"\r\nstatement.pdf',
+      mime: 'application/pdf',
+      buffer: PDF,
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/documents/doc_1/bytes',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    // A CR, an LF or a bare quote inside the value would split or terminate the header. The opening
+    // quote around the whole filename is of course legitimate — only the value is sanitised.
+    expect(res.headers['content-disposition']).toBe('inline; filename="jan___statement.pdf"');
+  });
+
+  it('REFUSES a verification-only worker on the Sales door', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/documents/doc_1/bytes',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(getBytesMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses unauthenticated — the bytes are never public', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/documents/doc_1/bytes',
+    });
+    expect(res.statusCode).toBe(401);
+    expect(getBytesMock).not.toHaveBeenCalled();
+  });
+
+  /** A `requested` row carries no bytes; the service 409s and that must reach the client as a 409. */
+  it('passes the service’s 409 through for a document that was asked for but never uploaded', async () => {
+    getBytesMock.mockRejectedValue(
+      new AppError('That document has been requested but not uploaded yet.', {
+        statusCode: 409,
+        code: 'VERIFICATION_DOC_NOT_UPLOADED',
+        expose: true,
+      }),
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/documents/doc_1/bytes',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: { code: 'VERIFICATION_DOC_NOT_UPLOADED' } });
+  });
+
+  it('serves the desk door too, so both Mytrions resolve one document the same way', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/documents/doc_1/bytes',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toContain('inline');
   });
 });
