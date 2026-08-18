@@ -313,10 +313,44 @@
 
 /* ── Carrier column ── */
 .bm-root .tx-carrier-col {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
     flex-shrink: 0;
     min-width: 80px;
     text-align: right;
 }
+
+/* Inline row delete (Chase, unmapped, permitted) — icon-only so the row stays one line. Armed
+   state mirrors the modal's own Delete confirm tone (var(--danger-*)) rather than a fresh color. */
+.bm-root .tx-row-delete-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    transition: color 130ms ease, border-color 130ms ease, background 130ms ease;
+}
+.bm-root .tx-row-delete-btn:hover:not(:disabled) {
+    color: var(--danger-text);
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+}
+.bm-root .tx-row-delete-btn.tx-row-delete-armed {
+    color: var(--danger-text);
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+}
+.bm-root .tx-row-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.bm-root .tx-row-delete-btn svg { width: 12px; height: 12px; }
 
 .bm-root .tx-carrier-badge {
     display: inline-flex;

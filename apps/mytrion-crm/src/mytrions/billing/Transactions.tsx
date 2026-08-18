@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
+import { broadcastMapping, deleteTransaction, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
 import { canWriteMytrion } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
@@ -78,9 +78,78 @@ function pageNumber(d: PageData, fallback: number): number {
   return p > 0 ? p : fallback;
 }
 
+/**
+ * Inline delete for an eligible row, without opening the detail modal — the modal's own Delete flow
+ * (TransactionModal) stays as the alternate path for anyone already in there. Two clicks: the icon
+ * arms itself (auto-disarms after a few seconds, so a stray click can't leave it primed forever),
+ * the second click deletes. Both clicks stopPropagation — the row itself opens the modal on click,
+ * and a delete click must never also do that.
+ */
+function RowDeleteButton({
+  txId,
+  onDeleted,
+  notify,
+}: {
+  txId: string;
+  onDeleted: () => void;
+  notify: (kind: ToastKind, message: string) => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!armed) return undefined;
+    const t = window.setTimeout(() => setArmed(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+
+  async function confirmDelete(): Promise<void> {
+    setDeleting(true);
+    try {
+      await deleteTransaction(txId);
+      notify('success', 'Transaction deleted');
+      onDeleted();
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Could not delete transaction');
+    } finally {
+      setDeleting(false);
+      setArmed(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={armed ? 'tx-row-delete-btn tx-row-delete-armed' : 'tx-row-delete-btn'}
+      disabled={deleting}
+      title={armed ? 'Click again to confirm delete' : 'Delete this manually-entered Chase transaction'}
+      aria-label={armed ? 'Confirm delete transaction' : 'Delete this manually-entered Chase transaction'}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (armed) void confirmDelete();
+        else setArmed(true);
+      }}
+    >
+      {armed ? (
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 6L18 18M6 18L18 6" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 export function Transactions() {
   const user = useUserContext();
   const canWrite = canWriteMytrion(user, 'billing');
+  // Admins always have this; a specific person can additionally be granted it (Admin > Delete
+  // Access) — see modules/billing/paymentDeleteAccess.ts. Shared with both the modal's Delete
+  // button and the inline row button below so the two surfaces can never disagree.
+  const canDeleteChase = user.allDepartmentAccess === true || user.canDeleteChaseTransactions === true;
 
   // Source + mapped filters are applied SERVER-SIDE: a filter must reach records beyond the loaded
   // page(s) — e.g. older Chase txns that aren't in the newest 200 yet. Changing either refetches
@@ -674,6 +743,13 @@ export function Transactions() {
                               Unmapped
                             </span>
                           )}
+                          {canWrite && canDeleteChase && tx.source === 'chase' && !tx.isInvoiceMapped ? (
+                            <RowDeleteButton
+                              txId={tx.recordId}
+                              onDeleted={() => firstPage.refresh()}
+                              notify={notify}
+                            />
+                          ) : null}
                         </div>
                         <div className="tx-amount-col">
                           <span className="tx-amount-value">{fmtCurrency(tx.amount)}</span>
@@ -720,7 +796,7 @@ export function Transactions() {
           tx={openTx}
           currentUserName={user.userName}
           canWrite={canWrite}
-          canDeleteChase={user.allDepartmentAccess === true || user.canDeleteChaseTransactions === true}
+          canDeleteChase={canDeleteChase}
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
           onDeleted={() => {
