@@ -1,22 +1,15 @@
 /**
  * The sidebar has to work while a person's record is open.
  *
- * Reported bug: with `actingAs` set, the shell rendered ONLY `HrPersonView` and ignored `view` entirely,
- * so every sidebar click moved the highlight and changed nothing. The nav looked dead and the single way
- * out was the "Back to HR" button at the top.
- *
- * `MytrionShell` is mocked down to buttons because the real chrome is not what is under test — the
- * question is whether choosing a destination reaches the content area at all.
+ * A person record is HR's OWN local state now (it used to ride on the global impersonation slot). It
+ * takes over the whole content area, so a sidebar click must close it and render the chosen tab —
+ * otherwise the nav looks dead. `MytrionShell` is mocked down to buttons because the real chrome is not
+ * what is under test; the question is whether choosing a destination reaches the content area.
  */
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NavSection } from '../_shared/MytrionShell';
-
-const actingAs = { current: null as { zohoUserId: string; name: string } | null };
-const setActingAs = vi.fn((next: unknown) => {
-  actingAs.current = next as typeof actingAs.current;
-});
 
 vi.mock('../_shared/MytrionShell', () => ({
   MytrionShell: ({
@@ -42,9 +35,6 @@ vi.mock('../_shared/MytrionShell', () => ({
   ),
 }));
 
-vi.mock('../../context/ImpersonationProvider', () => ({
-  useImpersonation: () => ({ actingAs: actingAs.current, setActingAs }),
-}));
 vi.mock('../../context/UserContextProvider', () => ({
   useUserContext: () => ({
     userId: '1',
@@ -58,7 +48,21 @@ vi.mock('../../context/UserContextProvider', () => ({
 
 vi.mock('./HrPersonView', () => ({ HrPersonView: () => <div>PERSON RECORD</div> }));
 vi.mock('./tabs/HrHome', () => ({ HrHome: () => <div>HOME TAB</div> }));
-vi.mock('./tabs/HrEmployees', () => ({ HrEmployees: () => <div>EMPLOYEES TAB</div> }));
+// The employee list is the entry point to a record now — expose its `onOpenRecord` as a button.
+vi.mock('./tabs/HrEmployees', () => ({
+  HrEmployees: ({
+    onOpenRecord,
+  }: {
+    onOpenRecord?: (p: { zohoUserId: string; name: string; subtitle: string | null }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onOpenRecord?.({ zohoUserId: '42', name: 'Xusan Turdiyev', subtitle: null })}
+    >
+      OPEN RECORD
+    </button>
+  ),
+}));
 vi.mock('./tabs/HrDepartments', () => ({ HrDepartments: () => <div>DEPARTMENTS TAB</div> }));
 vi.mock('./tabs/HrOrgStructure', () => ({ HrOrgStructure: () => <div>ORG TAB</div> }));
 vi.mock('./tabs/HrAttendance', () => ({ HrAttendance: () => <div>ATTENDANCE TAB</div> }));
@@ -69,23 +73,29 @@ import { HrShell } from './HrShell';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  actingAs.current = null;
 });
 
+/** Open a record via the employee list (Home is the default landing for an admin). */
+async function openRecord(): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: 'Employees' }));
+  await userEvent.click(screen.getByRole('button', { name: 'OPEN RECORD' }));
+}
+
 describe('HR sidebar while a record is open', () => {
-  it('shows the record when one is open', () => {
-    actingAs.current = { zohoUserId: '42', name: 'Xusan Turdiyev' };
+  it('opens a person record from the employee list', async () => {
     render(<HrShell />);
+    await openRecord();
     expect(screen.getByText('PERSON RECORD')).toBeTruthy();
   });
 
-  /** The bug: this click used to change nothing at all. */
+  /** The bug this guards: a sidebar click while a record was open used to change nothing. */
   it('leaves the record when a sidebar destination is chosen', async () => {
-    actingAs.current = { zohoUserId: '42', name: 'Xusan Turdiyev' };
     render(<HrShell />);
+    await openRecord();
+    expect(screen.getByText('PERSON RECORD')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Time Off' }));
-    // Clearing the record is what lets the chosen tab render; asserting the call is asserting the fix.
-    expect(setActingAs).toHaveBeenCalledWith(null);
+    expect(screen.queryByText('PERSON RECORD')).toBeNull();
+    expect(screen.getByText('TIME OFF TAB')).toBeTruthy();
   });
 
   it('navigates normally when no record is open', async () => {
@@ -98,8 +108,7 @@ describe('HR sidebar while a record is open', () => {
 
   it('still routes every destination through the RBAC predicate', async () => {
     render(<HrShell />);
-    // An admin may open Settings; the point is that the click goes through `canOpenHrTab`, not that
-    // this particular user is allowed.
+    // An admin may open Settings; the point is that the click goes through `canOpenHrTab`.
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByText('SETTINGS TAB')).toBeTruthy();
   });

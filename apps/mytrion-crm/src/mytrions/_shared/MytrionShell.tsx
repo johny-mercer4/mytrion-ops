@@ -2,7 +2,7 @@ import { useCallback, useState, type CSSProperties, type ReactNode } from 'react
 import { tabsFor } from '../../access/tabRegistry';
 import { canSeeTab } from '../../access/resolveAccess';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useUserContext } from '../../context/UserContextProvider';
+import { useRealUserContext } from '../../context/UserContextProvider';
 import { useIsCompact, useIsPhone } from '../../hooks/useMediaQuery';
 import { MobileTabBar } from './MobileTabBar';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
@@ -229,7 +229,10 @@ export function MytrionShell({
    */
   contentScroll?: 'shell' | 'content';
 }) {
-  const user = useUserContext();
+  // The REAL admin — the chrome's account cluster and the View-as picker must stay the signed-in user
+  // even while previewing someone else (else the picker would vanish when previewing a non-admin and
+  // there would be no way to Exit). The workspace CONTENT below reads the effective (previewed) context.
+  const user = useRealUserContext();
   const m = MYTRIONS[id];
   const department = m.allDepartments ? null : m.department;
   const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator

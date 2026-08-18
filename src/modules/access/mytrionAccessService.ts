@@ -10,8 +10,7 @@
  * home overlay) → per-user override (replace / deny) → env-admin pin. Admin Profile/Role Defaults
  * are the control plane; the legacy floor only covers Zoho profiles not yet configured in Admin.
  *
- * Per-Mytrion modes (read|full): env-admin / allDept → all full; else user explicit mode wins;
- * else role mode; else full (profile grants are implicit full). Mode does not affect entry.
+ * Per-Mytrion modes (read|full): admin → full; else user > role > per-Mytrion default (mytrionModeDefaults: HR reads).
  *
  * Safety / no-lockout: only the ENV BREAK-GLASS list (ADMIN_USERS / BYPASS_USERS — named users in
  * server config, not editable from the app) is pinned to all-access and exempt from denies. An
@@ -41,6 +40,7 @@ import {
   type MytrionAccessModes,
   type MytrionId,
 } from '../../lib/mytrions.js';
+import { defaultMode } from './mytrionModeDefaults.js';
 import { mytrionProfileDefaultsRepo, type MytrionProfileDefaultDto } from '../../repos/mytrionProfileDefaultsRepo.js';
 import { mytrionRoleDefaultsRepo, type MytrionRoleDefaultDto } from '../../repos/mytrionRoleDefaultsRepo.js';
 import { workerMytrionAccessRepo, type WorkerMytrionAccessDto } from '../../repos/workerMytrionAccessRepo.js';
@@ -137,7 +137,7 @@ function resolveModes(
      */
     const fromSet: MytrionAccessMode | undefined =
       setRead.has(id) && !otherLayerGranted.has(id) ? 'read' : undefined;
-    const mode: MytrionAccessMode = fromUser ?? fromRole ?? fromSet ?? 'full';
+    const mode: MytrionAccessMode = fromUser ?? fromRole ?? fromSet ?? defaultMode(id);
     out[id] = mode;
   }
   return out;
@@ -601,7 +601,7 @@ function buildTrace(input: {
     allDeptDowngraded: input.allDeptDowngraded,
     overriddenBy: input.sets.filter((set) => set.override).map((set) => set.name),
     mytrions: input.accessible.map((id) => {
-      const mode = input.modes[id] ?? 'full';
+      const mode = input.modes[id] ?? defaultMode(id);
 
       // Which layer decided the MODE — mirroring resolveModes' own precedence exactly.
       const setFull = input.sets.find((s) => s.allowedMytrions.includes(id) && s.mytrionAccessModes[id] === 'full');

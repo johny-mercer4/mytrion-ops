@@ -83,6 +83,7 @@ vi.mock('../../src/repos/hrEmployeeRepo.js', () => ({
     listByReportingTo: vi.fn(async () => []),
     listByDepartmentIds: vi.fn(async () => []),
     list: vi.fn(async () => []),
+    count: vi.fn(async () => 0),
   },
 }));
 
@@ -611,18 +612,19 @@ describe('team lead attendance access', () => {
   });
 
   /**
-   * "Attendance tab only". The employee directory, departments and org structure keep
-   * `requireHrInternal`, so a team lead who reaches the HR workspace can open Attendance and nothing
-   * else — the hidden nav is a courtesy, this is the boundary.
+   * The employee directory is COMPANY-WIDE now (read-only): any internal worker may read it, a team
+   * lead included — it used to be HR-only, and this test asserted the refusal. What still holds is the
+   * attendance-specific boundary above: a lead may sync/see only their OWN team. Management stays
+   * gated (requireHrManage); the full directory-access matrix lives in hr-routes.test.ts.
    */
-  it('still refuses a team lead the employee directory', async () => {
+  it('lets a team lead read the company-wide employee directory', async () => {
     beALead();
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees',
       headers: bearer(await workerToken('Sales Rep')),
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(200);
   });
 
   it('still refuses a team lead the shift admin writes', async () => {

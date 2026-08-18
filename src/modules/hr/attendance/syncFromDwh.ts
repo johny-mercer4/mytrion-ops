@@ -16,7 +16,6 @@ import { hrEmployeeRepo } from '../../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import {
   doorKind,
-  OVERNIGHT_CHECKOUT_GRACE_MINUTES,
   parseUzbWallClock,
   workDateForPunch,
 } from './uzbTime.js';
@@ -39,32 +38,15 @@ export const DWH_ATTENDANCE_DOORS = [
 ] as const;
 
 /**
- * Office hours, as a time-of-day band that wraps past midnight.
+ * No time-of-day band on the pull — every badge on the tracked doors counts, whenever it happened.
  *
- * This is a night operation — the hourly histogram for a week peaks at 18:00–22:00 and again at
- * 00:00–02:00, with a trough through the morning — so restricting the pull to the evening band drops
- * about a fifth of the rows without dropping anybody: 127 people badge in a week, and 122 of them badge
- * inside the band. The five who never do are day staff whose punches are not what this page reports on.
+ * There used to be a `17:00–07:00` "night band" that dropped ~a fifth of the rows on the theory that
+ * everyone on a 19:00–03:00 shift badges in the evening. It also silently dropped EARLY arrivals: a
+ * worker who came in at 16:43 for a 19:00 shift had their check-in thrown away, and the day rendered as
+ * "no entry scan yet". For an attendance page, never losing a real scan is worth the extra rows — the
+ * door filter already scopes this to the six Ganga readers, and even a full month stays well under
+ * ROW_LIMIT. The overnight check-out is still caught by the `+ 2` day reach in `fetchWindow`.
  */
-const BAND_START_HOUR = 17;
-/** Nominal end of the night. The fetch does NOT stop here — see `BAND_END_HOUR`. */
-const BAND_NOMINAL_END_HOUR = 3;
-/**
- * Where the fetch actually stops: the nominal end plus the grace the scoring already allows.
- *
- * Cutting at 03:00 exactly looks tidier and is wrong. `OVERNIGHT_CHECKOUT_GRACE_MINUTES` lets a shift's
- * check-out count for up to four hours after the shift ends, so a hard 03:00 stop would fetch the
- * check-in and leave the matching check-out on the DWH — measured on one week, 280 check-outs. Each of
- * those is a night that renders as 0 hours and `needs_review`: the exact failure this file's sibling
- * `rebucketWorkDates` exists to prevent. Pulling them costs ~340 extra rows a week.
- *
- * Derived from the grace constant rather than typed as `7` so the two cannot drift apart.
- */
-const BAND_END_HOUR = BAND_NOMINAL_END_HOUR + OVERNIGHT_CHECKOUT_GRACE_MINUTES / 60;
-
-/** `17:00 → 07:00`, expressed for SQL. Wraps midnight, hence `or` rather than `between`. */
-const NIGHT_BAND_SQL = `(event_time >= time '${String(BAND_START_HOUR).padStart(2, '0')}:00'
-        or event_time < time '${String(BAND_END_HOUR).padStart(2, '0')}:00')`;
 
 /** Longest window one sync may pull. A week is the page's unit; a year is 387k rows and not a page load. */
 export const MAX_SYNC_DAYS = 31;
@@ -185,7 +167,6 @@ async function fetchWindow(from: string, to: string, faceId?: string): Promise<A
       where door_name = any($1)
         and event_date_time >= $2::date
         and event_date_time < ($3::date + 2)
-        and ${NIGHT_BAND_SQL}
         ${personClause}
       order by event_date_time
       limit ${ROW_LIMIT}`,

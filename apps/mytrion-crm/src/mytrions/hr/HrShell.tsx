@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
-import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { HrPersonView } from './HrPersonView';
 import { accessibleHrTabs, canOpenHrTab, type HrTabId } from './hrNav';
@@ -31,15 +30,20 @@ import './hr-attendance-v2.css';
  *
  * Every view switch goes through the Layer-2 RBAC predicate so stale state can't bypass the sidebar.
  *
- * "VIEW AS" IS A LENS HERE, NOT A LOGIN. Elsewhere in the app the picker re-runs a surface as the
- * chosen agent. HR does not: the act-as headers it sets are ignored by every HR route (they read the
- * session context directly), so pretending the chrome had changed would be a lie about what the data
- * behind it is scoped to. Instead a selection opens that person's RECORD — department, team, attendance,
- * time off — read with the signed-in user's own permissions.
+ * OPENING A PERSON'S RECORD is HR's OWN local state — not the global "View as". They used to share the
+ * impersonation slot, which was safe only while act-as was scoped per-Mytrion; now that "View as" is a
+ * global RBAC preview, a person record is plainly a different thing (a subject you READ with your own
+ * permissions, not an identity you become), so it lives here. The employee list opens one via
+ * `onOpenRecord`; the record reads through admin/HR endpoints, unaffected by any act-as.
  */
 export function HrShell() {
   const user = useUserContext();
-  const { actingAs, setActingAs } = useImpersonation();
+  /** The employee record open over the workspace, or null. HR's own state — see the note above. */
+  const [openPerson, setOpenPerson] = useState<{
+    zohoUserId: string;
+    name: string;
+    subtitle: string | null;
+  } | null>(null);
   const tabs = accessibleHrTabs(user);
   /**
    * The first tab this person can actually open, not always Home.
@@ -57,12 +61,11 @@ export function HrShell() {
     /**
      * Leave the person record when a nav item is chosen.
      *
-     * The record view took over the whole content area whenever `actingAs` was set, so every sidebar
-     * click moved the highlight and changed nothing — the nav looked broken, and the only way out was
-     * the "Back to HR" button at the top. A record is scoped to one employee; a nav item is a different
-     * subject, so choosing one means leaving.
+     * The record view takes over the whole content area whenever one is open, so every sidebar click
+     * would otherwise move the highlight and change nothing. A record is scoped to one employee; a nav
+     * item is a different subject, so choosing one means leaving.
      */
-    setActingAs(null);
+    setOpenPerson(null);
     setView(id);
   };
 
@@ -99,30 +102,23 @@ export function HrShell() {
   return (
     <MytrionShell id="hr" navSections={navSections} footerNav={footerNav} enableNavSearch>
       <div className="hr-root">
-        {actingAs ? (
+        {openPerson ? (
           /*
            * Keyed on the person so switching straight from one to another remounts rather than showing
            * the previous employee's team under the new name while the next payload lands.
            */
           <HrPersonView
-            key={actingAs.zohoUserId}
-            zohoUserId={actingAs.zohoUserId}
-            name={actingAs.name}
-            subtitle={[actingAs.profile, actingAs.role].filter(Boolean).join(' · ')}
-            onExit={() => setActingAs(null)}
-            onOpenPerson={(person) =>
-              setActingAs({
-                zohoUserId: person.zohoUserId,
-                name: person.name,
-                profile: person.subtitle ?? '',
-                role: '',
-              })
-            }
+            key={openPerson.zohoUserId}
+            zohoUserId={openPerson.zohoUserId}
+            name={openPerson.name}
+            subtitle={openPerson.subtitle ?? ''}
+            onExit={() => setOpenPerson(null)}
+            onOpenPerson={(person) => setOpenPerson(person)}
           />
         ) : (
           <>
             {view === 'home' ? <HrHome onOpen={open} /> : null}
-            {view === 'employees' ? <HrEmployees /> : null}
+            {view === 'employees' ? <HrEmployees onOpenRecord={setOpenPerson} /> : null}
             {view === 'departments' ? <HrDepartments /> : null}
             {view === 'org' ? <HrOrgStructure /> : null}
             {view === 'attendance' ? <HrAttendance /> : null}
