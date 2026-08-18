@@ -58,6 +58,10 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
   ownerName: verificationCases.ownerName,
   zohoOwnerId: verificationCases.zohoOwnerId,
   zohoOwnerName: verificationCases.zohoOwnerName,
+  // The DESK's assignee, from Stage-0 routing. Projected so the queue can name the credit agent per
+  // row instead of falling back to the tenant's configured one for every case alike.
+  verificationOwnerZohoUserId: verificationCases.verificationOwnerZohoUserId,
+  verificationOwnerName: verificationCases.verificationOwnerName,
   closedAt: verificationCases.closedAt,
   createdAt: verificationCases.createdAt,
   updatedAt: verificationCases.updatedAt,
@@ -75,7 +79,9 @@ export const VERIFICATION_FLOW_LIST_COLUMN_SQL = sql.raw(
     'underwriting_route', 'verification_process', 'phase_code', 'status_code',
     'trucks_count', 'fuel_cards_requested', 'requested_limit', 'approved_limit_amount',
     'intake_missing', 'submitted_at', 'submitted_by_zoho_user_id', 'owner_zoho_user_id',
-    'owner_name', 'zoho_owner_id', 'zoho_owner_name', 'closed_at', 'created_at', 'updated_at',
+    'owner_name', 'zoho_owner_id', 'zoho_owner_name',
+    'verification_owner_zoho_user_id', 'verification_owner_name',
+    'closed_at', 'created_at', 'updated_at',
   ].join(', '),
 );
 
@@ -359,9 +365,15 @@ export const verificationFlowRepo = {
       statusCode?: string | undefined;
       submittedByZohoUserId?: string | undefined;
       actorName?: string | undefined;
+      /**
+       * The row as the caller already read it. `before` is needed only to spot a gate FLIP, and
+       * every caller has just SELECTed it to compute the verdict it is passing in — so re-reading it
+       * here was a second Oregon round trip for a row already in hand.
+       */
+      before?: VerificationCase | undefined;
     },
   ): Promise<VerificationCase | undefined> {
-    const before = await this.findById(ctx, id);
+    const before = input.before ?? (await this.findById(ctx, id));
     if (!before) return undefined;
 
     const set: Partial<typeof verificationCases.$inferInsert> = {

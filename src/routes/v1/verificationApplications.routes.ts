@@ -166,8 +166,9 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       request.ctx = await buildCallerContext(request, {});
       const ctx = requireSales(request);
       const { id } = idParams.parse(request.params);
-      const detail = await applicationService.get(ctx, id);
-      const c = detail.case;
+      // The lean read, not `get`: the prefill needs the case's own contact keys and a principal
+      // count, and `get` would run the whole gate refresh — including a possible write — first.
+      const { case: c, principalCount } = await applicationService.prefillInputs(ctx, id);
       try {
         const match = await findBrokerSnapshot({
           phones: [c.phone, (c as { cell?: string | null }).cell],
@@ -186,7 +187,7 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
                   businessAddress: c.businessAddress,
                   residentialAddress: c.residentialAddress,
                   trucksCount: c.trucksCount,
-                  principalCount: detail.principals.length,
+                  principalCount,
                 },
                 match,
               )
@@ -244,7 +245,16 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
     const body = patchBody.parse(request.body ?? {});
     // The global empty-JSON-body parser accepts `{}`; an empty patch is a no-op read, not an error.
     const detail = await applicationService.patch(ctx, id, body as IntakePatch);
-    await auditFromContext(ctx, {
+    /**
+     * NOT awaited, and this is the one route where that matters.
+     *
+     * This is the handler behind the applicant-type click, the slowest interaction on the intake
+     * form, and the audit write is a whole round trip to Oregon that the agent waits out AFTER the
+     * work is done. `auditFromContext` already swallows every failure of its own, so awaiting it
+     * cannot make the response more correct — only later. The other verification routes await
+     * because they are not on a latency-visible path.
+     */
+    void auditFromContext(ctx, {
       action: 'verification.application.updated',
       status: 'ok',
       resourceType: 'verification_case',

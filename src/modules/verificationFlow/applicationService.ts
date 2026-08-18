@@ -147,19 +147,32 @@ export interface IntakePatch {
  *
  * Returns the refreshed case. Called after EVERY mutation — patch, principal add/remove, document
  * add/remove — so the red card's missing list can never describe a state the row is no longer in.
+ *
+ * ROUND TRIPS ARE THE COST HERE, not CPU. The app Postgres is in Oregon and the repo's own measured
+ * figure is ~300ms per statement warm, so every sequential await is a third of a second the agent
+ * watches. `row` is therefore accepted from callers that already hold it — a mutation's own
+ * `UPDATE … RETURNING` gives them the same row this function would re-SELECT — and the policy read
+ * joins the three list reads rather than following them.
  */
 async function refreshGate(
   ctx: TenantContext,
   caseId: string,
-  opts: { submitting?: boolean; actor?: string | undefined; actorName?: string | undefined } = {},
+  opts: {
+    submitting?: boolean;
+    actor?: string | undefined;
+    actorName?: string | undefined;
+    /** The row as the caller's own write just returned it. Saves one re-SELECT of the same row. */
+    row?: VerificationCase | undefined;
+  } = {},
 ): Promise<ApplicationDetail> {
-  const row = await verificationFlowRepo.findById(ctx, caseId);
+  const row = opts.row ?? (await verificationFlowRepo.findById(ctx, caseId));
   if (!row) throw new NotFoundError('Application not found');
 
-  const [principals, documents, seededPhases] = await Promise.all([
+  const [principals, documents, seededPhases, routingPolicy] = await Promise.all([
     verificationCaseAssetRepo.listPrincipals(ctx, caseId),
     verificationCaseAssetRepo.listDocuments(ctx, caseId),
     verificationCaseAssetRepo.listPhases(ctx, caseId),
+    verificationPolicyRepo.routing(ctx),
   ]);
 
   const verdict = evaluateIntakeCompleteness(
@@ -223,6 +236,9 @@ async function refreshGate(
         statusCode,
         submittedByZohoUserId: opts.actor,
         actorName: opts.actorName,
+        // The row as it stands, so `setGate` does not re-SELECT what this function already read to
+        // decide the verdict. It needs the BEFORE state only to spot a gate flip.
+        before: row,
       });
   if (!updated) throw new NotFoundError('Application not found');
 
@@ -238,15 +254,14 @@ async function refreshGate(
     updated.applicantType,
   );
 
-  const policy = await verificationPolicyRepo.routing(ctx);
   return {
     case: updated,
     principals,
     documents,
     intake: verdict,
     phases,
-    underwritingRoute: resolveUnderwritingRoute(updated.fuelCardsRequested, policy),
-    reviewOrder: resolveReviewOrder(updated.applicantType, updated.trucksCount, policy),
+    underwritingRoute: resolveUnderwritingRoute(updated.fuelCardsRequested, routingPolicy),
+    reviewOrder: resolveReviewOrder(updated.applicantType, updated.trucksCount, routingPolicy),
   };
 }
 
@@ -293,6 +308,28 @@ export const applicationService = {
   },
 
   /**
+   * The two facts the warehouse prefill needs, and nothing else.
+   *
+   * The prefill route used to call `get`, which runs the whole gate refresh — six statements and, on
+   * a case whose verdict has moved, a WRITE — purely to read a phone number, a DOT and a principal
+   * count. That is a mutation on the path of a read that the form does not even wait for, and it ran
+   * on every open before the ~600ms warehouse scan had started. Two reads, in parallel.
+   */
+  async prefillInputs(
+    ctx: TenantContext,
+    caseId: string,
+  ): Promise<{ case: VerificationCase; principalCount: number }> {
+    return withFlowSchemaGuard(async () => {
+      const [row, principals] = await Promise.all([
+        verificationFlowRepo.findById(ctx, caseId),
+        verificationCaseAssetRepo.listPrincipals(ctx, caseId),
+      ]);
+      if (!row) throw new NotFoundError('Application not found');
+      return { case: row, principalCount: principals.length };
+    });
+  },
+
+  /**
    * Non-admin Sales agents may only touch their own applications, and only while the desk has not
    * taken over. Once Verification is working a case, Sales edits would move ground under a reviewer.
    */
@@ -333,9 +370,12 @@ export const applicationService = {
 
   async patch(ctx: TenantContext, caseId: string, patch: IntakePatch): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
+      // The guard's own read is not thrown away: `assertSalesMayEdit` SELECTs the row to authorize
+      // the write, and `patchIntake` returns the row it wrote. Between them the gate refresh needs no
+      // SELECT of its own — three reads of one row became one read and one write.
       await this.assertSalesMayEdit(ctx, caseId);
-      await verificationFlowRepo.patchIntake(ctx, caseId, patch);
-      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
+      const row = await verificationFlowRepo.patchIntake(ctx, caseId, patch);
+      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx), ...(row ? { row } : {}) });
     });
   },
 

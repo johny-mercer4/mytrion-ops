@@ -114,15 +114,23 @@ const clean = (v: string | null | undefined): string | null => {
 /**
  * Create one application from a Deal, red and ready for Sales.
  *
- * `ownerZohoUserId` is the DEAL's owner — the Sales agent who will complete intake. The
- * Verification desk sees every case regardless of owner, so there is no second assignment to make
- * here; putting the Verification owner on the row instead is what would hide the application from
- * the person who has to fill it in.
+ * `ownerZohoUserId` is the DEAL's owner — the Sales agent who will complete intake — and ONLY that.
+ *
+ * It used to fall back to the configured credit agent whenever a Deal arrived unowned, and that was a
+ * real leak rather than a cosmetic one: `verificationFlowRepo.salesOwnership` ORs this column into the
+ * SALES list scope, and `applicationService.assertSalesMayEdit` ORs it into the Sales WRITE gate. So a
+ * credit agent found other people's applications in their own Sales Verification tab, with edit
+ * rights on the intake. The desk's assignee now has columns of its own
+ * (`verification_owner_zoho_user_id`, written by Stage-0 routing), and migration 0129 moves the rows
+ * the fallback had already mislabelled.
+ *
+ * An unowned Deal therefore leaves BOTH Sales columns empty. That is the honest state — the Sales
+ * queue shows nobody because nobody in Sales owns it — and `zohoDealIngest` logs it loudly, because
+ * the fix is in Zoho rather than here.
  */
 export async function createApplicationFromDeal(
   ctx: TenantContext,
   deal: DealIntakeInput,
-  opts: { fallbackOwnerZohoUserId: string; fallbackOwnerName: string },
 ): Promise<VerificationCase> {
   const applicantType = inferApplicantType(deal);
   const salesOwner = clean(deal.zohoOwnerId);
@@ -144,10 +152,12 @@ export async function createApplicationFromDeal(
     zohoApplicationId: clean(deal.zohoApplicationId),
     carrierId: clean(deal.carrierId),
 
-    // The Sales agent who owns the Deal owns the intake. Nothing else makes this row findable
-    // from the Sales desk.
-    ownerZohoUserId: salesOwner ?? opts.fallbackOwnerZohoUserId,
-    ownerName: clean(deal.zohoOwnerName) ?? opts.fallbackOwnerName,
+    // The Sales agent who owns the Deal owns the intake. Nothing else makes this row findable from
+    // the Sales desk — and nothing but a Sales agent belongs in it (see the docblock).
+    // Empty string rather than null: both columns are NOT NULL, and `salesOwnerName` already reads a
+    // blank as "no Sales owner", which is the truth for a Deal nobody owns.
+    ownerZohoUserId: salesOwner ?? '',
+    ownerName: clean(deal.zohoOwnerName) ?? '',
     zohoOwnerId: salesOwner,
     zohoOwnerName: clean(deal.zohoOwnerName),
 
