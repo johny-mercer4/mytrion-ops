@@ -322,10 +322,15 @@ export function MaintenanceOverviewForm({
         <FormField label="Case Type">{picklist('caseType', caseTypeOptions)}</FormField>
         <FormField label="Work Order ID">{text('workOrderId')}</FormField>
         <FormField label="Reference Number">
-          {text('referenceNumber')}
-          {isCreating ? (
-            <div className="cs-mt-form-hint">Auto-filled if left blank.</div>
-          ) : null}
+          <input
+            className="cs-form-input cs-mt-derived"
+            value={values.referenceNumber}
+            readOnly
+            tabIndex={-1}
+            aria-readonly="true"
+            placeholder={isCreating ? 'Generated automatically on save' : ''}
+            title="Generated automatically — not editable"
+          />
         </FormField>
       </div>
 

@@ -557,9 +557,6 @@
 .cs-root .cs-mt-list-company {
     font-weight: 600;
     max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 .cs-root .cs-mt-list-mono {
     font-family: var(--font-mono);
@@ -584,14 +581,44 @@
     white-space: nowrap;
 }
 
-/* Copyable cells (Company/Carrier ID/Unit #/Amount) — QA feedback 2026-08-11: these were opening
-   the modal instead of copying. stopPropagation in the click handler keeps onOpen from firing. */
-.cs-root .cs-mt-cell-copyable {
-    cursor: pointer;
+/* Copy button next to a cell's value (Company/Carrier ID/Unit #/Amount) — 2026-08-18: the cell
+   itself now opens the record like every other column; copying gets its own explicit target. */
+.cs-root .cs-mt-cell-copy-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-width: 0;
 }
-.cs-root .cs-mt-cell-copyable:hover {
-    text-decoration: underline;
-    text-underline-offset: 2px;
+.cs-root .cs-mt-cell-copy-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.cs-root .cs-mt-copy-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-sm, 4px);
+    transition: color 120ms, background 120ms;
+}
+/* Overhanging hit area rather than a bigger visual icon — see modern-web-guidance on touch targets. */
+.cs-root .cs-mt-copy-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+}
+.cs-root .cs-mt-copy-btn:hover {
+    color: var(--cs-accent, var(--text-primary));
+    background: color-mix(in srgb, var(--cs-accent, currentColor) 12%, transparent);
 }
 
 /* ── Kanban view (CS feedback 2026-08-07 — read-only columns, no drag/drop) ── */

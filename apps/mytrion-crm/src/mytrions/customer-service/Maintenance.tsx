@@ -30,6 +30,15 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 400;
 
+/**
+ * The Case Type FILTER only offers these three (2026-08-18 request) — the combo types
+ * ("PMs / Mechanical", "PMs and CARB", ...) and "DOT Inspection" still exist as real data and are
+ * still assignable on a case (`meta.data.caseTypeOptions` is untouched, shared with the create/edit
+ * form's picklist); they're just not offered as an explicit filter chip. "All types" still shows
+ * everything, filtered types included.
+ */
+const CASE_TYPE_FILTER_OPTIONS = ['Mechanical', 'PMs', 'Tire Replacement'];
+
 const REFRESH_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
 const FILTER_PATH = 'M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z';
@@ -250,7 +259,7 @@ export function Maintenance() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search carrier ID, company, unit #, work order, driver…"
+            placeholder="Search carrier ID, company, unit #, work order, driver, phone…"
           />
           {search ? (
             <button
@@ -300,12 +309,14 @@ export function Maintenance() {
               }}
             >
               <option value="">All types</option>
-              {(meta.data?.caseTypeOptions ?? []).map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                  {facets?.byCaseType[o] !== undefined ? ` (${facets.byCaseType[o]})` : ''}
-                </option>
-              ))}
+              {(meta.data?.caseTypeOptions ?? [])
+                .filter((o) => CASE_TYPE_FILTER_OPTIONS.includes(o))
+                .map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                    {facets?.byCaseType[o] !== undefined ? ` (${facets.byCaseType[o]})` : ''}
+                  </option>
+                ))}
             </select>
           </label>
 
