@@ -226,6 +226,15 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     }
     if (from > to) throw new ValidationError('from must be on or before to');
     const employeeId = await resolveSelfEmployeeId(ctx);
+    // Pull THIS person's own punches from the warehouse before reading them, so opening My Data shows
+    // current attendance without a manual Refresh. Scoped to one employee (tens of rows, its own 60s
+    // cooldown) — never the ~4.4k whole-window sweep the page load deliberately avoids. Swallowed on
+    // failure: the stored week still renders, and the frontend paints it from cache meanwhile.
+    try {
+      await syncAttendanceFromDwh(ctx, from, to, { employeeId });
+    } catch (err) {
+      request.log.warn({ err, employeeId }, 'hr.attendance.me self-sync failed; serving stored');
+    }
     return buildAttendanceSummary(ctx, employeeId, from, to);
   });
 

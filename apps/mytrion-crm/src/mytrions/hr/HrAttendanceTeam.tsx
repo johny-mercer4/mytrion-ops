@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { CalendarClock, ChevronLeft, Download, Search, Users } from 'lucide-react';
+import { Dialog } from '../../ds';
 import {
   assignAttendanceShift,
   getAttendanceSummary,
@@ -169,6 +170,8 @@ export function HrAttendanceTeam({
   const [exportKind, setExportKind] = useState<'team' | 'person' | null>(null);
   const [exportFrom, setExportFrom] = useState('');
   const [exportTo, setExportTo] = useState('');
+  /** Focus lands on the From field when the export dialog opens. */
+  const exportFromRef = useRef<HTMLInputElement>(null);
   /**
    * The person has no Face ID, so the door readers cannot produce anything for them.
    *
@@ -358,7 +361,8 @@ export function HrAttendanceTeam({
   };
 
   const dateInputStyle: CSSProperties = {
-    padding: '8px 10px',
+    width: '100%',
+    padding: '10px 12px',
     borderRadius: 'var(--hr-r-md)',
     border: '1px solid var(--hz-pane-bd, var(--border))',
     background: 'var(--hz-field, var(--surface))',
@@ -437,7 +441,7 @@ export function HrAttendanceTeam({
         </p>
       ) : null}
 
-      {actionError ? (
+      {actionError && exportKind === null ? (
         <p className="hr-banner-error" role="alert">
           {actionError}
         </p>
@@ -579,48 +583,50 @@ export function HrAttendanceTeam({
         </div>
       )}
 
-      {/* Ask which period before exporting — a week by default, but any range the user picks. */}
-      {exportKind ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Choose export period"
-          onClick={() => (exporting ? undefined : setExportKind(null))}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 60,
-            display: 'grid',
-            placeItems: 'center',
-            background: 'rgba(2,6,23,0.55)',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-              minWidth: 320,
-              padding: 20,
-              borderRadius: 'var(--hr-r-lg)',
-              border: '1px solid var(--hz-pane-bd, var(--border))',
-              background: 'var(--hz-pane, var(--surface))',
-              boxShadow: 'var(--hz-shadow-rest)',
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0, fontSize: 'var(--text-lg)' }}>
-                Export {exportKind === 'team' ? (orgWide ? 'everyone’s' : 'team') : 'employee'}{' '}
-                attendance
-              </h3>
-              <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-                Which period do you want?
-              </p>
-            </div>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--text-sm)' }}>
+      {/* Ask which period before exporting — a week by default, but any range the user picks.
+          ds/Dialog owns the backdrop, focus trap, Escape and the mobile sheet, so there is no
+          hand-rolled overlay, z-index or rgba here. */}
+      <Dialog
+        open={exportKind !== null}
+        onClose={() => setExportKind(null)}
+        dismissible={!exporting}
+        size="sm"
+        title={`Export ${
+          exportKind === 'team' ? (orgWide ? 'everyone’s' : 'team') : 'employee'
+        } attendance`}
+        subtitle="Which period do you want?"
+        initialFocusRef={exportFromRef}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="hr-btn" disabled={exporting} onClick={() => setExportKind(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn-primary"
+              disabled={exporting || !exportFrom || !exportTo || exportFrom > exportTo}
+              onClick={() => void runExport()}
+            >
+              <Download size={14} />
+              {exporting ? 'Exporting…' : 'Export Excel'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                fontSize: 'var(--text-sm)',
+                color: 'var(--text-muted)',
+              }}
+            >
               From
               <input
+                ref={exportFromRef}
                 type="date"
                 value={exportFrom}
                 max={exportTo}
@@ -628,7 +634,15 @@ export function HrAttendanceTeam({
                 style={dateInputStyle}
               />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--text-sm)' }}>
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                fontSize: 'var(--text-sm)',
+                color: 'var(--text-muted)',
+              }}
+            >
               To
               <input
                 type="date"
@@ -638,23 +652,14 @@ export function HrAttendanceTeam({
                 style={dateInputStyle}
               />
             </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-              <button type="button" className="hr-btn" disabled={exporting} onClick={() => setExportKind(null)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="hr-btn hr-btn-primary"
-                disabled={exporting || !exportFrom || !exportTo || exportFrom > exportTo}
-                onClick={() => void runExport()}
-              >
-                <Download size={14} />
-                {exporting ? 'Exporting…' : 'Export Excel'}
-              </button>
-            </div>
           </div>
+          {actionError ? (
+            <p className="hr-banner-error" role="alert" style={{ margin: 0 }}>
+              {actionError}
+            </p>
+          ) : null}
         </div>
-      ) : null}
+      </Dialog>
     </div>
   );
 }
