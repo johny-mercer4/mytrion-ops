@@ -13,17 +13,69 @@ function normalizeName(value: string): string {
 }
 
 /**
- * Zoho user id for the shared Verification case owner. Env override wins; otherwise we resolve
- * "Sarvar Asqarov" from CRM users and cache it for the process lifetime.
+ * Zoho ids out of an env value, which now holds a LIST.
+ *
+ * The desk has more than one credit agent, so `VERIFICATION_CASE_OWNER_ZOHO_USER_IDS` is comma
+ * separated — and the deployed .env writes the same list under the older singular key, with a space
+ * after the comma. Split on commas and whitespace, keep the order (it is the tie-break for routing),
+ * drop duplicates, and reject anything non-numeric loudly rather than routing a case at a typo.
+ */
+export function parseZohoIdList(raw: string): string[] {
+  const parts = raw.split(/[,\s]+/).map((p) => p.trim()).filter((p) => p.length > 0);
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) {
+      throw new Error(
+        `[verification] VERIFICATION_CASE_OWNER_ZOHO_USER_IDS: "${part}" is not a numeric Zoho id`,
+      );
+    }
+    if (!out.includes(part)) out.push(part);
+  }
+  return out;
+}
+
+/**
+ * Every credit agent the desk can route to, in declaration order.
+ *
+ * Reads `_IDS` first, then the legacy singular `_ID` — the deployed .env still uses the old key and
+ * had already been changed to hold two ids, which the previous single-id validator rejected outright:
+ * `ingestVerificationDeals` calls this on its first line, so a comma in that value stopped every new
+ * verification case from being created.
+ *
+ * Falls back to resolving `VERIFICATION_CASE_OWNER_NAME` from the CRM directory when neither key is
+ * set, which is the original behaviour and keeps a fresh environment working with no config.
+ */
+export async function resolveVerificationCaseOwnerIds(): Promise<string[]> {
+  const fromEnv =
+    env.VERIFICATION_CASE_OWNER_ZOHO_USER_IDS.trim() ||
+    env.VERIFICATION_CASE_OWNER_ZOHO_USER_ID.trim();
+  if (fromEnv) {
+    const ids = parseZohoIdList(fromEnv);
+    if (ids.length > 0) return ids;
+  }
+  return [await resolveOwnerIdByName()];
+}
+
+/** The manager a case escalates to, or null when none is configured. */
+export function resolveVerificationManagerId(): string | null {
+  const raw = env.VERIFICATION_MANAGER_ID.trim();
+  if (!raw) return null;
+  const ids = parseZohoIdList(raw);
+  return ids[0] ?? null;
+}
+
+/**
+ * ONE credit agent, for the callers that still want a single fallback owner — the ingest's
+ * "this Deal has no Sales owner" stand-in. Routing between agents is a separate decision and does
+ * not belong behind a function that can only return one of them.
  */
 export async function resolveVerificationCaseOwnerId(): Promise<string> {
-  const fromEnv = env.VERIFICATION_CASE_OWNER_ZOHO_USER_ID.trim();
-  if (fromEnv) {
-    if (!/^\d+$/.test(fromEnv)) {
-      throw new Error('[verification] VERIFICATION_CASE_OWNER_ZOHO_USER_ID must be a numeric Zoho id');
-    }
-    return fromEnv;
-  }
+  const ids = await resolveVerificationCaseOwnerIds();
+  return ids[0] as string;
+}
+
+/** Resolve the configured owner NAME against the CRM directory. The no-config path. */
+async function resolveOwnerIdByName(): Promise<string> {
   if (cachedOwnerId) return cachedOwnerId;
   const target = normalizeName(VERIFICATION_CASE_OWNER_NAME);
   const users = await zohoCrm.listUsersForNameResolution();

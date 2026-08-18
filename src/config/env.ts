@@ -54,7 +54,15 @@ const EnvSchema = z.object({
   CREDIT_PLATFORM_API_KEY: z.string().default(''),
   CREDIT_PLATFORM_ANALYST_API_KEY: z.string().default(''),
   // Shared Verification case owner. Numeric Zoho user id; if empty we resolve "Sarvar Asqarov".
+  /**
+   * The verification desk's credit agents. Comma-separated Zoho ids — Stage 0 routes a new case to
+   * one of them. `_IDS` is the current name; `_ID` is the same list under the old singular key and is
+   * still read, because the deployed .env carries it.
+   */
+  VERIFICATION_CASE_OWNER_ZOHO_USER_IDS: z.string().default(''),
   VERIFICATION_CASE_OWNER_ZOHO_USER_ID: z.string().default(''),
+  /** Who a case escalates TO. Empty means escalation has no destination and must refuse loudly. */
+  VERIFICATION_MANAGER_ID: z.string().default(''),
 
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
   // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
@@ -504,6 +512,9 @@ const EnvSchema = z.object({
   // --- Sales KPI collection + external worker-task intake ---
   // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.
   FF_KPI_COLLECTION_ENABLED: flag('0'),
+  // Local Sales Mytrion presence/activity collection and usage rollups. Independent from the
+  // external KPI collectors, whose four kpi.sales.* queues remain parked.
+  FF_MYTRION_USAGE_COLLECTION_ENABLED: flag('0'),
   KPI_REPORTING_TZ: z.string().default('America/New_York'),
   // One rotatable, task-create-only HMAC credential for trusted external automations.
   MYTRION_TASK_WEBHOOK_KEY_ID: z.string().default('external-automation'),
