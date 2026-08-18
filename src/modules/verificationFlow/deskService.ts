@@ -37,6 +37,7 @@ import {
   saveCreditReview,
   saveRiskAssessment,
 } from './deskReviews.js';
+import { saveIntakeCorrection } from './deskIntake.js';
 import { documentService } from './documentService.js';
 import { evaluateHardStops, managerReviewIndicators } from './hardStops.js';
 import { informCollectionsOfBlacklist } from './notify.js';
@@ -237,7 +238,9 @@ export const deskService = {
           expose: true,
         });
       }
-      await verificationFlowRepo.patchIntake(ctx, caseId, patch);
+      // Writes the columns AND the `intake_saved` event — see `deskIntake` for why the event has to
+      // be written next to the write rather than left to `refreshGate`.
+      await saveIntakeCorrection(ctx, row, patch);
       /**
        * `submitting: true` — and this asymmetry with Sales is the point.
        *
