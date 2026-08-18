@@ -12,6 +12,14 @@ vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
 });
 
+const { resolveOwnerMock } = vi.hoisted(() => ({ resolveOwnerMock: vi.fn() }));
+
+vi.mock('../../src/modules/verification/verificationOwner.js', async (importOriginal) => {
+  const mod =
+    await importOriginal<typeof import('../../src/modules/verification/verificationOwner.js')>();
+  return { ...mod, resolveVerificationCaseOwner: resolveOwnerMock };
+});
+
 vi.mock('../../src/modules/verificationFlow/deskService.js', () => ({
   deskService: {
     list: vi.fn(),
@@ -28,9 +36,24 @@ vi.mock('../../src/modules/verificationFlow/deskService.js', () => ({
   },
 }));
 
-vi.mock('../../src/modules/verificationFlow/documentService.js', () => ({
-  documentService: { downloadUrl: vi.fn(), upload: vi.fn(), request: vi.fn(), remove: vi.fn(), list: vi.fn() },
-}));
+vi.mock('../../src/modules/verificationFlow/documentService.js', async (importOriginal) => {
+  const mod =
+    await importOriginal<typeof import('../../src/modules/verificationFlow/documentService.js')>();
+  return {
+    ...mod,
+    documentService: { downloadUrl: vi.fn(), upload: vi.fn(), request: vi.fn(), remove: vi.fn(), list: vi.fn() },
+  };
+});
+
+/** The desk's principal routes call the same service the Sales routes do. */
+vi.mock('../../src/modules/verificationFlow/applicationService.js', async (importOriginal) => {
+  const mod =
+    await importOriginal<typeof import('../../src/modules/verificationFlow/applicationService.js')>();
+  return {
+    ...mod,
+    applicationService: { ...mod.applicationService, addPrincipal: vi.fn(), removePrincipal: vi.fn() },
+  };
+});
 
 vi.mock('../../src/repos/verificationReviewRepo.js', async () => {
   const actual =
@@ -49,6 +72,7 @@ import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { deskService } from '../../src/modules/verificationFlow/deskService.js';
 import { documentService } from '../../src/modules/verificationFlow/documentService.js';
 import { verificationPolicyRepo } from '../../src/repos/verificationReviewRepo.js';
+import { applicationService } from '../../src/modules/verificationFlow/applicationService.js';
 
 const listMock = vi.mocked(deskService.list);
 const detailMock = vi.mocked(deskService.detail);
@@ -57,6 +81,9 @@ const bankingMock = vi.mocked(deskService.saveBankingReview);
 const riskMock = vi.mocked(deskService.saveRiskAssessment);
 const decideMock = vi.mocked(deskService.decide);
 const downloadMock = vi.mocked(documentService.downloadUrl);
+const uploadMock = vi.mocked(documentService.upload);
+const addPrincipalMock = vi.mocked(applicationService.addPrincipal);
+const removePrincipalMock = vi.mocked(applicationService.removePrincipal);
 const policyGetMock = vi.mocked(verificationPolicyRepo.get);
 const policyUpdateMock = vi.mocked(verificationPolicyRepo.update);
 
@@ -88,7 +115,12 @@ beforeEach(() => {
   bankingMock.mockResolvedValue(detail);
   riskMock.mockResolvedValue(detail);
   decideMock.mockResolvedValue(detail);
-  policyGetMock.mockResolvedValue({ tenantId: 'octane', strongFactor: '0.800' } as never);
+  policyGetMock.mockResolvedValue({
+    tenantId: 'octane',
+    strongFactor: '0.800',
+    wexCardCutoff: 15,
+  } as never);
+  resolveOwnerMock.mockResolvedValue({ zohoUserId: '1', name: 'Desk Agent' });
   policyUpdateMock.mockResolvedValue({ tenantId: 'octane' } as never);
 });
 
@@ -268,6 +300,91 @@ describe('risk + decision validation', () => {
   });
 });
 
+/**
+ * The desk can do Phase 1 itself.
+ *
+ * It could already CORRECT intake fields, but not attach a file or add an owner — so a reviewer
+ * holding a licence scan Sales had emailed them had nowhere to put it, and had to ask Sales to
+ * re-key what the reviewer was already looking at. These are the same service calls the Sales
+ * routes make, through a Verification-gated door.
+ */
+describe('the desk can complete Phase 1 itself', () => {
+  it('accepts a document upload from a verification worker', async () => {
+    const form = new FormData();
+    form.append('docType', 'drivers_license');
+    form.append('label', "Driver's licence");
+    form.append('files', new Blob(['scan'], { type: 'image/png' }), 'licence.png');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/flow/cases/vc_1/documents',
+      headers: bearer(await workerToken('Verification')),
+      payload: form,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(uploadMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'vc_1',
+      expect.objectContaining({ docType: 'drivers_license', fileName: 'licence.png' }),
+      expect.any(String),
+    );
+  });
+
+  it('refuses an upload with no file rather than writing an empty document', async () => {
+    const form = new FormData();
+    form.append('docType', 'ssn_card');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/flow/cases/vc_1/documents',
+      headers: bearer(await workerToken('Verification')),
+      payload: form,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'NO_FILES' } });
+  });
+
+  it('adds and removes a principal', async () => {
+    const add = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/flow/cases/vc_1/principals',
+      headers: bearer(await workerToken('Verification')),
+      payload: { fullName: 'Maria Okonkwo', ownershipPct: 51 },
+    });
+    expect(add.statusCode).toBe(201);
+    expect(addPrincipalMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'vc_1',
+      // The percentage stores as numeric TEXT — spreading the parsed number would beat the cast.
+      expect.objectContaining({ fullName: 'Maria Okonkwo', ownershipPct: '51' }),
+    );
+
+    const remove = await app.inject({
+      method: 'DELETE',
+      url: '/v1/verification/flow/cases/vc_1/principals/p_1',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(remove.statusCode).toBe(200);
+    expect(removePrincipalMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'p_1');
+  });
+
+  it('REFUSES a sales worker on all three — this is the Verification door', async () => {
+    const token = bearer(await workerToken('Sales Rep'));
+    const calls: Array<[string, string]> = [
+      ['POST', '/v1/verification/flow/cases/vc_1/documents'],
+      ['POST', '/v1/verification/flow/cases/vc_1/principals'],
+      ['DELETE', '/v1/verification/flow/cases/vc_1/principals/p_1'],
+    ];
+    for (const [method, url] of calls) {
+      const res = await app.inject({
+        method: method as 'POST' | 'DELETE',
+        url,
+        headers: token,
+        ...(method === 'POST' ? { payload: {} } : {}),
+      });
+      expect(res.statusCode, `${method} ${url}`).toBe(403);
+    }
+  });
+});
+
 describe('policy is admin-only', () => {
   it('lets a verification worker READ policy', async () => {
     const res = await app.inject({
@@ -276,6 +393,37 @@ describe('policy is admin-only', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  /**
+   * Policy carries WHO the Verification agent is, because there is nothing per-case to project and
+   * both desk surfaces already make this call. Without it the queue and the case header have no name
+   * to put under "Verification agent" and render nothing.
+   */
+  it('carries the Verification agent alongside the factors', async () => {
+    resolveOwnerMock.mockResolvedValue({ zohoUserId: '6227679000088272001', name: 'Sarvar Asqarov' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/policy',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      verificationOwner: { zohoUserId: '6227679000088272001', name: 'Sarvar Asqarov' },
+      wexCardCutoff: expect.anything(),
+    });
+  });
+
+  it('still serves the factors when the agent cannot be resolved', async () => {
+    // A desk screen that cannot name its underwriter must still price limits.
+    resolveOwnerMock.mockResolvedValue(null);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/policy',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().verificationOwner).toBeNull();
   });
 
   it('refuses a verification WORKER writing policy — factors price every limit', async () => {

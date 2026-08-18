@@ -261,9 +261,16 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
                 <p className="hr-att-no-visits">
                   {day.status === 'Weekend'
                     ? 'Weekend · no visit expected'
-                    : day.status === 'Unscheduled'
-                      ? 'No shift scheduled'
-                      : 'No Ganga entry recorded'}
+                    : day.status === 'Scheduled'
+                      ? // A shift covers the day, it just has not produced a visit yet. Name it — this
+                        // is the card a night worker opens before clocking in, and "No shift scheduled"
+                        // was a flat denial of the shift they are about to work.
+                        data.shift
+                        ? `Shift ${data.shift.startLocal}–${data.shift.endLocal} UZT · no entry scan yet`
+                        : 'Shift scheduled · no entry scan yet'
+                      : day.status === 'Unscheduled'
+                        ? 'No shift scheduled'
+                        : 'No Ganga entry recorded'}
                 </p>
               )}
             </li>

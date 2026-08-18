@@ -16,6 +16,14 @@ vi.mock('../../context/UserContextProvider', () => ({
     trusted: true,
     allDepartmentAccess: true,
   }),
+  useRealUserContext: () => ({
+    userId: 'zoho:1',
+    profile: 'Administrator',
+    role: 'CEO',
+    userName: 'Shohruh Bekmurodov',
+    trusted: true,
+    allDepartmentAccess: true,
+  }),
 }));
 // Stubbed because the real header pulls in the workspace switcher (router), the view-as picker
 // (session/API) and the theme toggle. The rail is what is under test.

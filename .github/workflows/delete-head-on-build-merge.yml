@@ -1,0 +1,36 @@
+# After a PR merges into `build`, delete the head branch.
+# Do not use the repo-wide "Automatically delete head branches" setting here:
+# that would also delete `build` when a build → main PR merges.
+name: Delete head after merge to build
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [build]
+
+jobs:
+  delete-head:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete head ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+            echo "Head is a fork ($HEAD_REPO); skip."
+            exit 0
+          fi
+          case "$HEAD_REF" in
+            build|main)
+              echo "Refusing to delete $HEAD_REF."
+              exit 0
+              ;;
+          esac
+          echo "Deleting origin/$HEAD_REF"
+          gh api -X DELETE "repos/${THIS_REPO}/git/refs/heads/${HEAD_REF}"

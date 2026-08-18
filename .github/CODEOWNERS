@@ -1,0 +1,7 @@
+# John Mercer (@johny-mercer4) is the required reviewer on every PR into `build`.
+# `*` covers the whole tree so an agent PR cannot land without him. This file is
+# listed again so a later pattern cannot drop the owner of the contract itself.
+# Branch protection must enable "Require review from Code Owners" — the file
+# alone is advisory until that setting is on.
+* @johny-mercer4
+.github/CODEOWNERS @johny-mercer4

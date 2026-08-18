@@ -480,25 +480,59 @@
   list-style: none;
 }
 
+/* Two lines per step: the label, and the arithmetic that produced it. The working is what makes the
+   panel checkable rather than merely legible, so it gets the mono face and its own row. */
 [data-mytrion='verification'] .mw-math-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-1) 0;
+  padding: var(--space-1_5) 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-[data-mytrion='verification'] .mw-math-row[data-total='true'] {
-  padding-top: var(--space-1_5);
+[data-mytrion='verification'] .mw-math-k {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='verification'] .mw-math-work {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+}
+
+/* A running total takes a rule above it; the answer takes the display size. */
+[data-mytrion='verification'] .mw-math-row[data-kind='sum'] {
+  padding-top: var(--space-2);
   border-top: 1px solid var(--hz-pane-bd);
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
+[data-mytrion='verification'] .mw-math-row[data-kind='result'] {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hz-pane-bd);
+  color: var(--text-primary);
+  font-weight: var(--fw-bold);
+}
+[data-mytrion='verification'] .mw-math-row[data-kind='result'] .mw-math-v {
+  font-size: var(--text-xl);
+  line-height: 1.05;
+}
 
 [data-mytrion='verification'] .mw-math-v {
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Direction, on the number that carries it. The label above already says which way it pushes, so
+   the hue only sharpens a fact the words state (CONVENTIONS §6). */
+[data-mytrion='verification'] .mw-math-row[data-dir='worse'] .mw-math-v {
+  color: var(--warning);
+}
+[data-mytrion='verification'] .mw-math-row[data-dir='better'] .mw-math-v {
+  color: var(--success);
 }
 
 [data-mytrion='verification'] .mw-math-note {

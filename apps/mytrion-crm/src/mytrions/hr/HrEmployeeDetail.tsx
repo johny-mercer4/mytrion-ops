@@ -45,6 +45,7 @@ export function HrEmployeeDetail({
   onClose,
   onEdit,
   onPhotoChanged,
+  onViewRecord,
 }: {
   employee: HrEmployeeDto;
   admin: boolean;
@@ -54,6 +55,8 @@ export function HrEmployeeDetail({
   onEdit: (e: HrEmployeeDto) => void;
   /** A photo was set or removed — the caller invalidates the directory so cards pick it up. */
   onPhotoChanged?: () => void;
+  /** Open this person's full HR record. A READ action, so it is offered to everyone, not just admins. */
+  onViewRecord?: () => void;
 }) {
   const name = `${employee.firstName} ${employee.lastName}`.trim();
   const handle = (employee.telegramUsername ?? '').trim().replace(/^@+/, '');
@@ -236,20 +239,25 @@ export function HrEmployeeDetail({
           <Field icon={<User size={12} />} label="Reports to" value={employee.reportingTo} />
         </dl>
 
-        {admin ? (
-          <>
-            <HrZohoUserLink employee={employee} />
-            <footer className="hr-modal-actions">
-              <button type="button" className="hr-btn" onClick={onClose}>
-                Close
-              </button>
-              <button type="button" className="hr-btn hr-btn-primary" onClick={() => onEdit(employee)}>
-                <Pencil size={14} />
-                Edit
-              </button>
-            </footer>
-          </>
-        ) : null}
+        {admin ? <HrZohoUserLink employee={employee} /> : null}
+        {/* Always present now: a read-only viewer still gets Close and the record link; Edit stays admin-only. */}
+        <footer className="hr-modal-actions">
+          <button type="button" className="hr-btn" onClick={onClose}>
+            Close
+          </button>
+          {onViewRecord ? (
+            <button type="button" className="hr-btn" onClick={onViewRecord}>
+              <User size={14} />
+              View full record
+            </button>
+          ) : null}
+          {admin ? (
+            <button type="button" className="hr-btn hr-btn-primary" onClick={() => onEdit(employee)}>
+              <Pencil size={14} />
+              Edit
+            </button>
+          ) : null}
+        </footer>
       </div>
     </div>
   );

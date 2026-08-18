@@ -43,7 +43,7 @@ octane-assistant/
 │   ├── app.ts / server.ts    app factory; server.ts also boots pg-boss
 │   ├── worker.ts             optional standalone pg-boss worker entry
 │   ├── config/env.ts         631-line Zod env schema — THE source of truth for config
-│   ├── db/schema/ (39 files, 45 tables) + db/migrations/ (58 SQL files)
+│   ├── db/schema/ + db/migrations/   listed in drizzle.config.ts; journal is the count
 │   ├── repos/ (34)           ONLY place raw DB access is allowed; enforces tenant_id
 │   ├── routes/v1/ (39)       HTTP surface
 │   ├── modules/ (30 dirs)    business logic
@@ -134,9 +134,10 @@ stage copies it). It shows up dirty in `git status` constantly; reset with
 
 ## 4. Data model
 
-**45 tables** in one Postgres (pgvector/pg16), Drizzle ORM, 39 schema files, **58 migrations**
-(latest `0057_mytrion_access_modes`). House rule: **no cross-domain foreign keys** — integrity lives
-in `src/repos/`. The retention subsystem is the one FK-rich island.
+One Postgres (pgvector/pg16), Drizzle ORM. Schema files are listed in `drizzle.config.ts`;
+migrations live in `src/db/migrations` — the journal is the count, not this paragraph.
+House rule: **no cross-domain foreign keys** — integrity lives in `src/repos/`. The retention
+subsystem is the one FK-rich island.
 
 **By domain:**
 
@@ -160,7 +161,7 @@ in `src/repos/`. The retention subsystem is the one FK-rich island.
   `_claim_requests`, `_ownership_transfers`, `_rr_cursors`). 3 phases, 26 seeded statuses, 7 terminal.
 - **Ops (5)** — `mytrion_calls`, `scope_risk_items`, `audit_log`, `automation_logs`, `file_assets`.
 
-**Multi-tenancy is application-level, not RLS.** `tenant_id` on ~40/45 tables. `TenantContext`
+**Multi-tenancy is application-level, not RLS.** `tenant_id` on most product tables. `TenantContext`
 (`src/types/tenantContext.ts`) is threaded as the **first argument to every repo method**. Audience is
 actually **three** values — `internal | partner | customer` (README says two; it's stale). `partner`
 is a dormant scaffold; `customer` is deny-by-default.
@@ -168,11 +169,6 @@ is a dormant scaffold; `customer` is deny-by-default.
 **Repo pattern:** exported const object of async methods, each `(ctx: TenantContext, …)`, every
 `.where()` starting with `eq(table.tenantId, ctx.tenantId)`, helpers from `src/repos/util.ts`
 (`firstOrUndefined`, `normalizePagination`, `toVectorLiteral`, `isUniqueViolation`).
-
-**⚠️ Known trap:** `drizzle.config.ts` lists schema files explicitly, and **4 are missing** —
-`agent_blackboards.ts`, `agent_skills.ts`, `mytrion_role_defaults.ts`, `support_bot_messages.ts`.
-Running `pnpm db:generate` today would emit DROP statements for those tables. **Fix the config list
-before generating any migration.**
 
 **Read-only external sources — never migration targets:**
 
@@ -333,11 +329,12 @@ fails with `ECONNREFUSED ::1:5433`. The bot reports "Backend issue" — that is 
 off. Check the container first.
 
 Before pushing: `pnpm lint && pnpm typecheck && pnpm test`.
-Baseline today: **183/184 tests** (one pre-existing `dashDebtorsData` failure), **16 repo-wide
-typecheck errors** (down from 23 — being burned down module by module).
+CI green is the floor. Do not regress. Do not treat a number in this file as the suite size —
+read the latest verify job on `build` / `main`.
 
 **Branching:** work off `build` (`feature/*`, `fix/*`, `hotfix/*`), PR back. Never push to `main`
-(deploys to prod) or directly to `build`. Currently on `feature/MytrionOrganize`.
+(deploys to prod) or directly to `build`. PRs into `build` require John Mercer as reviewer.
+Promote to prod only with a PR from `build` → `main`.
 
 ---
 

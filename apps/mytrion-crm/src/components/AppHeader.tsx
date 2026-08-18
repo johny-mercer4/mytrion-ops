@@ -18,7 +18,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { type MytrionId } from '../access/mytrions.config';
-import { useUserContext } from '../context/UserContextProvider';
+import { useRealUserContext } from '../context/UserContextProvider';
 import { initials } from '../lib/initials';
 import { AccountMenu } from './AccountMenu';
 import { GlobalSearch } from './GlobalSearch';
@@ -45,7 +45,8 @@ export interface AppHeaderProps {
 }
 
 export function AppHeader({ context, search, actions, identity }: AppHeaderProps) {
-  const user = useUserContext();
+  // The account cluster is always the REAL signed-in user, even while previewing someone via "View as".
+  const user = useRealUserContext();
   const displayName = user.userName.trim() || 'Account';
   const roleLine = user.role || user.profile;
 

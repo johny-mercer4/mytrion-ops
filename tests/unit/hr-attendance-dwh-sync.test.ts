@@ -92,13 +92,13 @@ describe('the DWH query', () => {
     });
   });
 
-  it('restricts to the night band and keeps the post-03:00 grace', async () => {
+  it('does NOT restrict by time of day — an early arrival before 17:00 is still pulled', async () => {
     await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07');
     const sql = sqlOf(0);
-    expect(sql).toContain("event_time >= time '17:00'");
-    // 03:00 + the 4h OVERNIGHT_CHECKOUT_GRACE_MINUTES. A hard 03:00 stop fetched the check-in and
-    // left its check-out behind — 280 of them in one measured week, each rendering as 0 hours.
-    expect(sql).toContain("event_time < time '07:00'");
+    // The old 17:00–07:00 "night band" silently dropped early check-ins — e.g. 16:43 for a 19:00 shift
+    // rendered as "no entry scan yet". Only the door filter and the date window scope the pull now.
+    expect(sql).not.toMatch(/event_time\s*(>=|<)\s*time/);
+    expect(sql).not.toContain("'17:00'");
   });
 
   it('reaches into the day after `to`, so a closing night keeps its check-out', async () => {

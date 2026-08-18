@@ -2,12 +2,11 @@
  * Collection Mytrion navigation — a flat tab set: Home, Array Reports, Collection Cases.
  *
  * RBAC is layered. Layer 1 is entering the Mytrion (`canAccess` in resolveAccess, driven by the
- * access table). Layer 2 is `access(user)` per tab here. Both only shape the UI — when these tabs
- * get real endpoints, the endpoint is the security boundary, gated on the `collection` department
- * the same way Manager gates on `management` and Finance on `finance`.
+ * access table). Layer 2 is `access(user)` per tab here. Both only shape the UI — the endpoint is
+ * the security boundary, gated on the `collection` department the same way Manager gates on
+ * `management` and Finance on `finance`.
  *
- * Both non-Home tabs are flagged `soon`: the module previously shipped ~260 lines of invented cases
- * and Array rows, all of which were deleted. Nothing here renders data until it has a real source.
+ * Cases and Array read the finder-owned Postgres snapshots through `/v1/collection/*`.
  */
 import type { LucideIcon } from 'lucide-react';
 import { Home, LayoutGrid, Sheet } from 'lucide-react';
@@ -48,7 +47,6 @@ export const COLLECTION_TABS: CollectionTab[] = [
     icon: Sheet,
     tone: 'var(--tone-amber)',
     keywords: ['agency', 'filing', 'array', 'report', 'placement'],
-    soon: true,
     access: () => true,
   },
   {
@@ -58,7 +56,6 @@ export const COLLECTION_TABS: CollectionTab[] = [
     icon: LayoutGrid,
     tone: 'var(--tone-sky)',
     keywords: ['bad debt', 'escalation', 'recovery', 'case', 'plan'],
-    soon: true,
     access: () => true,
   },
 ];

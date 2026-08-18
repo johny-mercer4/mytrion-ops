@@ -22,6 +22,7 @@ vi.mock('@/api/billing', () => api);
 vi.mock('../../access/resolveAccess', () => ({ canWriteMytrion: () => true }));
 vi.mock('../../context/UserContextProvider', () => ({
   useUserContext: () => ({ userName: 'Test Agent' }),
+  useRealUserContext: () => ({ userName: 'Test Agent' }),
 }));
 vi.mock('./autoMapFlag', () => ({
   computeAutoMapFlag: () => null,

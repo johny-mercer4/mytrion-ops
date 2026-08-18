@@ -60,10 +60,17 @@ const CREDIT_NUMERIC = [
 export function CreditPane({
   detail,
   busy,
+  disabled = false,
   onSave,
 }: {
   detail: VerificationDeskDetail;
   busy: boolean;
+  /**
+   * The reviewer may not act at all — a locked or decided case. SEPARATE from `busy`, which means
+   * a request is in flight: conflating them made a locked case read "Saving…" forever, because the
+   * caller had to pass `busy || !canAct` to get the control disabled.
+   */
+  disabled?: boolean;
   onSave: (body: Record<string, unknown>) => void;
 }) {
   const existing = detail.credit;
@@ -144,7 +151,7 @@ export function CreditPane({
 
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || disabled}
         onClick={() =>
           onSave({
             ...toBody(draft, CREDIT_NUMERIC),
@@ -154,7 +161,7 @@ export function CreditPane({
             bureauNoHit: noHit,
           })
         }
-        style={s(busy ? BTN_DISABLED : BTN_PRIMARY)}
+        style={s(busy || disabled ? BTN_DISABLED : BTN_PRIMARY)}
       >
         {busy ? 'Saving…' : 'Save credit review'}
       </button>
@@ -182,10 +189,17 @@ const BANKING_NUMERIC = [
 export function BankingPane({
   detail,
   busy,
+  disabled = false,
   onSave,
 }: {
   detail: VerificationDeskDetail;
   busy: boolean;
+  /**
+   * The reviewer may not act at all — a locked or decided case. SEPARATE from `busy`, which means
+   * a request is in flight: conflating them made a locked case read "Saving…" forever, because the
+   * caller had to pass `busy || !canAct` to get the control disabled.
+   */
+  disabled?: boolean;
   onSave: (body: Record<string, unknown>) => void;
 }) {
   const existing = detail.banking;
@@ -312,7 +326,7 @@ export function BankingPane({
 
       <button
         type="button"
-        disabled={busy || fuelOverstated}
+        disabled={busy || disabled || fuelOverstated}
         onClick={() =>
           onSave({
             ...toBody(draft, BANKING_NUMERIC),
@@ -321,7 +335,7 @@ export function BankingPane({
             bankingInconsistentWithOperations: inconsistent,
           })
         }
-        style={s(busy || fuelOverstated ? BTN_DISABLED : BTN_PRIMARY)}
+        style={s(busy || disabled || fuelOverstated ? BTN_DISABLED : BTN_PRIMARY)}
       >
         {busy ? 'Saving…' : 'Save banking review'}
       </button>
@@ -333,10 +347,17 @@ export function BankingPane({
 export function RiskPane({
   detail,
   busy,
+  disabled = false,
   onSave,
 }: {
   detail: VerificationDeskDetail;
   busy: boolean;
+  /**
+   * The reviewer may not act at all — a locked or decided case. SEPARATE from `busy`, which means
+   * a request is in flight: conflating them made a locked case read "Saving…" forever, because the
+   * caller had to pass `busy || !canAct` to get the control disabled.
+   */
+  disabled?: boolean;
   onSave: (body: { riskTier: VerificationRiskTier; analystRecommendation?: string }) => void;
 }) {
   const [tier, setTier] = useState<VerificationRiskTier>(detail.risk?.riskTier ?? 'strong');
@@ -415,9 +436,9 @@ export function RiskPane({
 
       <button
         type="button"
-        disabled={busy || blocked}
+        disabled={busy || disabled || blocked}
         onClick={() => onSave({ riskTier: tier, ...(note.trim() ? { analystRecommendation: note.trim() } : {}) })}
-        style={s(busy || blocked ? BTN_DISABLED : BTN_PRIMARY)}
+        style={s(busy || disabled || blocked ? BTN_DISABLED : BTN_PRIMARY)}
       >
         {busy ? 'Computing…' : 'Assess risk & compute limit'}
       </button>
@@ -439,10 +460,17 @@ const FINAL_OPTIONS: ReadonlyArray<{ id: VerificationFinalDecision; label: strin
 export function DecisionPane({
   detail,
   busy,
+  disabled = false,
   onDecide,
 }: {
   detail: VerificationDeskDetail;
   busy: boolean;
+  /**
+   * The reviewer may not act at all — a locked or decided case. SEPARATE from `busy`, which means
+   * a request is in flight: conflating them made a locked case read "Saving…" forever, because the
+   * caller had to pass `busy || !canAct` to get the control disabled.
+   */
+  disabled?: boolean;
   onDecide: (body: { decision: VerificationFinalDecision; approvedLimit?: number; note?: string }) => void;
 }) {
   const [decision, setDecision] = useState<VerificationFinalDecision>('approve');
@@ -529,7 +557,7 @@ export function DecisionPane({
 
       <button
         type="button"
-        disabled={busy || blocked}
+        disabled={busy || disabled || blocked}
         onClick={() => {
           if (destructive && !arming) {
             setArming(true);
@@ -543,7 +571,7 @@ export function DecisionPane({
           });
         }}
         style={s(
-          busy || blocked
+          busy || disabled || blocked
             ? BTN_DISABLED
             : arming
               ? `${BTN_PRIMARY};background:var(--danger)`

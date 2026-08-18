@@ -86,7 +86,13 @@ export function resolveAccessibleMytrions(ctx: UserContext): AccessResult {
   const admin = isAdmin(ctx);
   if (ctx.accessibleMytrions) {
     const granted = new Set(ctx.accessibleMytrions);
-    // Team leads get the HR door for Attendance. See `isHrAttendanceOnly`.
+    // HR co-owns hiring, so Recruit rides on a real HR grant even if the per-user grant omits it —
+    // mirrors canAccess('recruit'). Checked BEFORE the team-lead courtesy below on purpose: a lead
+    // gets HR for attendance only and must not drag Recruit onto their launcher.
+    if (granted.has('hr')) granted.add('recruit');
+    // Team leads get HR on their launcher (their team's attendance + the directory). Everyone ELSE can
+    // still ENTER HR read-only (see `canAccess`) — it just is not pinned to their launcher, so the
+    // single-workspace auto-enter and the "no grants → Forbidden" rules are left intact.
     if (ctx.leadsTeam === true) granted.add('hr');
     const accessible = MYTRION_ORDER.filter((id) => granted.has(id) && isEnterable(id));
     const home =
@@ -102,6 +108,18 @@ export function resolveAccessibleMytrions(ctx: UserContext): AccessResult {
 /** Single-Mytrion gate used by the route guard. */
 export function canAccess(ctx: UserContext, id: MytrionId): boolean {
   if (!isEnterable(id)) return false;
+  // HR is the company directory: any signed-in worker may enter it (read-only). The backend read
+  // routes match this (`requireHrRead` = internal); management stays gated inside.
+  if (id === 'hr') return true;
+  // Recruit is co-owned by Recruiters (the `recruit` grant) and HR; admins bypass. Unlike HR it is
+  // NOT open to every worker — a plain employee (and a team lead, who has no real `hr` grant) is
+  // refused. Mirrors the backend `requireRecruitRead`.
+  if (id === 'recruit') {
+    if (isAdmin(ctx)) return true;
+    const granted = ctx.accessibleMytrions;
+    if (granted) return granted.includes('recruit') || granted.includes('hr');
+    return ruleAllows(ctx, MYTRIONS.recruit);
+  }
   if (ctx.accessibleMytrions) return ctx.accessibleMytrions.includes(id);
   const rule = MYTRIONS[id];
   return rule ? ruleAllows(ctx, rule) : false;
@@ -115,6 +133,21 @@ export function canWriteMytrion(ctx: UserContext, id: MytrionId): boolean {
   if (isAdmin(ctx)) return true;
   if (!canAccess(ctx, id)) return false;
   return ctx.mytrionAccessModes?.[id] !== 'read';
+}
+
+/**
+ * May this user MANAGE the HR directory — create / edit / delete employees & departments, and move
+ * the org chart? Admins, and HR Managers: a user granted HR in `full` mode.
+ *
+ * Fail-closed by design — it demands an EXPLICIT `full`, so an absent mode (a legacy session, the dev
+ * mock's empty modes) reads as read-only rather than quietly elevating. The backend resolver defaults
+ * HR to `read`, so a plain directory grant lands here as a non-manager, and this mirrors the server's
+ * `requireHrManage` exactly: the button we hide and the write we accept always agree. UI curation, not
+ * the boundary — every HR write is re-checked server-side.
+ */
+export function canManageHr(ctx: UserContext): boolean {
+  if (isAdmin(ctx)) return true;
+  return ctx.mytrionAccessModes?.hr === 'full';
 }
 
 /**

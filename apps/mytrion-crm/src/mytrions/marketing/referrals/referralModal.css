@@ -307,6 +307,35 @@
   flex: 1;
   flex-direction: column;
 }
+.mg-root .mg-rf-breakdown-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.mg-root .mg-rf-breakdown header .mg-rf-role {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 3px 7px;
+  border-radius: var(--mg-r-pill);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.mg-root .mg-rf-breakdown header .mg-rf-role.is-child {
+  color: var(--intent-info-fg);
+  background: var(--tint-info-bg);
+  border: 1px solid var(--tint-info-bd);
+}
+.mg-root .mg-rf-breakdown header .mg-rf-role.is-parent {
+  color: var(--intent-neutral-fg);
+  background: var(--tint-neutral-bg);
+  border: 1px solid var(--tint-neutral-bd);
+}
 .mg-root .mg-rf-breakdown header strong,
 .mg-root .mg-rf-related-record header strong {
   color: var(--text-primary);
@@ -358,6 +387,29 @@
   font-size: var(--text-xl);
   font-weight: var(--fw-bold);
   line-height: 1;
+}
+.mg-root .mg-rf-month-rows {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mg-root .mg-rf-month-rows li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-sm);
+  background: var(--hz-pane);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.mg-root .mg-rf-month-rows strong {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
 }
 .mg-root .mg-rf-progress {
   margin-top: 11px;

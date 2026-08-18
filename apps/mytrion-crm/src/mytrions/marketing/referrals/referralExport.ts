@@ -1,5 +1,6 @@
 import type { ReferralCalculationPreview } from '../../../api/referrals';
 import type { ReferralCardModel } from './referralModel';
+import { periodFileStamp } from './referralPeriod';
 import { deliverExport } from '@/lib/deliverExport';
 
 export interface ReferralExportRow {
@@ -58,7 +59,7 @@ const COLUMNS: Array<{ key: keyof ReferralExportRow; label: string; width: numbe
   { key: 'frequency', label: 'Frequency', width: 13 },
   { key: 'fuelCodes', label: 'Fuel Codes', width: 18 },
   { key: 'eligibleGallons', label: 'Eligible Gallons', width: 18 },
-  { key: 'uniqueCards', label: 'Unique Cards', width: 15 },
+  { key: 'uniqueCards', label: 'New Swipes', width: 15 },
   { key: 'cumulativeGallons', label: 'Cumulative Gallons', width: 20 },
   { key: 'thresholdGallons', label: 'Threshold Gallons', width: 19 },
   { key: 'rateUsd', label: 'Rate USD', width: 13 },
@@ -72,17 +73,17 @@ function setupStatus(card: ReferralCardModel): string {
 }
 
 function rule(preview: ReferralCalculationPreview): string {
-  if (preview.bonusType === 'gallons_legacy') return '$0.01 per eligible gallon';
-  if (preview.bonusType === 'swipes_legacy') return '$50 per unique card';
+  if (preview.bonusType === 'gallons_legacy') return '$0.01 per In Station gallon';
+  if (preview.bonusType === 'swipes_legacy') return '$50 per first-use swipe';
   return `$50 at ${preview.thresholdGallons?.toLocaleString('en-US') ?? '—'} cumulative gallons`;
 }
 
 function activity(preview: ReferralCalculationPreview): { metric: string; value: number } {
   if (preview.bonusType === 'swipes_legacy') {
-    return { metric: 'Unique cards in selected month', value: preview.periodSwipes };
+    return { metric: 'New swipes (first-use cards)', value: preview.periodSwipes };
   }
   if (preview.recurring) {
-    return { metric: 'Eligible gallons in selected month', value: preview.periodGallons };
+    return { metric: 'In Station gallons in selected period', value: preview.periodGallons };
   }
   return { metric: 'Cumulative eligible gallons', value: preview.cumulativeGallons };
 }
@@ -90,11 +91,12 @@ function activity(preview: ReferralCalculationPreview): { metric: string; value:
 function previewRow(
   card: ReferralCardModel,
   preview: ReferralCalculationPreview,
-  periodMonth: string,
+  periodFrom: string,
+  periodTo: string,
 ): ReferralExportRow {
   const primaryActivity = activity(preview);
   return {
-    period: periodMonth.slice(0, 7),
+    period: periodFileStamp(periodFrom, periodTo),
     parentReferrerId: card.referrerId,
     parentName: card.name,
     company: card.company,
@@ -128,15 +130,16 @@ function previewRow(
 /** Full, unfiltered export rows. Parents that are not calculable remain visible as setup rows. */
 export function buildReferralExportRows(
   cards: ReferralCardModel[],
-  periodMonth: string,
+  periodFrom: string,
+  periodTo = periodFrom,
 ): ReferralExportRow[] {
   return cards.flatMap((card) => {
     if (card.previews.length) {
-      return card.previews.map((preview) => previewRow(card, preview, periodMonth));
+      return card.previews.map((preview) => previewRow(card, preview, periodFrom, periodTo));
     }
     return [
       {
-        period: periodMonth.slice(0, 7),
+        period: periodFileStamp(periodFrom, periodTo),
         parentReferrerId: card.referrerId,
         parentName: card.name,
         company: card.company,
@@ -174,23 +177,28 @@ function csvCell(value: unknown): string {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-export async function downloadReferralCsv(cards: ReferralCardModel[], periodMonth: string): Promise<void> {
-  const rows = buildReferralExportRows(cards, periodMonth);
+export async function downloadReferralCsv(
+  cards: ReferralCardModel[],
+  periodFrom: string,
+  periodTo = periodFrom,
+): Promise<void> {
+  const rows = buildReferralExportRows(cards, periodFrom, periodTo);
   const lines = [
     COLUMNS.map((column) => csvCell(column.label)).join(','),
     ...rows.map((row) => COLUMNS.map((column) => csvCell(row[column.key])).join(',')),
   ];
   await deliverExport(
     new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }),
-    `referral-calculations_${periodMonth.slice(0, 7)}.csv`,
+    `referral-calculations_${periodFileStamp(periodFrom, periodTo)}.csv`,
   );
 }
 
 export async function downloadReferralExcel(
   cards: ReferralCardModel[],
-  periodMonth: string,
+  periodFrom: string,
+  periodTo = periodFrom,
 ): Promise<void> {
-  const rows = buildReferralExportRows(cards, periodMonth);
+  const rows = buildReferralExportRows(cards, periodFrom, periodTo);
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Mytrion Manager';
@@ -206,7 +214,7 @@ export async function downloadReferralExcel(
   const paidAwards = rows.filter((row) => row.state === 'paid').length;
   summary.addRows([
     ['Referral calculation export'],
-    ['Calculation month', periodMonth.slice(0, 7)],
+    ['Calculation period', periodFileStamp(periodFrom, periodTo)],
     ['Parent referrers', cards.length],
     ['Ready parent referrers', readyParents],
     ['Parents needing setup', setupRequired],
@@ -214,7 +222,7 @@ export async function downloadReferralExcel(
     ['Earned awards', earnedAwards],
     ['Previously paid awards', paidAwards],
     ['Eligible gallons', totalGallons],
-    ['Unique cards', totalCards],
+    ['New swipes', totalCards],
     ['Payable USD', totalPayable],
   ]);
   summary.getColumn(1).width = 26;
@@ -266,6 +274,6 @@ export async function downloadReferralExcel(
     new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
-    `referral-calculations_${periodMonth.slice(0, 7)}.xlsx`,
+    `referral-calculations_${periodFileStamp(periodFrom, periodTo)}.xlsx`,
   );
 }

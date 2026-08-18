@@ -14,7 +14,7 @@ import { hrStorageProvider } from '../../modules/files/storage/index.js';
 import { buildHrPersonOverview } from '../../modules/hr/hrPersonOverview.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { hrEmployeeDto as toDto, requireHrAdmin, requireHrInternal } from './hrAccess.js';
+import { hrEmployeeDto as toDto, requireHrManage, requireHrRead } from './hrAccess.js';
 
 /**
  * A client-resized avatar, as a data URL.
@@ -84,7 +84,7 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
     '/hr/employees/by-zoho-user/:zohoUserId',
     auth,
     async (request) => {
-      const ctx = requireHrInternal(request);
+      const ctx = requireHrRead(request);
       const row = await hrEmployeeRepo.findByZohoUserId(ctx, request.params.zohoUserId);
       if (!row) throw new NotFoundError('No employee record is linked to that Zoho user');
       return toDto(row);
@@ -99,7 +99,7 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
    * per viewer and returns `canView: false` instead of failing the whole panel.
    */
   app.get<{ Params: { id: string } }>('/hr/employees/:id/overview', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const query = z
       .object({
         year: z.coerce.number().int().min(2000).max(2100).optional(),
@@ -151,7 +151,7 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
    * the `file_assets` row — a later flip of that env cannot strand an avatar already written.
    */
   app.post<{ Params: { id: string } }>('/hr/employees/:id/photo', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = z.object({ dataUrl: PHOTO_DATA_URL }).parse(request.body ?? {});
     const employee = await hrEmployeeRepo.getById(ctx, request.params.id);
     if (!employee) throw new NotFoundError('Employee not found');
@@ -195,7 +195,7 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
 
   /** Remove the avatar and the stored object behind it. Idempotent: no photo is not an error. */
   app.delete<{ Params: { id: string } }>('/hr/employees/:id/photo', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const employee = await hrEmployeeRepo.getById(ctx, request.params.id);
     if (!employee) throw new NotFoundError('Employee not found');
     if (!employee.photoFileId) return toDto(employee);
@@ -236,7 +236,7 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
    * a way to enumerate employees either.
    */
   app.post('/hr/employees/photo-links', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const { employeeIds } = z
       .object({ employeeIds: z.array(z.string().min(1)).min(1).max(100) })
       .parse(request.body ?? {});
@@ -262,7 +262,7 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { id: string } }>('/hr/employees/:id/photo-link', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const employee = await hrEmployeeRepo.getById(ctx, request.params.id);
     if (!employee) throw new NotFoundError('Employee not found');
     if (!employee.photoFileId) throw new NotFoundError('This employee has no photo');

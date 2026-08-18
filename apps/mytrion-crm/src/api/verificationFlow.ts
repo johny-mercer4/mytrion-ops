@@ -63,6 +63,10 @@ export interface VerificationCaseRow {
   email: string | null;
   phone: string | null;
   applicantType: VerificationApplicantType | null;
+  /** Projected by the list endpoint so the queue's EIN / MC / USDOT search can actually match. */
+  ein: string | null;
+  mc: string | null;
+  dot: string | null;
   underwritingRoute: VerificationRoute | null;
   /** THE GATE. false = red, Sales still owes intake. */
   verificationProcess: boolean;
@@ -76,7 +80,19 @@ export interface VerificationCaseRow {
   approvedLimitAmount: string | null;
   intakeMissing: string[];
   submittedAt: string | null;
+  /**
+   * The row's ASSIGNEE — NOT the Sales agent, despite the name.
+   *
+   * `createApplicationFromDeal` falls back to the Verification case owner
+   * (`VERIFICATION_CASE_OWNER_NAME`, a credit agent) when a Deal arrives with no owner in Zoho, so on
+   * those rows this names somebody who has never worked in Sales. Use `salesOwnerName` for anything a
+   * person reads as "the Sales agent"; this pair exists for the Sales list's ownership scoping.
+   */
   ownerName: string;
+  ownerZohoUserId: string | null;
+  /** The DEAL's owner — this is the Sales agent. Null when Zoho has nobody on the Deal. */
+  zohoOwnerId: string | null;
+  zohoOwnerName: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -446,6 +462,22 @@ export async function getDeskCase(id: string): Promise<VerificationDeskDetail> {
   return (await request('GET', `/verification/flow/cases/${id}`)) as VerificationDeskDetail;
 }
 
+/**
+ * Correct the application FROM THE DESK.
+ *
+ * Same columns as `patchApplication`, different door: that one is Sales-gated and refuses once
+ * underwriting starts, this one is verification-gated and allows a correction at any phase short of
+ * a decided case. Returns the full desk detail, so the caller never refetches.
+ */
+export async function patchDeskIntake(
+  id: string,
+  body: Record<string, unknown>,
+): Promise<VerificationDeskDetail> {
+  return (await request('POST', `/verification/flow/cases/${id}/intake`, {
+    body,
+  })) as VerificationDeskDetail;
+}
+
 export async function decidePhase(
   id: string,
   phase: string,
@@ -543,14 +575,91 @@ export interface VerificationPolicy {
   nsfReviewThreshold: number;
   bankFirstTruckMin: number;
   wexCardCutoff: number;
+  /**
+   * The Verification agent — desk config, not row data.
+   *
+   * Nothing in the schema records a per-case underwriter (`decided_by` is unwritten, case events
+   * carry no actor, `distribute_type` is `shared`), and one configured agent is notified about every
+   * application. Null when the server cannot resolve them; a desk screen still loads, it just does
+   * not name anybody rather than inventing a label.
+   */
+  verificationOwner: { zohoUserId: string; name: string } | null;
 }
+
+/** Only the numeric factors are writable — `verificationOwner` is resolved, never posted. */
+type PolicyNumberKey =
+  | 'strongFactor'
+  | 'moderateFactor'
+  | 'weakFactor'
+  | 'adbReviewThreshold'
+  | 'nsfReviewThreshold'
+  | 'bankFirstTruckMin'
+  | 'wexCardCutoff';
 
 export async function getPolicy(): Promise<VerificationPolicy> {
   return (await request('GET', '/verification/flow/policy')) as VerificationPolicy;
 }
 
 export async function savePolicy(
-  body: Partial<Record<keyof VerificationPolicy, number | null>>,
+  body: Partial<Record<PolicyNumberKey, number | null>>,
 ): Promise<VerificationPolicy> {
   return (await request('POST', '/verification/flow/policy', { body })) as VerificationPolicy;
+}
+
+/** A field the warehouse could fill on this application. `field` maps to an intake form input. */
+export interface PrefillSuggestion {
+  field:
+    | 'dot'
+    | 'phone'
+    | 'email'
+    | 'businessAddress'
+    | 'residentialAddress'
+    | 'trucksCount'
+    | 'principalName';
+  label: string;
+  value: string;
+}
+
+export interface PrefillResult {
+  match: {
+    matchedOn: 'phone' | 'dot' | 'email';
+    dotNumber: string | null;
+    ownerFullName: string | null;
+    physicalAddress: string | null;
+    operatingStatus: string | null;
+    authorityAddedOn: string | null;
+  } | null;
+  suggestions: PrefillSuggestion[];
+}
+
+/**
+ * Carrier records the warehouse already holds for this application.
+ *
+ * The lookup keys come from the CASE server-side — there is nothing to pass and nothing the client
+ * could widen the search with. Matches roughly a quarter of cases, so an empty result is ordinary.
+ */
+export async function getApplicationPrefill(id: string): Promise<PrefillResult> {
+  return (await request('GET', `/verification/applications/${id}/prefill`)) as PrefillResult;
+}
+
+/**
+ * The desk attaching a document itself.
+ *
+ * Same service and the same gate re-evaluation as the Sales upload — a reviewer holding a scan
+ * Sales emailed them should not have to ask Sales to re-key it. Verification-gated route.
+ */
+export async function uploadDeskDocuments(
+  caseId: string,
+  files: File[],
+  opts: { docType: VerificationDocType; label?: string; fulfilsRequestId?: string },
+): Promise<VerificationDeskDetail> {
+  const form = new FormData();
+  form.append('docType', opts.docType);
+  if (opts.label) form.append('label', opts.label);
+  if (opts.fulfilsRequestId) form.append('fulfilsRequestId', opts.fulfilsRequestId);
+  for (const file of files) form.append('files', file, file.name);
+  return (await requestMultipart(
+    `/verification/flow/cases/${caseId}/documents`,
+    form,
+  )) as VerificationDeskDetail;
 }

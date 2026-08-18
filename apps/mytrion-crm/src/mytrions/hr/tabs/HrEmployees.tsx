@@ -9,7 +9,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { isAdmin } from '../../../access/resolveAccess';
+import { canManageHr } from '../../../access/resolveAccess';
 import { deleteHrEmployee, type HrEmployeeDto } from '../../../api/hr';
 import { formatCachedAt } from '../../_shared/swrCache';
 import { useUserContext } from '../../../context/UserContextProvider';
@@ -53,9 +53,19 @@ const displayName = (e: HrEmployeeDto): string => `${e.firstName} ${e.lastName}`
  *    a skeleton over data that is already correct — which is also why the toolbar and the cards share
  *    one skeleton pass instead of the header rendering fake controls above shimmering cards.
  */
-export function HrEmployees() {
+export function HrEmployees({
+  onOpenRecord,
+}: {
+  /**
+   * Open an employee's full HR record (department, team, attendance, time off) over the workspace.
+   * Owned by HrShell — see the note there on why a record is HR's own state, not the global "View as".
+   */
+  onOpenRecord?: (person: { zohoUserId: string; name: string; subtitle: string | null }) => void;
+} = {}) {
   const user = useUserContext();
-  const admin = isAdmin(user);
+  // "May manage" — admins AND HR Managers (granted HR in full mode). A plain HR grant is read-only,
+  // so this gates every write affordance below. Backend re-checks with requireHrManage.
+  const admin = canManageHr(user);
 
   const [q, setQ] = useState('');
   /**
@@ -427,6 +437,21 @@ export function HrEmployees() {
           }}
           /* The modal owns the live avatar; this is so the CARD behind it stops showing the old one. */
           onPhotoChanged={invalidateHrEmployees}
+          {...(onOpenRecord && detail.zohoUserId
+            ? {
+                onViewRecord: () => {
+                  const zid = detail.zohoUserId;
+                  if (!zid) return;
+                  setDetail(null);
+                  onOpenRecord({
+                    zohoUserId: zid,
+                    name: `${detail.firstName} ${detail.lastName}`.trim(),
+                    subtitle:
+                      [detail.designation, detail.department].filter(Boolean).join(' · ') || null,
+                  });
+                },
+              }
+            : {})}
         />
       ) : null}
 

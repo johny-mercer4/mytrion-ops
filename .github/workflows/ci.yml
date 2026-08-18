@@ -1,5 +1,9 @@
 name: CI
 
+# Code checks only: lint, typecheck, migrate (CI Postgres), tests (mocked vendors), build,
+# and vendored-bundle / honor-system gates. No live EFS, Zoho, RingCentral, DWH, Telegram,
+# or prod writes. Deploy is `.github/workflows/deploy.yml` (push to main / workflow_dispatch).
+#
 # Runs on `build` as well as `main`. Team flow is: branch -> PR to `build` -> merge -> `build` into
 # `main` -> deploy. With main-only triggers every PR was reviewed with zero automated verification
 # and CI first ran at merge-to-main, i.e. at deploy time, after the decision it should have informed.
@@ -38,9 +42,34 @@ jobs:
       # reason. Every other value the suite needs is pinned in vitest.config.ts.
       API_KEY: ci-test-api-key
       BILLING_INGEST_SECRET: ci-test-ingest-secret
+      # CI checks code (and the deploy workflow deploys). It must not inherit live vendor
+      # credentials from repo/org secrets — that is how a unit run starts calling EFS.
+      EFS_WSDL_URL: ''
+      EFS_GROUP_WSDL_URL: ''
+      EFS_LOGIN: ''
+      EFS_PASSWORD: ''
+      SERVER_CRM_URL: ''
+      SERVER_CRM_KEY: ''
+      DWH_DATABASE_URL: ''
+      OPENAI_API_KEY: ''
+      TELEGRAM_BOT_TOKEN: ''
+      TELEGRAM_CARRIER_BOT_TOKEN: ''
+      ZOHO_CRM_REFRESH_TOKEN: ''
+      ZOHO_DESK_REFRESH_TOKEN: ''
+      RINGCENTRAL_JWT: ''
+      COMPOSIO_API_KEY: ''
+      FF_AUDIT_LOG_ENABLED: '0'
+      FF_MANAGER_EFS_WRITES_ENABLED: '0'
+      FF_COMPOSIO_ENABLED: '0'
+      FF_ZOHO_MCP_ENABLED: '0'
+      FF_DBT_MCP_ENABLED: '0'
+      FF_JOBS_ENABLED: '0'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Honor-system gates (conventional commits, file-size cap) diff against the merge base.
+          fetch-depth: 0
 
       - name: Enable Corepack (pnpm)
         run: corepack enable
@@ -58,6 +87,20 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Conventional commits
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci/check-conventional-commits.sh
+
+      - name: Source file size cap
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci/check-file-size.sh
 
       - name: Apply migrations
         run: pnpm db:migrate
@@ -127,3 +170,47 @@ jobs:
             exit 1
           fi
           echo "Bundle check OK."
+
+      # Same gate for the Telegram mini-app. Production serves apps/mini-app/app, not Vite.
+      - name: Mini-app vendored bundle is rebuilt
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE...$HEAD")
+          src_changed=$(echo "$changed" \
+            | grep '^apps/mini-app/src/' \
+            | grep -vE '\.test\.(ts|tsx)$|/__tests__/' \
+            | grep -c . || true)
+          app_changed=$(echo "$changed" | grep -c '^apps/mini-app/app/' || true)
+          echo "mini-app src files changed (excluding tests): $src_changed"
+          echo "mini-app app files changed: $app_changed"
+          if [ "$src_changed" -gt 0 ] && [ "$app_changed" -eq 0 ]; then
+            echo ""
+            echo "::error::This PR changes apps/mini-app/src but does not update the committed"
+            echo "::error::bundle in apps/mini-app/app. Production serves that bundle, so this"
+            echo "::error::change would merge without altering the live mini-app."
+            echo "::error::Run 'pnpm -C apps/mini-app build' and commit apps/mini-app/app in this PR."
+            exit 1
+          fi
+          echo "Mini-app bundle check OK."
+
+  # Fail-closed: main only accepts PRs from `build`. Feature branches go to build first.
+  # Always runs on pull_request so a required check is not "skipped" on PRs into build.
+  # Does not change verify / web. Direct pushes to main are a GitHub Settings rule, not this job.
+  main-from-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Main accepts only the build branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          echo "PR $HEAD_REF -> $BASE_REF"
+          if [ "$BASE_REF" = "main" ] && [ "$HEAD_REF" != "build" ]; then
+            echo "::error::PRs targeting main must come from the build branch (head is '$HEAD_REF')."
+            echo "::error::Open a PR to build first; promote with a PR from build to main."
+            exit 1
+          fi

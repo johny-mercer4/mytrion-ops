@@ -92,7 +92,7 @@ describe('Marketing referral workspace route', () => {
     expect(workspaceMock).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
       '2026-06-01',
-      { force: false },
+      { force: false, periodTo: '2026-06-30' },
     );
   });
 
@@ -106,7 +106,34 @@ describe('Marketing referral workspace route', () => {
     expect(workspaceMock).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
       '2026-06-01',
-      { force: true },
+      { force: true, periodTo: '2026-06-30' },
+    );
+  });
+
+  it('passes an inclusive day range without dropping period_month shorthand', async () => {
+    const range = await app.inject({
+      method: 'GET',
+      url: '/v1/marketing/referrals/workspace?period_from=2026-07-15&period_to=2026-08-20',
+      headers: await bearer('Marketing'),
+    });
+    const sameDay = await app.inject({
+      method: 'GET',
+      url: '/v1/marketing/referrals/workspace?period_from=2026-08-16&period_to=2026-08-16',
+      headers: await bearer('Marketing'),
+    });
+    expect(range.statusCode).toBe(200);
+    expect(sameDay.statusCode).toBe(200);
+    expect(workspaceMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      '2026-07-15',
+      { force: false, periodTo: '2026-08-20' },
+    );
+    expect(workspaceMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      '2026-08-16',
+      { force: false, periodTo: '2026-08-16' },
     );
   });
 
@@ -117,6 +144,28 @@ describe('Marketing referral workspace route', () => {
       headers: await bearer('Marketing'),
     });
     expect(response.statusCode).toBe(400);
+    expect(workspaceMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a one-sided range, an impossible day, and a span longer than a year', async () => {
+    const missingTo = await app.inject({
+      method: 'GET',
+      url: '/v1/marketing/referrals/workspace?period_from=2026-01-01',
+      headers: await bearer('Marketing'),
+    });
+    const impossible = await app.inject({
+      method: 'GET',
+      url: '/v1/marketing/referrals/workspace?period_from=2026-02-31&period_to=2026-03-01',
+      headers: await bearer('Marketing'),
+    });
+    const tooLong = await app.inject({
+      method: 'GET',
+      url: '/v1/marketing/referrals/workspace?period_from=2025-01-01&period_to=2026-02-01',
+      headers: await bearer('Marketing'),
+    });
+    expect(missingTo.statusCode).toBe(400);
+    expect(impossible.statusCode).toBe(400);
+    expect(tooLong.statusCode).toBe(400);
     expect(workspaceMock).not.toHaveBeenCalled();
   });
 });

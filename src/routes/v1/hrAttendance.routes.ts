@@ -31,7 +31,8 @@ import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../repos/hrAttendanceShiftRepo.js';
 import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment, requireInternal } from './helpers.js';
+import { requireDepartment } from './helpers.js';
+import { buildCallerContext } from './callerIdentity.js';
 
 const SECRET_HEADER = 'x-attendance-webhook-secret';
 
@@ -47,6 +48,21 @@ function hasHrAccess(ctx: TenantContext): boolean {
     ctx.allDepartmentAccess === true ||
     ctx.departments.includes('hr')
   );
+}
+
+/**
+ * The caller's context with "View as" applied — internal-only.
+ *
+ * `buildCallerContext` rewrites the identity to the act-as target when an admin (or a granted viewer)
+ * is impersonating, so "self" in `/me` and the team scoping resolve to the PREVIEWED user, not the real
+ * admin. Every other attendance route reads `self`/`team` off this ctx, so routing them through here is
+ * what makes the global View-as show the target's own attendance instead of the admin's. With no act-as
+ * header it returns the caller's own context, identical to the `requireInternal` it replaced.
+ */
+async function attendanceCtx(request: FastifyRequest): Promise<TenantContext> {
+  const ctx = await buildCallerContext(request, {});
+  if (ctx.audience !== 'internal') throw new RBACError('Attendance is internal-only');
+  return ctx;
 }
 
 /**
@@ -72,7 +88,7 @@ function hasHrAccess(ctx: TenantContext): boolean {
 async function requireAttendanceAccess(
   request: FastifyRequest,
 ): Promise<{ ctx: TenantContext; selfId: string }> {
-  const ctx = requireInternal(request, 'Attendance');
+  const ctx = await attendanceCtx(request);
   if (hasHrAccess(ctx)) return { ctx, selfId: await resolveSelfEmployeeId(ctx, true) };
   // Not HR: they must be linked to an employee row AND actually manage someone. `false` here on
   // purpose — an unlinked non-HR caller has no team to scope to, so there is nothing to show them.
@@ -189,7 +205,10 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/attendance/me', auth, async (request) => {
-    const { ctx } = await requireAttendanceAccess(request);
+    // Own attendance is open to every internal employee — no HR grant or team needed. `attendanceCtx`
+    // applies View-as, so under an admin's preview this resolves the PREVIEWED user's own days. There
+    // is no employeeId param, so it can only ever read the (effective) caller's own record.
+    const ctx = await attendanceCtx(request);
     const q = z
       .object({
         from: dateStr.optional(),
@@ -207,6 +226,15 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     }
     if (from > to) throw new ValidationError('from must be on or before to');
     const employeeId = await resolveSelfEmployeeId(ctx);
+    // Pull THIS person's own punches from the warehouse before reading them, so opening My Data shows
+    // current attendance without a manual Refresh. Scoped to one employee (tens of rows, its own 60s
+    // cooldown) — never the ~4.4k whole-window sweep the page load deliberately avoids. Swallowed on
+    // failure: the stored week still renders, and the frontend paints it from cache meanwhile.
+    try {
+      await syncAttendanceFromDwh(ctx, from, to, { employeeId });
+    } catch (err) {
+      request.log.warn({ err, employeeId }, 'hr.attendance.me self-sync failed; serving stored');
+    }
     return buildAttendanceSummary(ctx, employeeId, from, to);
   });
 

@@ -47,16 +47,68 @@ describe('applicant type inference', () => {
     expect(inferApplicantType(deal({ dot: '987654', companyName: 'Ray Diaz' }))).toBe('carrier');
   });
 
-  it('is a company when the name is incorporated but there is no MC or DOT', () => {
-    // The SOP's "LLC / corporation without MC/DOT", which routes to manager review.
-    expect(inferApplicantType(deal())).toBe('company');
-    expect(inferApplicantType(deal({ companyName: 'Sehaj Logistics Inc' }))).toBe('company');
+  it('is an owner-operator when Zoho SAYS the applicant is a person', () => {
+    // The two Business_Type values that mean a human: everything else in the picklist is a company.
+    expect(inferApplicantType(deal({ businessType: 'Sole Proprietorship' }))).toBe('owner_operator');
+    expect(inferApplicantType(deal({ businessType: 'natural person' }))).toBe('owner_operator');
   });
 
-  it('refuses to guess for a bare personal name', () => {
-    // Guessing wrong picks the wrong intake form and the wrong phase set. Null makes the agent say.
+  it('never guesses from the COMPANY NAME — that is what produced the wrong type', () => {
+    // "Blue Ridge Hauling LLC" with no authority used to infer `company` off an `llc` regex. An
+    // owner-operator trading as an LLC is indistinguishable this way, so the name is not a signal.
+    expect(inferApplicantType(deal())).toBeNull();
+    expect(inferApplicantType(deal({ companyName: 'Sehaj Logistics Inc' }))).toBeNull();
     expect(inferApplicantType(deal({ companyName: 'Efrain Mendoza Buitron' }))).toBeNull();
     expect(inferApplicantType(deal({ companyName: '' }))).toBeNull();
+  });
+
+  it('never returns the retired third type', () => {
+    // Two types now: `owner_operator` and `carrier`. `company` is still READ (rows carry it) but
+    // nothing produces it any more.
+    for (const over of [
+      {},
+      { companyName: 'Anything Corp' },
+      { businessType: 'Limited Liability Company' },
+      { businessType: 'Corporation', mc: '1234567' },
+    ]) {
+      expect(inferApplicantType(deal(over))).not.toBe('company');
+    }
+  });
+
+  it('is not fooled by a business type that merely mentions a company form', () => {
+    expect(inferApplicantType(deal({ businessType: 'Limited Liability Company' }))).toBeNull();
+    expect(inferApplicantType(deal({ businessType: 'Corporation' }))).toBeNull();
+  });
+});
+
+describe('the fuel-card count comes off the Deal', () => {
+  it('carries Cards_Requested onto the case', async () => {
+    // Populated on every live Deal and never read, so "Number of fuel cards requested" sat on
+    // EVERY case's missing list and the roster showed a dash.
+    await createApplicationFromDeal(ctx, deal({ cardsRequested: '5' }), FALLBACK);
+    expect((insertMock.mock.calls[0]?.[1] as Record<string, unknown>).fuelCardsRequested).toBe(5);
+  });
+
+  it('treats a blank or zero count as no information, not a request for zero', async () => {
+    for (const value of ['', '0', 'n/a', undefined]) {
+      insertMock.mockClear();
+      await createApplicationFromDeal(ctx, deal({ cardsRequested: value }), FALLBACK);
+      expect(
+        (insertMock.mock.calls[0]?.[1] as Record<string, unknown>).fuelCardsRequested,
+        String(value),
+      ).toBeNull();
+    }
+  });
+
+  it('falls back to the secondary contact fields Zoho already holds', async () => {
+    await createApplicationFromDeal(
+      ctx,
+      deal({ email: '', secondaryEmail: 'ops@blueridge.test', phone: '', cell: '', alternativeContact: '6145550110' }),
+      FALLBACK,
+    );
+    const row = insertMock.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(row.email).toBe('ops@blueridge.test');
+    expect(row.phone).toBe('6145550110');
   });
 });
 

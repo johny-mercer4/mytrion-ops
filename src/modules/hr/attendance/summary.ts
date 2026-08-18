@@ -24,7 +24,16 @@ import {
   type AttendancePresenceState,
 } from './sessionize.js';
 
-export type DayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled';
+/**
+ * `Scheduled` and `Unscheduled` are deliberately two states, not one.
+ *
+ * `Unscheduled` means no shift covers the day — there is genuinely nothing to expect. `Scheduled`
+ * means a shift DOES cover it but its window has not closed yet, so an absence cannot be declared: the
+ * night is still ahead or still running. Collapsing the two (the old behaviour) made every night
+ * worker's own shift read as "no shift scheduled" for the whole of today, because a 19:00–03:00 window
+ * only closes at 03:00 tomorrow.
+ */
+export type DayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled' | 'Scheduled';
 
 export interface AttendanceDayRow {
   date: string;
@@ -69,6 +78,8 @@ export interface AttendanceSummary {
     weekend: number;
     absent: number;
     unscheduled: number;
+    /** Days a shift covers whose window has not closed yet — upcoming or still running, not an absence. */
+    scheduled: number;
     onDuty: number;
     paidLeave: number;
     holidays: number;
@@ -127,6 +138,7 @@ export function buildAttendanceSummaryFromRecords(
   let weekend = 0;
   let absent = 0;
   let unscheduled = 0;
+  let scheduledDays = 0;
 
   for (const date of eachDateInclusive(from, to)) {
     const dayPunches = byDate.get(date) ?? [];
@@ -155,11 +167,13 @@ export function buildAttendanceSummaryFromRecords(
        * week, so counting these as Absent pre-marked every remaining weekday of this week — and all
        * five of any week paged forward to — against every employee.
        *
-       * `Unscheduled` rather than a new 'Upcoming' status: DayStatus is the wire contract that the
-       * client's AttendanceDayStatus and the CSV export both read.
+       * `Scheduled`, NOT `Unscheduled` (which is what this used to return). The person is on a shift;
+       * it just has not finished. Reusing `Unscheduled` here is what made a night worker's own card
+       * read "No shift scheduled" for the whole of today — the exact bug this split removes. The two
+       * are now distinct on the wire, so the client can name the shift instead of denying it.
        */
-      status = 'Unscheduled';
-      unscheduled += 1;
+      status = 'Scheduled';
+      scheduledDays += 1;
     } else {
       status = 'Absent';
       absent += 1;
@@ -202,6 +216,7 @@ export function buildAttendanceSummaryFromRecords(
       weekend,
       absent,
       unscheduled,
+      scheduled: scheduledDays,
       onDuty: 0,
       paidLeave: 0,
       holidays: 0,

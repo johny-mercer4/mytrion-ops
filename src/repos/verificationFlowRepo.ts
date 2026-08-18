@@ -32,6 +32,11 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
   email: verificationCases.email,
   phone: verificationCases.phone,
   applicantType: verificationCases.applicantType,
+  // The desk queue's search box offers EIN / MC / USDOT, and `listWhere` already matches mc and dot
+  // server-side — without them in the projection a client-side search over the page could not.
+  ein: verificationCases.ein,
+  mc: verificationCases.mc,
+  dot: verificationCases.dot,
   underwritingRoute: verificationCases.underwritingRoute,
   verificationProcess: verificationCases.verificationProcess,
   phaseCode: verificationCases.phaseCode,
@@ -43,8 +48,16 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
   intakeMissing: verificationCases.intakeMissing,
   submittedAt: verificationCases.submittedAt,
   submittedByZohoUserId: verificationCases.submittedByZohoUserId,
+  /**
+   * TWO different people. `owner_*` is the row's ASSIGNEE, which falls back to the Verification case
+   * owner (`VERIFICATION_CASE_OWNER_NAME`) when a Deal reaches us with no owner in Zoho — so on those
+   * rows it names a credit agent, not a Sales agent. `zoho_owner_*` is the DEAL's owner, which IS the
+   * Sales agent, and null when Zoho has nobody. Any surface saying "Sales owner" means `zoho_owner_*`.
+   */
   ownerZohoUserId: verificationCases.ownerZohoUserId,
   ownerName: verificationCases.ownerName,
+  zohoOwnerId: verificationCases.zohoOwnerId,
+  zohoOwnerName: verificationCases.zohoOwnerName,
   closedAt: verificationCases.closedAt,
   createdAt: verificationCases.createdAt,
   updatedAt: verificationCases.updatedAt,
@@ -58,10 +71,11 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
 export const VERIFICATION_FLOW_LIST_COLUMN_SQL = sql.raw(
   [
     'id', 'company_name', 'first_name', 'last_name', 'email', 'phone',
-    'applicant_type', 'underwriting_route', 'verification_process', 'phase_code', 'status_code',
+    'applicant_type', 'ein', 'mc', 'dot',
+    'underwriting_route', 'verification_process', 'phase_code', 'status_code',
     'trucks_count', 'fuel_cards_requested', 'requested_limit', 'approved_limit_amount',
     'intake_missing', 'submitted_at', 'submitted_by_zoho_user_id', 'owner_zoho_user_id',
-    'owner_name', 'closed_at', 'created_at', 'updated_at',
+    'owner_name', 'zoho_owner_id', 'zoho_owner_name', 'closed_at', 'created_at', 'updated_at',
   ].join(', '),
 );
 

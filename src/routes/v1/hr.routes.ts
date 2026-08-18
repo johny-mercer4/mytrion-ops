@@ -17,7 +17,7 @@ import { hrDepartmentRepo } from '../../repos/hrDepartmentRepo.js';
 import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 // Guards + DTO are shared with hrPeople.routes.ts — see hrAccess.ts for why they are not duplicated.
-import { hrEmployeeDto as toDto, requireHrAdmin, requireHrInternal } from './hrAccess.js';
+import { hrEmployeeDto as toDto, requireHrAdmin, requireHrManage, requireHrRead } from './hrAccess.js';
 
 const listQuery = z.object({
   q: z.string().max(200).optional(),
@@ -100,7 +100,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
 
   /** Designation picklist — distinct values from hr_employees (not a separate table). */
   app.get('/hr/meta/designations', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const designations = await hrEmployeeRepo.listDesignationPicklist(ctx);
     return { designations };
   });
@@ -110,7 +110,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
    * round trip. Flat lists — see `hrOrgStructure.ts` for why it is not a nested tree.
    */
   app.get('/hr/org-structure', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     return buildHrOrgStructure(ctx);
   });
 
@@ -122,7 +122,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
    * canvas fires one of these per drag — echoing a full record back would be pure payload.
    */
   app.patch('/hr/org/position', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = orgPositionBody.parse(request.body);
     const pos = body.position ? { x: body.position.x, y: body.position.y } : null;
     const ok =
@@ -150,7 +150,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
    * being moved. The same applies to reporting lines.
    */
   app.patch('/hr/org/reparent', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = orgReparentBody.parse(request.body);
 
     if (body.parentId && body.parentId === body.id) {
@@ -212,7 +212,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
    * Read-only — used by the profile panel. Missing link → 404 (UI shows session fields only).
    */
   app.get('/hr/me', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const zohoUserId = ctx.userId.startsWith('zoho:')
       ? ctx.userId.replace(/^zoho:/, '')
       : '';
@@ -223,7 +223,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/employees', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const q = listQuery.parse(request.query);
     const filters = {
       ...(q.q !== undefined ? { q: q.q } : {}),
@@ -247,7 +247,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/hr/employees', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = writeBody.parse(request.body);
     const row = await hrEmployeeRepo.createManual(ctx, {
       firstName: body.firstName,
@@ -309,7 +309,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { id: string } }>('/hr/employees/:id', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const row = await hrEmployeeRepo.getById(ctx, request.params.id);
     if (!row) throw new NotFoundError('Employee not found');
     return toDto(row);
@@ -362,7 +362,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.patch<{ Params: { id: string } }>('/hr/employees/:id', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = patchBody.parse(request.body);
     const patch = {
       ...(body.firstName !== undefined ? { firstName: body.firstName } : {}),
@@ -414,7 +414,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete<{ Params: { id: string } }>('/hr/employees/:id', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const ok = await hrEmployeeRepo.delete(ctx, request.params.id);
     if (!ok) throw new NotFoundError('Employee not found');
     await auditFromContext(ctx, {

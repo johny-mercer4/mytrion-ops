@@ -27,6 +27,9 @@ import {
   VERIFICATION_DOC_TYPES,
 } from '../../db/schema/verification_flow.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { findBrokerSnapshot } from '../../integrations/dwhBrokerSnapshot.js';
+import { suggestionsFor } from '../../modules/verificationFlow/prefill.js';
+import { buildCallerContext } from './callerIdentity.js';
 import { requireDepartment } from './helpers.js';
 
 /** Sales owns intake; the Verification desk reads these same rows through its own routes. */
@@ -63,7 +66,12 @@ const digitsOnly = (max: number, label: string) =>
     .nullable()
     .optional();
 
-const patchBody = z.object({
+/**
+ * The intake patch shape, EXPORTED — the Verification desk corrects the same columns through its
+ * own route (`POST /verification/flow/cases/:id/intake`) and must accept exactly the same body.
+ * Two copies of this schema would drift the first time a field's validation changed on one desk.
+ */
+export const patchBody = z.object({
   applicantType: z.enum(VERIFICATION_APPLICANT_TYPES).optional(),
   companyName: nullableText(200),
   firstName: nullableText(100),
@@ -98,7 +106,8 @@ const patchBody = z.object({
   plaidConnected: z.boolean().optional(),
 });
 
-const principalBody = z.object({
+/** Shared with the Verification desk's own principal route — one shape, two doors. */
+export const principalBody = z.object({
   fullName: z.string().trim().min(1).max(200),
   role: z.string().trim().max(100).optional(),
   ownershipPct: z.coerce.number().min(0).max(100).optional(),
@@ -122,11 +131,77 @@ const listQuery = z.object({
 export async function verificationApplicationsRoutes(app: FastifyInstance): Promise<void> {
   const auth = { onRequest: [app.authenticate] };
 
+  /**
+   * The agent's own applications. OWNER-SCOPED, so View-as has to be resolved first.
+   *
+   * `requireSales` reads the raw session, so without this the list ran as whoever was doing the
+   * viewing. An admin checking an agent's Verification tab owns no applications, so the tab said
+   * "No applications yet" while that agent's cases sat in the desk queue with their name on them —
+   * and there is no other way for anyone to see what an agent sees. Same order as the Call Hub:
+   * apply the impersonation, THEN gate, so the effective agent must have Sales access themselves.
+   */
   app.get('/verification/applications', auth, async (request) => {
+    request.ctx = await buildCallerContext(request, {});
     const ctx = requireSales(request);
     const query = listQuery.parse(request.query);
     return applicationService.listForAgent(ctx, query);
   });
+
+  /**
+   * Carrier records the warehouse already holds for this applicant — a PREFILL SUGGESTION.
+   *
+   * THE LOOKUP KEYS COME FROM THE CASE, never from the request. That is the whole security shape
+   * of this route: a client that could pass its own phone or DOT would turn a Sales endpoint into
+   * a free lookup tool over half a million carrier records. The caller supplies a case id they can
+   * already read, and the server decides what to match on.
+   *
+   * Nothing is written. The response says what the warehouse has and which key matched it; the
+   * agent applies the fields they want. About a quarter of cases match, so an empty result is the
+   * ordinary case and not an error.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/verification/applications/:id/prefill',
+    auth,
+    async (request) => {
+      request.ctx = await buildCallerContext(request, {});
+      const ctx = requireSales(request);
+      const { id } = idParams.parse(request.params);
+      const detail = await applicationService.get(ctx, id);
+      const c = detail.case;
+      try {
+        const match = await findBrokerSnapshot({
+          phones: [c.phone, (c as { cell?: string | null }).cell],
+          dot: c.dot,
+          email: c.email,
+        });
+        return {
+          match,
+          suggestions: match
+            ? suggestionsFor(
+                {
+                  applicantType: c.applicantType,
+                  dot: c.dot,
+                  phone: c.phone,
+                  email: c.email,
+                  businessAddress: c.businessAddress,
+                  residentialAddress: c.residentialAddress,
+                  trucksCount: c.trucksCount,
+                  principalCount: detail.principals.length,
+                },
+                match,
+              )
+            : [],
+        };
+      } catch (err) {
+        throw new AppError('Data warehouse request failed', {
+          statusCode: 502,
+          code: 'DWH_ERROR',
+          cause: err,
+          expose: true,
+        });
+      }
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/verification/applications/:id', auth, async (request) => {
     const ctx = requireSales(request);

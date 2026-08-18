@@ -1,19 +1,19 @@
 /**
- * Admin "View as" / act-as store — scoped per Mytrion.
+ * Global "View as" (RBAC preview) store.
  *
- * Selecting an agent in Sales does NOT apply on the main Mytrion picker (`/main`) or inside
- * another Mytrion (CS, Billing, …). Transport reads the slot for the current path only.
+ * ONE identity for the whole app: picking a user applies in every section and persists across
+ * navigation — a testing lens for admins. (This replaced a per-Mytrion store; callers that passed a
+ * `mytrionId` still compile — the argument is now ignored — and `getImpersonation()` with no argument,
+ * which is how every live caller already reads it, returns the single global identity.)
  *
- * Persisted in localStorage + a module cache so non-React transport can attach headers
- * synchronously; ImpersonationProvider mirrors the active Mytrion's slot into React state.
+ * Persisted in localStorage + a module cache so the non-React transport can attach `x-act-as-*`
+ * headers synchronously; ImpersonationProvider mirrors it into React, and the EFFECTIVE UserContext is
+ * re-resolved from the target (see api/viewAs.ts) so the whole UI renders as them.
  *
- * Backend still only honors x-act-as-* for verified admin (or granted) sessions.
+ * The backend still only honors `x-act-as-*` for a verified admin (or a granted target) and re-derives
+ * the target's context server-side — so this preview can never widen what the target may actually do.
  */
-import {
-  isMytrionId,
-  mytrionIdFromUrlSlug,
-  type MytrionId,
-} from '../access/mytrions.config';
+import type { MytrionId } from '../access/mytrions.config';
 
 export interface Impersonation {
   zohoUserId: string;
@@ -22,13 +22,13 @@ export interface Impersonation {
   role?: string;
 }
 
-const KEY = 'octane.actAs.byMytrion.v1';
-/** Legacy single global key — migrated into the `sales` slot on first read. */
-const LEGACY_KEY = 'octane.actAs.v1';
+/** Single global slot. */
+const KEY = 'octane.actAs.global.v1';
+/** Prior stores migrated on first read: a per-Mytrion map, then the original single value. */
+const LEGACY_MAP_KEY = 'octane.actAs.byMytrion.v1';
+const LEGACY_SINGLE_KEY = 'octane.actAs.v1';
 
-type Store = Partial<Record<MytrionId, Impersonation>>;
-
-let cache: Store | undefined;
+let cache: Impersonation | null | undefined;
 
 function parseImp(v: unknown): Impersonation | null {
   if (!v || typeof v !== 'object') return null;
@@ -36,77 +36,61 @@ function parseImp(v: unknown): Impersonation | null {
   return o.zohoUserId && o.name ? (o as Impersonation) : null;
 }
 
-/** Active Mytrion from `/main/:slug…`, or null on the picker / non-Mytrion routes. */
-export function mytrionIdFromPath(
-  pathname: string = typeof window !== 'undefined' ? window.location.pathname : '',
-): MytrionId | null {
-  const main = /^\/main\/([^/]+)/.exec(pathname);
-  if (!main?.[1]) return null;
-  const slug = main[1];
-  return mytrionIdFromUrlSlug(slug) ?? (isMytrionId(slug) ? slug : null);
-}
-
-function readStore(): Store {
+function readStore(): Impersonation | null {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Store;
-      return parsed && typeof parsed === 'object' ? parsed : {};
+    if (raw) return parseImp(JSON.parse(raw));
+    // Migrate a per-Mytrion map (take whichever slot was set) or the original single value.
+    const mapRaw = localStorage.getItem(LEGACY_MAP_KEY);
+    if (mapRaw) {
+      const map = JSON.parse(mapRaw) as Record<string, unknown>;
+      const first = map && typeof map === 'object' ? Object.values(map).map(parseImp).find(Boolean) : null;
+      localStorage.removeItem(LEGACY_MAP_KEY);
+      if (first) {
+        localStorage.setItem(KEY, JSON.stringify(first));
+        return first;
+      }
     }
-    const legacyRaw = localStorage.getItem(LEGACY_KEY);
-    if (legacyRaw) {
-      const imp = parseImp(JSON.parse(legacyRaw));
+    const singleRaw = localStorage.getItem(LEGACY_SINGLE_KEY);
+    if (singleRaw) {
+      const imp = parseImp(JSON.parse(singleRaw));
+      localStorage.removeItem(LEGACY_SINGLE_KEY);
       if (imp) {
-        const migrated: Store = { sales: imp };
-        localStorage.setItem(KEY, JSON.stringify(migrated));
-        localStorage.removeItem(LEGACY_KEY);
-        return migrated;
+        localStorage.setItem(KEY, JSON.stringify(imp));
+        return imp;
       }
     }
   } catch {
     /* ignore */
   }
-  return {};
+  return null;
 }
 
-function ensureCache(): Store {
+function ensureCache(): Impersonation | null {
   if (cache === undefined) cache = readStore();
   return cache;
 }
 
 /**
- * Impersonation for a Mytrion. Omitting `mytrionId` uses the current URL.
- * Returns null on `/main` (picker) so View-as never leaks into the wizard.
+ * The active View-as identity, or null. `_mytrionId` is accepted and ignored for back-compat with the
+ * former per-Mytrion store — there is one global identity now.
  */
-export function getImpersonation(mytrionId?: MytrionId | null): Impersonation | null {
-  const id = mytrionId === undefined ? mytrionIdFromPath() : mytrionId;
-  if (!id) return null;
-  return ensureCache()[id] ?? null;
+export function getImpersonation(_mytrionId?: MytrionId | null): Impersonation | null {
+  return ensureCache();
 }
 
-/**
- * Set or clear View-as for one Mytrion. No-op when outside a Mytrion route
- * (cannot set a global identity from the picker).
- */
-export function setImpersonation(
-  imp: Impersonation | null,
-  mytrionId?: MytrionId | null,
-): void {
-  const id = mytrionId === undefined ? mytrionIdFromPath() : mytrionId;
-  if (!id) return;
-  const next: Store = { ...ensureCache() };
-  if (imp) next[id] = imp;
-  else delete next[id];
-  cache = next;
+/** Set or clear the global View-as identity. `_mytrionId` is accepted and ignored (see getImpersonation). */
+export function setImpersonation(imp: Impersonation | null, _mytrionId?: MytrionId | null): void {
+  cache = imp;
   try {
-    localStorage.setItem(KEY, JSON.stringify(next));
-    localStorage.removeItem(LEGACY_KEY);
+    if (imp) localStorage.setItem(KEY, JSON.stringify(imp));
+    else localStorage.removeItem(KEY);
   } catch {
     /* module cache still drives this tab */
   }
 }
 
-/** x-act-as-* for the current Mytrion path only, or {} on picker / unset. */
+/** x-act-as-* for the active identity, or {} when acting as self. */
 export function actAsHeaders(): Record<string, string> {
   const imp = getImpersonation();
   if (!imp) return {};

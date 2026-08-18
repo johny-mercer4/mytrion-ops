@@ -18,6 +18,14 @@ vi.mock('../context/UserContextProvider', () => ({
     trusted: true,
     ...mockCtx.current,
   }),
+  useRealUserContext: () => ({
+    userId: 'u-1',
+    profile: 'Sales Agent',
+    role: '',
+    userName: 'Daniel Brown',
+    trusted: true,
+    ...mockCtx.current,
+  }),
 }));
 // Stub the launcher so this test doesn't mount AppHeader/ActAsPicker (session/api heavy).
 // vi.mock on a path nothing imports does NOT error — it silently stops applying and the real

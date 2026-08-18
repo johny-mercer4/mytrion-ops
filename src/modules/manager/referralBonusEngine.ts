@@ -22,6 +22,7 @@
  */
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import {
+  fetchReferralParentCarriers,
   fetchReferralVolume,
   type ReferralCarrierVolume,
 } from '../../integrations/dwhReferralVolume.js';
@@ -32,6 +33,7 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import { REFERRAL_BONUS_SPEC_BY_TYPE, isOneTimeBonusType } from './referralBonusTypes.js';
 import { computeReferralBonus, isClaimedStatus } from './referralBonusMath.js';
 import {
+  appendSwipeParentCarrierTargets,
   resolveReferralTargets,
   type ReferralChildSource,
   type ReferralDealSource,
@@ -192,7 +194,17 @@ export async function runReferralBonusCalculation(
       referralBonusRepo.listOneTimeClaims(ctx),
     ]);
     summary.children = children.length;
-    const resolution = resolveReferralTargets(parents, children, deals);
+    const resolved = resolveReferralTargets(parents, children, deals);
+    const parentCarriers = await fetchReferralParentCarriers(
+      resolved.targets
+        .filter((target) => target.bonusType === 'swipes_legacy')
+        .map((target) => target.parent.name)
+        .filter((name): name is string => Boolean(name)),
+    );
+    const resolution = {
+      ...resolved,
+      targets: appendSwipeParentCarrierTargets(resolved.targets, parentCarriers),
+    };
     summary.skippedNoCalculation = resolution.skippedNoCalculationChildIds.length;
     summary.unresolved = resolution.unresolvedChildIds.length;
 

@@ -117,11 +117,12 @@
     background var(--dur-fast) var(--ease-standard);
 }
 
+/* HR's primary (`hr-btn-primary`): a subtle accent-tinted fill with accent text, NOT a solid accent
+   block — so the Apply-leave CTA matches every primary button in the HR workspace. */
 .primaryBtn {
-  color: var(--on-accent);
-  border-color: transparent;
-  background: var(--ramp-d);
-  box-shadow: 0 9px 22px -8px var(--accent-glow);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--to-line));
+  background: color-mix(in srgb, var(--accent) 16%, var(--to-card));
 }
 
 .dangerBtn {
@@ -172,15 +173,17 @@
   font-weight: var(--fw-bold);
 }
 
+/* The HR tab switcher (`hr-att-panes`): a borderless track in a faint muted wash, the selected tab
+   lifting off it — not a bordered segmented control. Same treatment as Attendance's My Data / Team. */
 .tabs {
-  display: flex;
-  gap: var(--space-1);
+  display: inline-flex;
+  gap: 2px;
   margin-bottom: var(--space-5);
-  padding: var(--space-1);
-  border: 1px solid var(--to-line);
+  padding: 3px;
   border-radius: var(--radius-md);
-  background: var(--surface-alt);
+  background: color-mix(in srgb, var(--to-muted) 10%, transparent);
   overflow-x: auto;
+  max-width: 100%;
 }
 
 .tabs button {
@@ -209,8 +212,9 @@
 
 .tabs .tabActive {
   color: var(--text-primary);
-  background: var(--to-card);
-  box-shadow: var(--shadow-sm);
+  background: var(--hz-pane, var(--to-card));
+  /* The selected tab lifting off its track — inset glare in dark, glare + a hairline in light. */
+  box-shadow: var(--hz-glass-inset, var(--shadow-sm));
 }
 
 .summary {
@@ -233,18 +237,17 @@
   padding: var(--ui-panel-pad);
   border: 1px solid var(--to-line);
   border-radius: var(--radius-lg);
-  background:
-    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--leave-tone) 20%, transparent), transparent 48%),
-    var(--to-card);
+  background: var(--to-card);
   overflow: hidden;
 }
 
-/* Leave-type wayfinding — categorical encoding within one screen, not status and not identity.
-   Kept, but sourced from the --tone-* set so each hue gets a legible step in BOTH themes (dark
-   takes the 400-level, light the 600/700-level); the old literals were tuned for dark only. */
-.tone_sick { --leave-tone: var(--tone-rose); }
-.tone_annual_paid { --leave-tone: var(--tone-sky); }
-.tone_unpaid { --leave-tone: var(--tone-violet); }
+/* One accent, like every other HR tab. Leave type is LABELLED, not colour-coded — a per-type rose /
+   sky / violet ramp made this page read as its own product, which is exactly what HR leave settings
+   already refused ("never violet / multi-hue leave cards"). The icon, the progress fill and the card
+   glow all resolve through this one name, so the whole workspace shares the HR accent. */
+.tone_sick,
+.tone_annual_paid,
+.tone_unpaid { --leave-tone: var(--accent); }
 
 .balanceTop {
   display: flex;

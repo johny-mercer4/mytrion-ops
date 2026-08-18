@@ -24,7 +24,24 @@ import {
   VERIFICATION_VOLATILITY,
   VERIFICATION_CREDIT_OUTCOMES,
 } from '../../db/schema/verification_flow.js';
+import type { IntakePatch } from '../../modules/verificationFlow/applicationService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import {
+  patchBody as intakePatchBody,
+  principalBody as deskPrincipalBody,
+} from './verificationApplications.routes.js';
+import { applicationService } from '../../modules/verificationFlow/applicationService.js';
+import { AppError } from '../../lib/errors.js';
+import {
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENTS_PER_UPLOAD,
+} from '../../modules/verificationFlow/documentService.js';
+
+const deskPrincipalParams = z.object({
+  id: z.string().min(1),
+  principalId: z.string().min(1),
+});
+import { resolveVerificationCaseOwner } from '../../modules/verification/verificationOwner.js';
 import { requireDepartment, requireMytrionWrite } from './helpers.js';
 
 function requireVerificationRead(request: FastifyRequest): TenantContext {
@@ -208,6 +225,148 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
     },
   );
 
+  /**
+   * Correct the application from the desk.
+   *
+   * The Sales twin is `POST /verification/applications/:id` and shares this exact body — see the
+   * export note on `patchBody`. What differs is the door: this one is verification-write-gated and
+   * carries the desk's own rule (`deskService.patchIntake`), which allows a correction at any phase
+   * short of a decided case rather than refusing once underwriting starts.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/verification/flow/cases/:id/intake',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id } = idParams.parse(request.params);
+      const body = intakePatchBody.parse(request.body ?? {});
+      const detail = await deskService.patchIntake(ctx, id, body as IntakePatch);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.intake.corrected',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { fields: Object.keys(body) },
+      });
+      return detail;
+    },
+  );
+
+  /**
+   * The desk uploading a Phase-1 document, and adding or removing a principal.
+   *
+   * WHY THESE EXIST. The desk could already CORRECT intake fields (the route above) but not attach
+   * a file or add an owner, so a reviewer holding a licence scan that Sales had emailed them had
+   * nowhere to put it: the only upload route was Sales-gated and the only "add a principal" route
+   * was too. A reviewer had to ask Sales to re-key something the reviewer was already looking at.
+   *
+   * They are the same service calls the Sales routes make — `documentService` and
+   * `applicationService` enforce the case rules — so the desk gets the same validation, the same
+   * gate re-evaluation and the same audit trail, through a Verification-gated door.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/verification/flow/cases/:id/documents',
+    auth,
+    async (request, reply) => {
+      const ctx = requireVerificationWrite(request);
+      const { id } = idParams.parse(request.params);
+
+      const files: Array<{ name: string; mime: string; buffer: Buffer }> = [];
+      const fields: Record<string, string> = {};
+      for await (const part of request.parts({
+        limits: { files: MAX_DOCUMENTS_PER_UPLOAD, fileSize: MAX_DOCUMENT_BYTES },
+      })) {
+        if (part.type === 'file') {
+          files.push({
+            name: part.filename || 'document',
+            mime: part.mimetype || 'application/octet-stream',
+            buffer: await part.toBuffer(),
+          });
+        } else if (typeof part.value === 'string') {
+          fields[part.fieldname] = part.value;
+        }
+      }
+      if (files.length === 0) {
+        throw new AppError('Attach at least one file.', {
+          statusCode: 400,
+          code: 'NO_FILES',
+          expose: true,
+        });
+      }
+
+      const parsedType = z.enum(VERIFICATION_DOC_TYPES).safeParse(fields.docType);
+      const docType = parsedType.success ? parsedType.data : 'other';
+      const actorName = ctx.userName || ctx.userId;
+      for (const file of files) {
+        await documentService.upload(
+          ctx,
+          id,
+          {
+            docType,
+            label: fields.label,
+            fileName: file.name,
+            mime: file.mime,
+            buffer: file.buffer,
+            fulfilsRequestId: fields.fulfilsRequestId,
+          },
+          actorName,
+        );
+      }
+      await auditFromContext(ctx, {
+        action: 'verification.flow.documents_uploaded',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { docType, fileCount: files.length, byDesk: true },
+      });
+      // A document can complete the intake, so the desk gets the re-evaluated case back rather
+      // than having to refetch to learn the gate opened.
+      return reply.code(201).send(await deskService.detail(ctx, id));
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/verification/flow/cases/:id/principals',
+    auth,
+    async (request, reply) => {
+      const ctx = requireVerificationWrite(request);
+      const { id } = idParams.parse(request.params);
+      // Same destructure as the Sales route: `ownershipPct` validates as a number but stores as
+      // numeric text, so spreading it would let the number win over the conversion.
+      const { ownershipPct, ...body } = deskPrincipalBody.parse(request.body ?? {});
+      await applicationService.addPrincipal(ctx, id, {
+        ...body,
+        ...(ownershipPct === undefined ? {} : { ownershipPct: String(ownershipPct) }),
+      });
+      await auditFromContext(ctx, {
+        action: 'verification.flow.principal_added',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { byDesk: true },
+      });
+      return reply.code(201).send(await deskService.detail(ctx, id));
+    },
+  );
+
+  app.delete<{ Params: { id: string; principalId: string } }>(
+    '/verification/flow/cases/:id/principals/:principalId',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id, principalId } = deskPrincipalParams.parse(request.params);
+      await applicationService.removePrincipal(ctx, id, principalId);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.principal_removed',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { principalId, byDesk: true },
+      });
+      return deskService.detail(ctx, id);
+    },
+  );
+
   app.post<{ Params: { id: string; phase: string } }>(
     '/verification/flow/cases/:id/phases/:phase/decision',
     auth,
@@ -373,9 +532,21 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
 
   // ---- policy ----
 
+  /**
+   * Underwriting policy, plus WHO the Verification agent is.
+   *
+   * The owner rides along here because this is the one call both desk surfaces already make — the
+   * queue and the case view each load it, cached for an hour — and because there is nothing
+   * per-case to project: no `decided_by`, no case-event actor, `distribute_type: 'shared'`. One
+   * configured agent owns every case, so it is desk config, not row data.
+   */
   app.get('/verification/flow/policy', auth, async (request) => {
     const ctx = requireVerificationRead(request);
-    return verificationPolicyRepo.get(ctx);
+    const [policy, verificationOwner] = await Promise.all([
+      verificationPolicyRepo.get(ctx),
+      resolveVerificationCaseOwner(),
+    ]);
+    return { ...policy, verificationOwner };
   });
 
   app.post(

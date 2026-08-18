@@ -1,0 +1,3 @@
+#!/bin/sh
+# Requires: git config core.hooksPath .githooks
+exec "$(dirname "$0")/../scripts/git-pre-push.sh" "$@"

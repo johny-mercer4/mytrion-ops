@@ -55,7 +55,7 @@ export interface ReferralBonusSpec {
   zohoPicklistValue: string;
 }
 
-/** Type 1 — Gallons (Legacy): $0.01 per eligible gallon, every month, to the parent. */
+/** Type 1 — Gallons (Legacy): $0.01 per In Station eligible gallon, every month, to the parent. */
 const GALLONS_LEGACY: ReferralBonusSpec = {
   type: 'gallons_legacy',
   ordinal: 1,
@@ -69,18 +69,18 @@ const GALLONS_LEGACY: ReferralBonusSpec = {
 };
 
 /**
- * Type 2 — Swipes (Legacy): $50 per unique NEW CARD, every month, to the parent.
+ * Type 2 — Swipes (Legacy): $50 per card whose first eligible fuel lands in the month.
  *
- * THE PROGRAM DEFINES THE SWIPE — not the Sales Mytrion dashboard. Per the calculation spec: "a card
- * qualifies as a new swipe in a given month only via its FIRST transaction that month — further
- * transactions on the same card in the same month do not generate additional swipe bonuses." So it is
- * one count per unique card per month, and it RECURS: a card fuelling in March and April is a swipe in
- * both.
+ * Billing 2026-08 (Al Aziz REF-000322 / Logixpress 5804841): July is 8 new swipes, which is the
+ * first-use count on the parent fleet plus the referred child deal — not the peak-to-date of
+ * monthly distinct-card counts (that rule paid 0 because July's 16 cards did not beat May/June's
+ * 17). Station type does not apply; In Station filters gallons only.
  *
- * This used to be defined as the dashboard's `new_cards_*` metric (a card's FIRST-EVER appearance),
- * which paid a referrer $50 once per card per LIFETIME instead of per month — roughly a 6x
- * under-count. The dashboard is a separate surface with its own definitions (its `swipes_*` field is
- * `count(distinct transaction_id)`, i.e. per fill-up) and neither of its metrics governs this program.
+ *   swipes(window) = count of cards whose min(eligible transaction_date) is inside the window
+ *
+ * Rate is still $50 per swipe, fuel is still ULSD+ULSR. This matches the Sales dashboard's
+ * `new_cards_*` idea on the bonus fuel set. It is not `count(distinct transaction_id)` and not
+ * "cards used this month".
  */
 const SWIPES_LEGACY: ReferralBonusSpec = {
   type: 'swipes_legacy',

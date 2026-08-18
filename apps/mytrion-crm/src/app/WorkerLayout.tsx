@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom';
-import { UserContextProvider } from '../context/UserContextProvider';
+import { EffectiveUserProvider, UserContextProvider } from '../context/UserContextProvider';
 import { ImpersonationProvider } from '../context/ImpersonationProvider';
 import { RingCentralPhone } from '../components/ringcentral/RingCentralPhone';
 import { useViewportInset } from '../hooks/useViewportInset';
@@ -21,8 +21,10 @@ export function WorkerLayout() {
   return (
     <UserContextProvider>
       <ImpersonationProvider>
-        <Outlet />
-        <RingCentralPhone />
+        <EffectiveUserProvider>
+          <Outlet />
+          <RingCentralPhone />
+        </EffectiveUserProvider>
       </ImpersonationProvider>
     </UserContextProvider>
   );

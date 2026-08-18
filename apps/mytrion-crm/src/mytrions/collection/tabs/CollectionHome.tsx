@@ -1,12 +1,16 @@
+import { useCallback } from 'react';
 import { ArrowRight, Home, LayoutGrid, Sheet } from 'lucide-react';
+import { listArrayReports, listCollectionCases } from '@/api/collection';
+import { KpiGrid, KpiTile } from '../../_shared/page';
+import { useCachedLoad } from '../../_shared/swrCache';
 import { COLLECTION_TABS, type CollectionTabId } from '../collectionNav';
+import { money } from '../collectionFormat';
 
 /**
  * Collection → Home. The landing and launcher.
  *
- * No figure row: every number a collections overview would want (open cases, amount in recovery,
- * placements with Array) depends on tabs that have no live source yet. A row of em-dashes is
- * scaffolding pretending to be a dashboard, so it waits until there is something real to count.
+ * Figures come from the same list endpoints the tabs use (limit 1) so the tiles cannot disagree
+ * with the desks they open.
  */
 const JUMP_ICON: Record<CollectionTabId, typeof Home> = {
   home: Home,
@@ -16,9 +20,18 @@ const JUMP_ICON: Record<CollectionTabId, typeof Home> = {
 
 export function CollectionHome({ onOpen }: { onOpen: (tab: CollectionTabId) => void }) {
   const jumps = COLLECTION_TABS.filter((t) => t.id !== 'home');
+  const loadCases = useCallback(() => listCollectionCases({ limit: 1 }), []);
+  const loadArray = useCallback(() => listArrayReports({ limit: 1 }), []);
+  const cases = useCachedLoad('collection:cases:home', loadCases);
+  const reports = useCachedLoad('collection:array:home', loadArray);
 
   return (
     <div className="co-page">
+      <KpiGrid>
+        <KpiTile label="Open cases" value={String(cases.data?.aggregates.open ?? '—')} />
+        <KpiTile label="Remaining debt" value={money(cases.data?.aggregates.remainingDebt)} />
+        <KpiTile label="Array tradelines" value={String(reports.data?.aggregates.total ?? '—')} />
+      </KpiGrid>
       <div className="co-hero">
         <div className="co-hero-glow" />
         <div className="co-hero-inner">

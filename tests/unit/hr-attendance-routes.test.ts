@@ -83,6 +83,7 @@ vi.mock('../../src/repos/hrEmployeeRepo.js', () => ({
     listByReportingTo: vi.fn(async () => []),
     listByDepartmentIds: vi.fn(async () => []),
     list: vi.fn(async () => []),
+    count: vi.fn(async () => 0),
   },
 }));
 
@@ -168,6 +169,35 @@ async function workerToken(profile: string): Promise<string> {
 }
 
 const bearer = (t: string): Record<string, string> => ({ authorization: `Bearer ${t}` });
+
+describe('HR attendance My Data (self)', () => {
+  it('pulls the caller’s own punches before reading, so My Data is current without a manual Refresh', async () => {
+    employees.findByZohoUserId.mockResolvedValue({ id: 'hre_self' } as never);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/me?weekOf=2026-08-05',
+      headers: bearer(await workerToken('Field Agent')),
+    });
+    expect(res.statusCode).toBe(200);
+    // Scoped to ONE person (their id in the options) — never the whole-window sweep the page load avoids.
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), '2026-08-03', '2026-08-09', {
+      employeeId: 'hre_self',
+    });
+    expect(res.json()).toMatchObject({ employeeId: 'hre_self', from: '2026-08-03', to: '2026-08-09' });
+  });
+
+  it('still serves stored attendance when the warehouse pull fails', async () => {
+    employees.findByZohoUserId.mockResolvedValue({ id: 'hre_self' } as never);
+    syncMock.mockRejectedValueOnce(new Error('DWH busy'));
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/me?weekOf=2026-08-05',
+      headers: bearer(await workerToken('Field Agent')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ employeeId: 'hre_self' });
+  });
+});
 
 describe('HR attendance webhook', () => {
   it('rejects missing secret', async () => {
@@ -611,18 +641,19 @@ describe('team lead attendance access', () => {
   });
 
   /**
-   * "Attendance tab only". The employee directory, departments and org structure keep
-   * `requireHrInternal`, so a team lead who reaches the HR workspace can open Attendance and nothing
-   * else — the hidden nav is a courtesy, this is the boundary.
+   * The employee directory is COMPANY-WIDE now (read-only): any internal worker may read it, a team
+   * lead included — it used to be HR-only, and this test asserted the refusal. What still holds is the
+   * attendance-specific boundary above: a lead may sync/see only their OWN team. Management stays
+   * gated (requireHrManage); the full directory-access matrix lives in hr-routes.test.ts.
    */
-  it('still refuses a team lead the employee directory', async () => {
+  it('lets a team lead read the company-wide employee directory', async () => {
     beALead();
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees',
       headers: bearer(await workerToken('Sales Rep')),
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(200);
   });
 
   it('still refuses a team lead the shift admin writes', async () => {
