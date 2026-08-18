@@ -78,12 +78,24 @@ function pageNumber(d: PageData, fallback: number): number {
   return p > 0 ? p : fallback;
 }
 
+/** How long an armed row-delete button waits for the confirm click before disarming itself. Shared
+ *  between the JS timer and the CSS countdown-ring animation (via a custom property) so the two
+ *  can never drift out of sync. */
+const TX_ROW_DELETE_ARM_MS = 4000;
+const TX_ROW_DELETE_RING_R = 10;
+const TX_ROW_DELETE_RING_CIRCUMFERENCE = 2 * Math.PI * TX_ROW_DELETE_RING_R;
+
 /**
  * Inline delete for an eligible row, without opening the detail modal — the modal's own Delete flow
  * (TransactionModal) stays as the alternate path for anyone already in there. Two clicks: the icon
- * arms itself (auto-disarms after a few seconds, so a stray click can't leave it primed forever),
- * the second click deletes. Both clicks stopPropagation — the row itself opens the modal on click,
- * and a delete click must never also do that.
+ * arms itself (auto-disarms after TX_ROW_DELETE_ARM_MS, so a stray click can't leave it primed
+ * forever — a shrinking ring around the icon shows the window instead of leaving it a guess), the
+ * second click deletes. Both clicks stopPropagation — the row itself opens the modal on click, and
+ * a delete click must never also do that.
+ *
+ * The 20px visual box stays small so the row doesn't get heavier, but the real tap target is 44px
+ * via `.tx-row-delete-btn::before` (an overhanging hit area, not a grown control) — see the
+ * modern-web-guidance skill's touch-target rule.
  */
 function RowDeleteButton({
   txId,
@@ -99,7 +111,7 @@ function RowDeleteButton({
 
   useEffect(() => {
     if (!armed) return undefined;
-    const t = window.setTimeout(() => setArmed(false), 4000);
+    const t = window.setTimeout(() => setArmed(false), TX_ROW_DELETE_ARM_MS);
     return () => window.clearTimeout(t);
   }, [armed]);
 
@@ -130,15 +142,39 @@ function RowDeleteButton({
         else setArmed(true);
       }}
     >
-      {armed ? (
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {armed && !deleting ? (
+        <svg
+          className="tx-row-delete-ring"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          style={{ '--tx-row-delete-arm-ms': `${TX_ROW_DELETE_ARM_MS}ms` } as CSSProperties}
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r={TX_ROW_DELETE_RING_R}
+            strokeDasharray={TX_ROW_DELETE_RING_CIRCUMFERENCE}
+            style={{ '--tx-row-delete-ring-circumference': TX_ROW_DELETE_RING_CIRCUMFERENCE } as CSSProperties}
+          />
+        </svg>
+      ) : null}
+      {/* key swaps the element on state change, so the pop-in animation replays each time rather
+          than trying to CSS-transition between two different path shapes. */}
+      <svg
+        key={armed ? 'confirm' : 'delete'}
+        className="tx-row-delete-icon-pop"
+        width="12"
+        height="12"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        {armed ? (
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-        </svg>
-      ) : (
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        ) : (
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 6L18 18M6 18L18 6" />
-        </svg>
-      )}
+        )}
+      </svg>
     </button>
   );
 }

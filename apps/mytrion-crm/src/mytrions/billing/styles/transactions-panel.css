@@ -323,8 +323,11 @@
 }
 
 /* Inline row delete (Chase, unmapped, permitted) — icon-only so the row stays one line. Armed
-   state mirrors the modal's own Delete confirm tone (var(--danger-*)) rather than a fresh color. */
+   state mirrors the modal's own Delete confirm tone (var(--danger-*)) rather than a fresh color.
+   The 20px visual box stays small; the real tap target is 44px via the overhanging ::before below,
+   never by growing the control itself (a 44px box here would visibly bloat the whole row). */
 .bm-root .tx-row-delete-btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -337,20 +340,65 @@
     border: 1px solid transparent;
     border-radius: var(--radius-sm, 4px);
     cursor: pointer;
-    transition: color 130ms ease, border-color 130ms ease, background 130ms ease;
+    transition: color 130ms ease, border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;
+}
+.bm-root .tx-row-delete-btn::before {
+    content: '';
+    position: absolute;
+    inset: -12px;
 }
 .bm-root .tx-row-delete-btn:hover:not(:disabled) {
     color: var(--danger-text);
     border-color: var(--danger-border);
     background: var(--danger-bg);
 }
+.bm-root .tx-row-delete-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--billing-accent);
+}
 .bm-root .tx-row-delete-btn.tx-row-delete-armed {
     color: var(--danger-text);
     border-color: var(--danger-border);
     background: var(--danger-bg);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-text) 20%, transparent);
 }
 .bm-root .tx-row-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .bm-root .tx-row-delete-btn svg { width: 12px; height: 12px; }
+
+/* A fresh element per icon (see the `key` in RowDeleteButton) plays this pop once on arm/disarm
+   rather than trying to CSS-transition between two different path shapes. Transform only animates
+   here, never sits at rest — see the composited-layer trap note in modern-web-guidance. */
+.bm-root .tx-row-delete-icon-pop {
+    animation: tx-row-delete-pop 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes tx-row-delete-pop {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Countdown ring — the armed window (TX_ROW_DELETE_ARM_MS) is otherwise a silent guess. Depletes
+   over the same duration as the JS disarm timer via a shared CSS custom property, so the two can
+   never drift apart. Reduced-motion users still get the full state change (icon + colour), which
+   carries the meaning on its own — the ring is a bonus cue, never the only signal (global.css's
+   `prefers-reduced-motion` rule already zeroes this animation's duration app-wide). */
+.bm-root .tx-row-delete-ring {
+    position: absolute;
+    inset: -4px;
+    pointer-events: none;
+    transform: rotate(-90deg);
+}
+.bm-root .tx-row-delete-ring circle {
+    fill: none;
+    stroke: var(--danger-text);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    animation: tx-row-delete-countdown linear forwards;
+    animation-duration: var(--tx-row-delete-arm-ms, 4000ms);
+}
+@keyframes tx-row-delete-countdown {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: var(--tx-row-delete-ring-circumference, 63); }
+}
 
 .bm-root .tx-carrier-badge {
     display: inline-flex;
