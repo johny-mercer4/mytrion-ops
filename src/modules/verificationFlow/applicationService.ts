@@ -397,7 +397,7 @@ export const applicationService = {
 
       // A company with no MC/DOT goes straight to a human, per the SOP, rather than down a flow
       // with two phases it can never clear.
-      if (requiresManagerReviewAtIntake(detail.case.applicantType)) {
+      if (requiresManagerReviewAtIntake(detail.case)) {
         const updated = await verificationFlowRepo.applyTransition(ctx, caseId, {
           phaseCode: 'p1_intake',
           statusCode: VERIFICATION_STATUS.managerReview,

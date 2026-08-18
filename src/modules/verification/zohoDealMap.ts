@@ -117,6 +117,28 @@ export function buildDealPollCoql(watermark: string, limit = ZOHO_DEAL_POLL_LIMI
   );
 }
 
+/**
+ * Authority numbers, with Zoho's sentinels stripped.
+ *
+ * `Deals.MC` is a TEXT field and the sales floor types placeholders into it. Live data: 13 of 26
+ * cases carry the literal `No assigned number`, one carries `MC`, others carry `DOT`, and `DOT1`
+ * arrives as the integer `0`. Every one of those is non-empty, so a bare truthiness check reads
+ * them as authority — which is how ten cases with no MC and no USDOT were typed `carrier`, and how
+ * "MC number" counted as PRESENT in the intake completeness check (`intake.ts` only asks whether
+ * the string is non-blank).
+ *
+ * A real MC or USDOT is digits. Anything else is somebody saying "there isn't one".
+ */
+export function authorityNumber(value: unknown): string {
+  const raw = lookupName(value) || (value == null ? '' : String(value).trim());
+  const digits = raw.replace(/\D/g, '');
+  // No digits at all is a sentinel ("No assigned number", "DOT", "MC", "N/A"); all-zero is Zoho's
+  // empty integer. Anything else is kept as-is — a short authority is old, not fake, and it is not
+  // this function's business to judge how many digits a real MC has.
+  if (digits === '' || Number(digits) === 0) return '';
+  return digits;
+}
+
 function lookupName(value: unknown): string {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const rec = value as Record<string, unknown>;
@@ -167,6 +189,9 @@ export interface MappedZohoDeal {
   dot: string;
   mc: string;
   truckCount: string;
+  cardsRequested: string;
+  secondaryEmail: string;
+  alternativeContact: string;
   businessType: string;
   zohoStage: string;
   applicationStatus: string;
@@ -214,8 +239,19 @@ export function mapZohoDeal(record: Record<string, unknown>): MappedZohoDeal {
     zip: field(record, 'Zip_Code', 'Zip'),
     dateOfBirth: field(record, 'Birth_Of_Date').slice(0, 10),
     // Deals COQL cannot select `DOT` (400). Hydrated records use DOT1.
-    dot: field(record, 'DOT1', 'DOT'),
-    mc: field(record, 'MC', 'emc'),
+    // Sentinels stripped here, at the boundary — so nothing downstream has to know that
+    // `MC = 'No assigned number'` means the opposite of what a non-empty string usually means.
+    dot: authorityNumber(record.DOT1 ?? record.DOT),
+    mc: authorityNumber(record.MC ?? record.emc),
+    /**
+     * `Cards_Requested` is populated on every live Deal (2, 5, 4, 1, 10, …) and was never read, so
+     * "Number of fuel cards requested" sat on EVERY case's missing list and the roster showed a
+     * dash. It also decides the WEX route, which is why an unread field changed underwriting.
+     */
+    cardsRequested: field(record, 'Cards_Requested'),
+    /** Contact fallbacks — the primary fields are blank on a fair number of Deals. */
+    secondaryEmail: field(record, 'Secondary_Email'),
+    alternativeContact: field(record, 'Alternative_Contact'),
     truckCount: field(record, 'Trucks1', 'Number_of_Trucks'),
     businessType: field(record, 'Business_Type', 'Type_of_Business'),
     zohoStage: field(record, 'Stage'),

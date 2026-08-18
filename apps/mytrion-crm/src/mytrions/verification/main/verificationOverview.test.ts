@@ -39,6 +39,8 @@ function row(over: Partial<VerificationCaseRow> & { id: string }): VerificationC
     submittedAt: daysAgo(1),
     ownerName: 'Daniel Okoye',
     ownerZohoUserId: null,
+    zohoOwnerId: 'zoho-deal-owner',
+    zohoOwnerName: 'Daniel Okoye',
     closedAt: null,
     createdAt: daysAgo(1),
     updatedAt: daysAgo(1),

@@ -38,6 +38,7 @@ import {
   saveRiskAssessment,
   setScreeningVerdict,
   submitFinalDecision,
+  uploadDeskDocuments,
   type VerificationDeskDetail,
   type VerificationPhaseOutcome,
   type VerificationRailPhase,
@@ -56,7 +57,10 @@ import {
   PHASE_STATE_LABEL,
   routeLabel,
   routeOf,
+  salesOwnerLabel,
+  salesOwnerName,
   STATUS_LABEL,
+  verificationOwnerName,
 } from './applicantsModel';
 import './applicants.css';
 import './applicantsCase.css';
@@ -185,6 +189,17 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   const canAct = !locked && !closed && !busy;
   const name = caseName(c);
   const missing = c.intakeMissing?.length ?? 0;
+  /**
+   * Who the desk chases for intake — the Sales agent, i.e. the DEAL's owner.
+   *
+   * Falls back to the department when Zoho has nobody on the Deal, because "Waiting on Unassigned in
+   * Zoho" is not a sentence. It never falls back to `ownerName`: that is the row's assignee, which is
+   * the Verification desk's own agent on an unowned Deal, and telling a reviewer to chase themselves
+   * is how the wrong person got named in the first place.
+   */
+  const chaseTarget = salesOwnerName(c) ?? 'Sales';
+  /** The credit agent on this case — the row's own, else the desk's configured one. */
+  const deskAgent = verificationOwnerName(c, policy.data?.verificationOwner?.name ?? null);
   const statusText = STATUS_LABEL[c.statusCode] ?? c.statusCode;
   const chip = statusChipFor(c.statusCode, locked);
   const state = active.status;
@@ -247,16 +262,27 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           </div>
 
           <div className="va-case-meta">
-            {/* The Sales agent who owns the case, as an identified person rather than a word in an
-                11px corner line. Every red case on this desk is waiting on this human — they are
-                who the reviewer picks up the phone to, so they get a name, a face and a label. */}
+            {/* BOTH sides of the case, as identified people rather than words in an 11px corner
+                line. Every red case is waiting on the Sales agent — they are who the reviewer picks
+                up the phone to — and the second chip answers "who on this desk has it", which is the
+                pool until a credit agent is actually assigned. Two chips and not one label: on the
+                rows where they differ, one name under one heading is what caused the confusion. */}
             <div className="va-case-owner">
-              <Avatar initials={personInitials(c.ownerName)} size="md" />
+              <Avatar initials={personInitials(salesOwnerName(c) ?? '?')} size="md" />
               <span className="va-case-owner-text">
                 <span className="t-eyebrow">Sales owner</span>
-                <span className="va-case-owner-name">{c.ownerName}</span>
+                <span className="va-case-owner-name">{salesOwnerLabel(c)}</span>
               </span>
             </div>
+            {deskAgent ? (
+              <div className="va-case-owner" data-desk="true">
+                <Avatar initials={personInitials(deskAgent)} size="md" />
+                <span className="va-case-owner-text">
+                  <span className="t-eyebrow">Verification agent</span>
+                  <span className="va-case-owner-name">{deskAgent}</span>
+                </span>
+              </div>
+            ) : null}
             <div className="va-case-meta-line">
               <span>
                 Opened{' '}
@@ -287,8 +313,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 the desk should not have to scan the header to find out who to chase. */}
             <span className="va-banner-title">
               {missing > 0
-                ? `Waiting on ${c.ownerName} — ${missing} item${missing === 1 ? '' : 's'} outstanding`
-                : `Waiting on ${c.ownerName} — intake not started`}
+                ? `Waiting on ${chaseTarget} — ${missing} item${missing === 1 ? '' : 's'} outstanding`
+                : `Waiting on ${chaseTarget} — intake not started`}
             </span>
             <span className="va-banner-body">
               Not decidable yet. You can still correct the application below.
@@ -373,6 +399,10 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 requestDocuments(caseId, { phaseCode: active.code, items, ...(note ? { note } : {}) }),
               )
             }
+            onUpload={(file, docType) => void run(() => uploadDeskDocuments(caseId, [file], { docType }))}
+            /* Locked is when the desk MOST needs to attach — a locked case is one waiting on
+               documents. Only a decided case refuses. */
+            canAttach={!closed && !busy}
           />
         </div>
 

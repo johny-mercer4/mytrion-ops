@@ -27,6 +27,8 @@ import {
   VERIFICATION_DOC_TYPES,
 } from '../../db/schema/verification_flow.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { findBrokerSnapshot } from '../../integrations/dwhBrokerSnapshot.js';
+import { suggestionsFor } from '../../modules/verificationFlow/prefill.js';
 import { buildCallerContext } from './callerIdentity.js';
 import { requireDepartment } from './helpers.js';
 
@@ -104,7 +106,8 @@ export const patchBody = z.object({
   plaidConnected: z.boolean().optional(),
 });
 
-const principalBody = z.object({
+/** Shared with the Verification desk's own principal route — one shape, two doors. */
+export const principalBody = z.object({
   fullName: z.string().trim().min(1).max(200),
   role: z.string().trim().max(100).optional(),
   ownershipPct: z.coerce.number().min(0).max(100).optional(),
@@ -143,6 +146,62 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
     const query = listQuery.parse(request.query);
     return applicationService.listForAgent(ctx, query);
   });
+
+  /**
+   * Carrier records the warehouse already holds for this applicant — a PREFILL SUGGESTION.
+   *
+   * THE LOOKUP KEYS COME FROM THE CASE, never from the request. That is the whole security shape
+   * of this route: a client that could pass its own phone or DOT would turn a Sales endpoint into
+   * a free lookup tool over half a million carrier records. The caller supplies a case id they can
+   * already read, and the server decides what to match on.
+   *
+   * Nothing is written. The response says what the warehouse has and which key matched it; the
+   * agent applies the fields they want. About a quarter of cases match, so an empty result is the
+   * ordinary case and not an error.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/verification/applications/:id/prefill',
+    auth,
+    async (request) => {
+      request.ctx = await buildCallerContext(request, {});
+      const ctx = requireSales(request);
+      const { id } = idParams.parse(request.params);
+      const detail = await applicationService.get(ctx, id);
+      const c = detail.case;
+      try {
+        const match = await findBrokerSnapshot({
+          phones: [c.phone, (c as { cell?: string | null }).cell],
+          dot: c.dot,
+          email: c.email,
+        });
+        return {
+          match,
+          suggestions: match
+            ? suggestionsFor(
+                {
+                  applicantType: c.applicantType,
+                  dot: c.dot,
+                  phone: c.phone,
+                  email: c.email,
+                  businessAddress: c.businessAddress,
+                  residentialAddress: c.residentialAddress,
+                  trucksCount: c.trucksCount,
+                  principalCount: detail.principals.length,
+                },
+                match,
+              )
+            : [],
+        };
+      } catch (err) {
+        throw new AppError('Data warehouse request failed', {
+          statusCode: 502,
+          code: 'DWH_ERROR',
+          cause: err,
+          expose: true,
+        });
+      }
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/verification/applications/:id', auth, async (request) => {
     const ctx = requireSales(request);

@@ -65,6 +65,9 @@ const DOC_LABEL: Record<string, string> = Object.fromEntries(
   DOC_TYPES.map((d) => [d.value, d.label]),
 );
 
+/** The same list the request picker offers — one vocabulary for asking and for attaching. */
+const DOC_TYPE_OPTIONS = DOC_TYPES.map((d) => ({ value: d.value, label: d.label }));
+
 function sizeOf(bytes: number | null): string | null {
   if (bytes == null) return null;
   if (bytes < 1024) return `${bytes} B`;
@@ -115,6 +118,8 @@ export function CaseAside({
   canAct,
   busy,
   onRequestDocs,
+  onUpload,
+  canAttach,
 }: {
   detail: VerificationDeskDetail;
   caseId: string;
@@ -123,8 +128,20 @@ export function CaseAside({
   /** A request is in flight — reported on the control, not folded into `canAct`. */
   busy: boolean;
   onRequestDocs: (items: Array<{ docType: VerificationDocType }>, note?: string) => void;
+  /** The desk attaching a file itself — see the Attach control below. */
+  onUpload: (file: File, docType: VerificationDocType) => void;
+  /**
+   * Attaching is NOT `canAct`.
+   *
+   * `canAct` is false while the case is locked — which is exactly when the desk most needs to file
+   * something, because a locked case is one waiting on documents. Correcting intake is already
+   * allowed while locked for the same reason ("you can still correct the application below"), and
+   * attaching is the same kind of act. Only a DECIDED case refuses.
+   */
+  canAttach: boolean;
 }) {
   const [asking, setAsking] = useState(false);
+  const [attachType, setAttachType] = useState<VerificationDocType>('bank_statement');
   const [docType, setDocType] = useState<VerificationDocType>('bank_statement');
 
   const checklist = CHECKLISTS[phase.code] ?? [];
@@ -248,16 +265,44 @@ export function CaseAside({
             <p className="va-aside-note">Parks the case until they land.</p>
           </div>
         ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            icon="cloud_upload"
-            fullWidth
-            disabled={!canAct}
-            onClick={() => setAsking(true)}
-          >
-            Request a document
-          </Button>
+          <div className="va-doc-actions">
+            {/* ATTACH sits beside REQUEST because the desk does both. A reviewer often already has
+                the file — Sales emailed the licence scan, or the carrier sent it to the desk — and
+                until this existed the only way to file it was to ask Sales to upload what the
+                reviewer was looking at. The same service, gate re-evaluation and audit trail as the
+                Sales upload; only the door differs. */}
+            <label className="va-doc-attach" data-disabled={!canAttach}>
+              <Icon name="attach_file" size="sm" />
+              Attach a file
+              <input
+                type="file"
+                disabled={!canAttach}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onUpload(file, attachType);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            <Select
+              label="Type"
+              size="sm"
+              value={attachType}
+              onChange={(v) => setAttachType((v ?? 'other') as VerificationDocType)}
+              disabled={!canAttach}
+              options={DOC_TYPE_OPTIONS}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="cloud_upload"
+              fullWidth
+              disabled={!canAct}
+              onClick={() => setAsking(true)}
+            >
+              Request a document
+            </Button>
+          </div>
         )}
       </section>
 

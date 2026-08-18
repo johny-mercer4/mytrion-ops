@@ -99,11 +99,41 @@ describe('Phase 5 review routing', () => {
   });
 });
 
-describe('company without MC/DOT', () => {
-  it('goes to Manager Review at intake', () => {
-    expect(requiresManagerReviewAtIntake('company')).toBe(true);
-    expect(requiresManagerReviewAtIntake('carrier')).toBe(false);
-    expect(requiresManagerReviewAtIntake('owner_operator')).toBe(false);
+/**
+ * The rule reads the CASE, not which radio button was clicked. It used to be
+ * `applicantType === 'company'` — a type the Zoho poller assigned itself from a name regex — which
+ * was wrong in both directions: a `company` row WITH an MC still went to a human, and a `carrier`
+ * row with an empty MC never could. Nothing produces `company` any more, so as a type test the
+ * rule would now fire for nothing at all.
+ */
+describe('company without MC/DOT goes to Manager Review', () => {
+  const co = (over: Record<string, unknown> = {}) =>
+    ({ applicantType: 'carrier', mc: null, dot: null, ...over }) as Parameters<
+      typeof requiresManagerReviewAtIntake
+    >[0];
+
+  it('routes a company with no authority on file', () => {
+    expect(requiresManagerReviewAtIntake(co())).toBe(true);
+    expect(requiresManagerReviewAtIntake(co({ applicantType: 'company' }))).toBe(true);
+  });
+
+  it('leaves a company that HAS authority on the normal path', () => {
+    expect(requiresManagerReviewAtIntake(co({ mc: '1234567' }))).toBe(false);
+    expect(requiresManagerReviewAtIntake(co({ dot: '3757749' }))).toBe(false);
+    // Either one is enough — the SOP says "without MC/DOT", not "without both".
+    expect(requiresManagerReviewAtIntake(co({ mc: '1234567', dot: null }))).toBe(false);
+  });
+
+  it('reads Zoho’s and Sales’ sentinels as NO authority', () => {
+    // A rep who writes "none" in the MC box has said there is no authority.
+    for (const sentinel of ['No assigned number', 'DOT', 'none', 'N/A', '0', '-', '']) {
+      expect(requiresManagerReviewAtIntake(co({ mc: sentinel, dot: sentinel })), sentinel).toBe(true);
+    }
+  });
+
+  it('never routes an owner-operator — Flow A has no authority to begin with', () => {
+    expect(requiresManagerReviewAtIntake(co({ applicantType: 'owner_operator' }))).toBe(false);
+    expect(requiresManagerReviewAtIntake(co({ applicantType: null }))).toBe(false);
   });
 });
 

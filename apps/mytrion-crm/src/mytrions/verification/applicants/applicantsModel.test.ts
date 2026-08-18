@@ -53,6 +53,8 @@ function row(over: Partial<VerificationCaseRow> & { id: string }): VerificationC
     submittedAt: daysAgo(1),
     ownerName: 'Daniel Okoye',
     ownerZohoUserId: null,
+    zohoOwnerId: 'zoho-deal-owner',
+    zohoOwnerName: 'Daniel Okoye',
     closedAt: null,
     createdAt: daysAgo(1),
     updatedAt: daysAgo(1),
@@ -188,6 +190,55 @@ describe('blocked-on sentence', () => {
   it('says intake has not started rather than "0 items outstanding"', () => {
     const legacy = row({ id: 'a', verificationProcess: false, createdAt: daysAgo(1), intakeMissing: [] });
     expect(blockedOn(legacy, DECISION_SLA_DAYS, NOW)).toBe('Intake not started');
+  });
+});
+
+/**
+ * The queue's owner column, its search and its sort all mean the SALES agent — the Deal's owner.
+ * Reading `ownerName` instead named the Verification desk's own credit agent on any case whose Deal
+ * arrived unowned in Zoho.
+ */
+describe('the queue reads the Sales owner, not the assignee', () => {
+  const reassigned = row({
+    id: 'a',
+    ownerName: 'Sarvar Asqarov',
+    zohoOwnerName: 'Robert Toms',
+    zohoOwnerId: '6227679000138228393',
+  });
+
+  it('searches the Deal owner — an agent typing their own name gets their cases', () => {
+    const q = (search: string) =>
+      selectRows([reassigned], {
+        scope: 'open',
+        search,
+        filters: EMPTY_FILTERS,
+        sortKey: 'age',
+        sortDir: 'desc',
+        wexCardCutoff: null,
+        slaDays: DECISION_SLA_DAYS,
+        now: NOW,
+      });
+    expect(q('robert')).toHaveLength(1);
+    // The assignee must NOT match, or a credit agent's name pulls up Sales' work.
+    expect(q('sarvar')).toHaveLength(0);
+  });
+
+  it('sorts by the Sales owner instead of silently falling through to age', () => {
+    const rows = [
+      row({ id: 'z', zohoOwnerName: 'Zara Ali', createdAt: daysAgo(9) }),
+      row({ id: 'a', zohoOwnerName: 'Adam Fell', createdAt: daysAgo(1) }),
+    ];
+    const sorted = selectRows(rows, {
+      scope: 'open',
+      search: '',
+      filters: EMPTY_FILTERS,
+      sortKey: 'owner',
+      sortDir: 'asc',
+      wexCardCutoff: null,
+      slaDays: DECISION_SLA_DAYS,
+      now: NOW,
+    });
+    expect(sorted.map((r) => r.id)).toEqual(['a', 'z']);
   });
 });
 

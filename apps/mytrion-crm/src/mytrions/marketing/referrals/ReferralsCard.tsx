@@ -25,7 +25,12 @@ import { ReferralDetailModal } from './ReferralDetailModal';
 import { ReferralMonthField } from './ReferralMonthField';
 import { downloadReferralCsv, downloadReferralExcel } from './referralExport';
 import { buildReferralCards, cardMatchesFilter, type ReferralCardModel } from './referralModel';
-import { clampReferralRange, currentPeriod } from './referralPeriod';
+import {
+  clampReferralRange,
+  currentPeriodFrom,
+  currentPeriodTo,
+  rangeForMonth,
+} from './referralPeriod';
 import './referrals.css';
 
 const PAGE_SIZE = 24;
@@ -46,13 +51,13 @@ const TYPE_META: Record<
     label: 'Legacy gallons',
     className: 'mg-rf-tone-cyan',
     Icon: Fuel,
-    caption: '$0.01 / gallon · monthly',
+    caption: '$0.01 / In Station gallon · monthly',
   },
   'Swipes (Legacy)': {
     label: 'Legacy swipes',
     className: 'mg-rf-tone-violet',
     Icon: CreditCard,
-    caption: '$50 / unique card · monthly',
+    caption: '$50 / new swipe · monthly',
   },
   'Gallons (Parent)': {
     label: 'Parent milestone',
@@ -122,9 +127,9 @@ function ReferralCard({
   );
   const activityLabel =
     preview?.bonusType === 'swipes_legacy'
-      ? 'Unique cards'
+      ? 'New swipes'
       : preview?.recurring
-        ? 'Eligible gallons'
+        ? 'In Station gallons'
         : 'Cumulative gallons';
   return (
     <button
@@ -212,8 +217,8 @@ function ReferralCard({
 }
 
 export function ReferralsCard({ onBack }: { onBack?: () => void }) {
-  const [periodFrom, setPeriodFrom] = useState(currentPeriod);
-  const [periodTo, setPeriodTo] = useState(currentPeriod);
+  const [periodFrom, setPeriodFrom] = useState(currentPeriodFrom);
+  const [periodTo, setPeriodTo] = useState(currentPeriodTo);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
@@ -249,7 +254,9 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
   const rangeReady =
     (data?.periodFrom ?? data?.periodMonth) === periodFrom &&
     (data?.periodTo ?? data?.periodMonth) === periodTo;
-  const exportReady = Boolean(data && model && rangeReady) && !loading && !revalidating;
+  // Refresh / period change / live calc: one skeleton, never stale cards under "Calculating…".
+  const calculating = loading || revalidating || Boolean(data && !rangeReady);
+  const exportReady = Boolean(data && model && rangeReady) && !calculating;
 
   useEffect(() => setPage(1), [filter, normalizedQuery, periodFrom, periodTo]);
   useEffect(() => {
@@ -305,11 +312,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
         </div>
         <div className="mg-head-actions">
           <span className="mg-cachedat">
-            {revalidating
-              ? 'Refreshing…'
-              : cachedAt
-                ? `Updated ${formatCachedAt(cachedAt)}`
-                : '\u00a0'}
+            {calculating ? '\u00a0' : cachedAt ? `Updated ${formatCachedAt(cachedAt)}` : '\u00a0'}
           </span>
           {/*
             Always MOUNTED, hidden until the calculation is live — the same trick `mg-cachedat`
@@ -322,13 +325,23 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           */}
           <span
             className="mg-rf-live-badge"
-            data-pending={data && rangeReady ? undefined : 'true'}
-            aria-hidden={data && rangeReady ? undefined : true}
+            data-pending={calculating ? 'true' : undefined}
+            aria-hidden={calculating ? true : undefined}
           >
             <Calculator size={13} />
-            {revalidating ? 'Calculating…' : 'Live calculation'}
+            Live calculation
           </span>
           <div className="mg-rf-range">
+            <ReferralMonthField
+              label="Month"
+              granularity="month"
+              value={periodFrom}
+              onChange={(monthStart) => {
+                const nextRange = rangeForMonth(monthStart);
+                setPeriodFrom(nextRange.from);
+                setPeriodTo(nextRange.to);
+              }}
+            />
             <ReferralMonthField
               label="From"
               value={periodFrom}
@@ -360,9 +373,9 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
               forceRefreshRef.current = true;
               reload();
             }}
-            disabled={loading || revalidating}
+            disabled={calculating}
           >
-            <RefreshCw size={15} className={revalidating && !loading ? 'mg-spin' : ''} />
+            <RefreshCw size={15} />
             Refresh
           </button>
           <div className="mg-rf-export" aria-label="Export complete calculation">
@@ -399,12 +412,11 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       </header>
       {exportError ? <div className="mg-rf-export-error">{exportError}</div> : null}
 
-      {/* Cold open: ONE skeleton covering the KPI row, the controls and the grid together. Rendering
-          the real (all-zero) controls panel above a grid-only placeholder was a second loading
-          state, and the KPI row then appeared from nothing and pushed everything down. */}
-      {loading && !data ? <ReferralsSkeleton /> : null}
+      {/* Cold open AND refresh/recalc: ONE skeleton. Stale July cards under "Calculating…" made
+          period changes and search look like the wrong roster. Header stays; body is the skeleton. */}
+      {calculating ? <ReferralsSkeleton /> : null}
 
-      {data ? (
+      {!calculating && data ? (
         <section className="mg-rf-kpis" aria-label="Referral summary">
           <div>
             <span className="is-violet">
@@ -426,7 +438,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
             <span className="is-emerald">
               <BadgeDollarSign size={17} />
             </span>
-            <small>{periodFrom === periodTo ? 'Payable selected month' : 'Payable selected range'}</small>
+            <small>Payable selected dates</small>
             <strong>{money(data.summary.payableAmountUsd)}</strong>
             <em>{data.summary.earned} earned awards</em>
           </div>
@@ -443,7 +455,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
 
       {/* Not `hidden`: `.mg-rf-controls` sets `display: flex`, which beats the `[hidden]` UA rule —
           the panel would have stayed on screen next to its own placeholder. */}
-      {loading && !data ? null : (
+      {calculating ? null : (
       <section className="mg-rf-controls">
         <label className="mg-rf-search">
           <Search size={16} />
@@ -471,7 +483,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       </section>
       )}
 
-      {loading && !data ? null : error && !data ? (
+      {calculating ? null : error && !data ? (
         <div className="mg-error">
           <p>{error}</p>
           <button type="button" className="mg-btn" onClick={reload}>
