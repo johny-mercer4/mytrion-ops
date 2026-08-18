@@ -32,16 +32,16 @@
   align-items: stretch;
   gap: 6px;
 }
-/* The floor belongs to the month LABEL, in the label's own character box — not to the field as a
-   fixed track. `min-width: 156px` here made the pair a width the row could not shrink below, which
-   is what `styles/breakpoints.test.ts` counts; measured, it only ever governed the short months
-   ("May 2026"), since a 156px field leaves the label 87px and "September 2026" needs 112. 9ch is the
-   same 82px budget at this face and size, so nothing that fits today starts truncating, and the
-   field can now give way when the action row runs out of room instead of forcing an overflow. */
+/* The floor belongs to the date LABEL, in the label's own character box — not to the field as a
+   fixed track. Day labels ("September 16, 2026") need ~16ch; the field still shrinks when the
+   action row runs out of room instead of forcing an overflow. */
 .mg-root .mg-rf-range .mg-rf-month {
   min-width: 0;
 }
 .mg-root .mg-rf-range .mg-rf-month-copy strong {
+  min-width: 16ch;
+}
+.mg-root .mg-rf-range .mg-rf-month[data-granularity='month'] .mg-rf-month-copy strong {
   min-width: 9ch;
 }
 .mg-root .mg-rf-month {
@@ -145,7 +145,7 @@
   border-color: color-mix(in srgb, var(--accent) 66%, var(--hz-pane-bd));
   box-shadow: none;
 }
-/* The native month picker and the search clear affordance are UA-drawn, so they follow
+/* The native date picker and the search clear affordance are UA-drawn, so they follow
    `color-scheme` rather than our tokens. Bind it to the theme instead of hardcoding dark. */
 .mg-root .mg-rf-month input,
 .mg-root .mg-rf-search input {

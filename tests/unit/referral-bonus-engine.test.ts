@@ -40,7 +40,10 @@ vi.mock('../../src/integrations/zohoCrm.js', () => ({
     },
   },
 }));
-vi.mock('../../src/integrations/dwhReferralVolume.js', () => ({ fetchReferralVolume: volumeMock }));
+vi.mock('../../src/integrations/dwhReferralVolume.js', () => ({
+  fetchReferralVolume: volumeMock,
+  fetchReferralParentCarriers: async () => new Map(),
+}));
 vi.mock('../../src/repos/referralBonusRepo.js', () => ({
   referralBonusRepo: {
     upsert: upsertMock,

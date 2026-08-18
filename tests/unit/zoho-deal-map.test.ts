@@ -125,6 +125,44 @@ describe('mapZohoDeal', () => {
     const mapped = mapZohoDeal({ id: '1', DOT1: '222', DOT: 'should-not-win' });
     expect(mapped.dot).toBe('222');
   });
+
+  /**
+   * `Deals.MC` is a TEXT field and the floor types placeholders into it. On live data 13 of 26
+   * cases carry the literal "No assigned number" and one carries "MC"; `DOT1` arrives as the
+   * integer 0. Every one is non-empty, so a truthiness check read them as AUTHORITY — which typed
+   * ten cases with no MC and no USDOT as `carrier`, and made "MC number" count as present in the
+   * intake completeness check.
+   */
+  it('strips Zoho’s authority sentinels rather than reading them as an MC/DOT', () => {
+    for (const sentinel of ['No assigned number', 'DOT', 'MC', 'N/A', 'none', '-', '']) {
+      const mapped = mapZohoDeal({ id: '1', MC: sentinel, DOT1: sentinel });
+      expect(mapped.mc, sentinel).toBe('');
+      expect(mapped.dot, sentinel).toBe('');
+    }
+  });
+
+  it('treats a zero DOT as absent — Zoho sends 0 for an empty integer', () => {
+    expect(mapZohoDeal({ id: '1', DOT1: 0 }).dot).toBe('');
+    expect(mapZohoDeal({ id: '1', DOT1: '0' }).dot).toBe('');
+  });
+
+  it('keeps a real authority, including a short historical one', () => {
+    expect(mapZohoDeal({ id: '1', MC: '999' }).mc).toBe('999');
+    expect(mapZohoDeal({ id: '1', MC: 'MC-1234567' }).mc).toBe('1234567');
+    expect(mapZohoDeal({ id: '1', DOT1: 3757749 }).dot).toBe('3757749');
+  });
+
+  it('maps the fuel-card count and the contact fallbacks', () => {
+    const mapped = mapZohoDeal({
+      id: '1',
+      Cards_Requested: 5,
+      Secondary_Email: 'ops@acme.test',
+      Alternative_Contact: '6145550110',
+    });
+    expect(mapped.cardsRequested).toBe('5');
+    expect(mapped.secondaryEmail).toBe('ops@acme.test');
+    expect(mapped.alternativeContact).toBe('6145550110');
+  });
 });
 
 describe('maxApplicationDate', () => {

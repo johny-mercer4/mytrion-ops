@@ -51,7 +51,10 @@ import {
   PHASE_SHORT,
   routeLabel,
   routeOf,
+  salesOwnerLabel,
+  salesOwnerName,
   SCOPES,
+  verificationOwnerName,
   selectRows,
   SORT_OPTIONS,
   statusLabel,
@@ -143,6 +146,8 @@ export function ApplicantsList({
 
   const rows = useMemo(() => cases.data?.items ?? [], [cases.data]);
   const wexCardCutoff = policy.data?.wexCardCutoff ?? null;
+  /** The desk's Verification agent, from the same policy load the route cutoff comes from. */
+  const deskOwner = policy.data?.verificationOwner?.name ?? null;
   // One clock for the whole screen: ages in the table, in the filters and in the "blocked on"
   // sentence must agree, and a per-cell Date.now() lets them drift mid-render.
   const now = useMemo(() => Date.now(), [cases.data]);
@@ -262,7 +267,7 @@ export function ApplicantsList({
       {
         id: 'blocked',
         header: 'Blocked on',
-        width: '13%',
+        width: '12%',
         priority: 3,
         mobile: 'secondary',
         cell: (row) => (
@@ -307,7 +312,7 @@ export function ApplicantsList({
         header: 'Limit',
         numeric: true,
         sortable: true,
-        width: '8%',
+        width: '7%',
         priority: 2,
         cell: (row) => money(row.approvedLimitAmount ?? row.requestedLimit),
       },
@@ -330,23 +335,45 @@ export function ApplicantsList({
         id: 'owner',
         header: 'Sales owner',
         sortable: true,
-        width: '16%',
+        width: '18%',
         priority: 2,
         // The NAME, not just a mark. Two initials in a circle is unreadable as an identity — the desk
         // has to know which Sales agent to chase, and hovering 17 rows to find out is not reading.
         // `xs`, not `sm`: at 1280 the column has ~126px of content box, and a 24px mark with a 8px
         // gap left too little for "Islombek Mamurov". `title` recovers the rest of a long name.
+        //
+        // BOTH owners, in two lines. The header names the first; the second labels itself, because
+        // "Sarvar Asqarov" alone under a Sales heading is exactly the confusion this column had. It
+        // costs no row height — the applicant cell beside it is already two taller lines — and the
+        // sub-line reads `Desk pool` rather than a name whenever no credit agent holds the case.
         cell: (row) => (
-          <span className="va-owner" title={row.ownerName}>
-            <Avatar initials={personInitials(row.ownerName)} size="xs" />
-            <span className="va-owner-name">{row.ownerName}</span>
+          <span className="va-owners">
+            <span className="va-owner" title={salesOwnerLabel(row)} data-empty={!salesOwnerName(row)}>
+              {salesOwnerName(row) ? (
+                <Avatar initials={personInitials(salesOwnerName(row) ?? '')} size="xs" />
+              ) : (
+                <Icon name="person" size="sm" className="va-owner-none" />
+              )}
+              <span className="va-owner-name">{salesOwnerLabel(row)}</span>
+            </span>
+            {/* Absent, not a placeholder, when the desk agent is unknown: a stand-in word sitting
+                under a Sales agent's name reads as if it described HIM. */}
+            {verificationOwnerName(row, deskOwner) ? (
+              <span
+                className="va-owner-sub"
+                title={`Verification · ${verificationOwnerName(row, deskOwner) ?? ''}`}
+              >
+                Verification ·{' '}
+                <span className="va-owner-sub-name">{verificationOwnerName(row, deskOwner)}</span>
+              </span>
+            ) : null}
           </span>
         ),
         mobile: 'secondary',
-        mobileCell: (row) => row.ownerName,
+        mobileCell: (row) => salesOwnerLabel(row),
       },
     ],
-    [wexCardCutoff, now],
+    [wexCardCutoff, deskOwner, now],
   );
 
   if (openId) {

@@ -175,6 +175,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The desk's own chip sits quieter than Sales': the reviewer IS the desk, so it is context rather
+   than the person they have to call. */
+[data-mytrion='verification'] .va-case-owner[data-desk='true'] {
+  background: transparent;
+}
 [data-mytrion='verification'] .va-case-meta-line {
   display: flex;
   align-items: center;
@@ -873,4 +878,47 @@
   [data-mytrion='verification'] .va-decide-actions {
     width: 100%;
   }
+}
+
+/* ── Desk document actions ─────────────────────────────────────────────────────────────
+   The desk both ASKS for a document and ATTACHES one. Attach leads: a reviewer usually already
+   has the file (Sales emailed the scan, or the carrier sent it here), and until they could file
+   it themselves the only route was to ask Sales to re-upload what the reviewer was looking at. */
+[data-mytrion='verification'] .va-doc-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .va-doc-attach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--va-r-sm);
+  border: 1px dashed var(--border);
+  background: var(--field);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: border-color var(--hz-dur-wash) var(--hz-ease), color var(--hz-dur-wash) var(--hz-ease);
+}
+[data-mytrion='verification'] .va-doc-attach:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+[data-mytrion='verification'] .va-doc-attach[data-disabled='true'] {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+  border-color: var(--border-subtle);
+}
+/* The input is the control; the label is its surface. Hidden without `display:none` so it keeps
+   its place in the focus order and a keyboard user can still reach it through the label. */
+[data-mytrion='verification'] .va-doc-attach input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }

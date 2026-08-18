@@ -6,18 +6,15 @@ import {
   canOpenCollectionTab,
   type CollectionTabId,
 } from './collectionNav';
-import { CollectionArray } from './tabs/CollectionArray';
-import { CollectionCases } from './tabs/CollectionCases';
+import { CollectionArray } from './array/CollectionArray';
+import { CollectionCases } from './cases/CollectionCases';
 import { CollectionHome } from './tabs/CollectionHome';
 import './collection.css';
 
 /**
  * Collection Mytrion — Home, Array Reports, Collection Cases.
  *
- * STRUCTURAL ONLY. The previous module rendered a full cases board, Array report and inbox built on
- * ~260 lines of invented fixtures (`data.ts`); all of it was deleted. The two data tabs now show the
- * shared <ComingSoon /> naming the real source they will read, and nothing fabricates a case.
- *
+ * Cases are list + kanban over `collection_cases`. Array is a server-paged Metro 2 snapshot.
  * Every view switch goes through the Layer-2 RBAC predicate so stale state can't bypass the sidebar.
  */
 export default function CollectionMytrion() {
