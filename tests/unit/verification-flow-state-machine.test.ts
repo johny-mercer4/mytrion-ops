@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applicablePhases,
+  buildRail,
   nextApplicablePhase,
   phaseApplies,
   phaseByCode,
@@ -67,6 +68,23 @@ describe('phase applicability', () => {
     expect(phaseApplies(highway, 'carrier')).toBe(true);
     expect(phaseApplies(highway, 'owner_operator')).toBe(false);
     expect(phaseApplies(highway, 'company')).toBe(false);
+  });
+
+  it('re-opens a stored skip when the applicant is now a carrier', () => {
+    const rail = buildRail(
+      [{ phaseCode: 'p4_authority', status: 'skipped', outcome: null, findings: {}, note: 'N/A', decidedAt: null, decidedBy: null }],
+      'carrier',
+    );
+    const authority = rail.find((p) => p.code === 'p4_authority');
+    expect(authority?.applies).toBe(true);
+    expect(authority?.status).toBe('not_started');
+  });
+
+  it('keeps Phase 4 skipped for an owner-operator', () => {
+    const rail = buildRail([], 'owner_operator');
+    const authority = rail.find((p) => p.code === 'p4_authority');
+    expect(authority?.applies).toBe(false);
+    expect(authority?.status).toBe('skipped');
   });
 });
 

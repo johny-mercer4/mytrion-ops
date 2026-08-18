@@ -199,7 +199,7 @@ export const NAV_DESC = {
   tasks: 'Drag cards across columns to update status. Open any card for full detail and history.',
   tickets: 'Tickets and escalations you raised. Coming soon — file them from Create; the team works them in Zoho Desk.',
   retention: 'Quiet clients that need winning back — your cases and the shared open pool.',
-  verification: 'Newest applications first. Review live compliance stages and answer Verification requests.',
+  verification: 'Complete intake, attach files, and watch underwriting.',
   records: 'Everything about your pipeline — clients, leads, deals, rejections and money codes.',
   create: 'Raise a ticket, escalate a request, or add a lead.',
   auto: 'Handle Customer Service, Billing and Verification yourself — no ticket needed.',

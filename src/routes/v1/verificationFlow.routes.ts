@@ -31,6 +31,8 @@ import {
   principalBody as deskPrincipalBody,
 } from './verificationApplications.routes.js';
 import { applicationService } from '../../modules/verificationFlow/applicationService.js';
+import { afterDeskDocumentUpload } from '../../modules/verificationFlow/deskPhase1Writes.js';
+import { readDeskBrokerSnapshot } from '../../modules/verificationFlow/deskSnapshot.js';
 import { AppError } from '../../lib/errors.js';
 import {
   MAX_DOCUMENT_BYTES,
@@ -77,6 +79,9 @@ const listQuery = z.object({
 const decisionBody = z.object({
   outcome: z.enum(VERIFICATION_PHASE_OUTCOMES),
   note: z.string().trim().max(2000).optional(),
+  findings: z
+    .object({ reviewOrder: z.enum(['banking_first', 'credit_first']) })
+    .optional(),
 });
 
 const verdictBody = z.object({
@@ -197,16 +202,12 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
     return deskService.detail(ctx, id);
   });
 
-  /**
-   * Open a document Sales uploaded.
-   *
-   * READ-gated, not write: looking at a bank statement is the underwriting job itself, and every
-   * phase from 2 onward depends on it. Without this the desk could see that three statements exist
-   * and never open one — the files went to Dropbox and were unreachable from the product.
-   *
-   * Returns a short-lived link rather than proxying bytes, matching the Sales-side route so both
-   * desks resolve the same document the same way.
-   */
+  app.get<{ Params: { id: string } }>('/verification/flow/cases/:id/snapshot', auth, async (request) => {
+    const ctx = requireVerificationRead(request);
+    return readDeskBrokerSnapshot(ctx, idParams.parse(request.params).id);
+  });
+
+  /** READ-gated document open — short-lived link, same as the Sales route. */
   app.get<{ Params: { id: string; documentId: string } }>(
     '/verification/flow/cases/:id/documents/:documentId/download',
     auth,
@@ -319,9 +320,8 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
         resourceId: id,
         detail: { docType, fileCount: files.length, byDesk: true },
       });
-      // A document can complete the intake, so the desk gets the re-evaluated case back rather
-      // than having to refetch to learn the gate opened.
-      return reply.code(201).send(await deskService.detail(ctx, id));
+      // Opens the gate when this file was the last outstanding item — see deskPhase1Writes.
+      return reply.code(201).send(await afterDeskDocumentUpload(ctx, id));
     },
   );
 
@@ -334,10 +334,15 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
       // Same destructure as the Sales route: `ownershipPct` validates as a number but stores as
       // numeric text, so spreading it would let the number win over the conversion.
       const { ownershipPct, ...body } = deskPrincipalBody.parse(request.body ?? {});
-      await applicationService.addPrincipal(ctx, id, {
-        ...body,
-        ...(ownershipPct === undefined ? {} : { ownershipPct: String(ownershipPct) }),
-      });
+      await applicationService.addPrincipal(
+        ctx,
+        id,
+        {
+          ...body,
+          ...(ownershipPct === undefined ? {} : { ownershipPct: String(ownershipPct) }),
+        },
+        { asDesk: true },
+      );
       await auditFromContext(ctx, {
         action: 'verification.flow.principal_added',
         status: 'ok',
@@ -355,7 +360,7 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
     async (request) => {
       const ctx = requireVerificationWrite(request);
       const { id, principalId } = deskPrincipalParams.parse(request.params);
-      await applicationService.removePrincipal(ctx, id, principalId);
+      await applicationService.removePrincipal(ctx, id, principalId, { asDesk: true });
       await auditFromContext(ctx, {
         action: 'verification.flow.principal_removed',
         status: 'ok',

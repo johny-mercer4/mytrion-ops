@@ -31,12 +31,12 @@ import { Icon } from './icons';
  * Sales and correct outside it.
  */
 const LABEL =
-  'font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
-const FIELD =
-  'width:100%;min-height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:14px';
-
+  'font-size:var(--ss-text-xs);font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.02em';
+const FIELD_BOX =
+  'width:100%;min-height:44px;padding:0 14px;border-radius:var(--radius-md);background:var(--surface);color:var(--text-primary);font-size:var(--ss-text-md)';
+const FIELD = `${FIELD_BOX};border:1px solid var(--border)`;
 /** A field the server says is outstanding gets a visible edge, not just a colour. */
-const FIELD_MISSING = `${FIELD};border-color:var(--danger);box-shadow:0 0 0 1px var(--danger)`;
+const FIELD_MISSING = `${FIELD_BOX};border:1px solid var(--danger);box-shadow:0 0 0 1px var(--danger)`;
 
 export function Section({
   title,
@@ -48,12 +48,10 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section style={s('display:grid;gap:14px')}>
+    <section className="ss-vf-intake-section">
       <div>
-        <h3 style={s('margin:0;font-size:15px;font-weight:800;color:var(--text-primary)')}>{title}</h3>
-        {hint ? (
-          <p style={s('margin:4px 0 0;font-size:13px;color:var(--text-muted);line-height:1.5')}>{hint}</p>
-        ) : null}
+        <h3 className="ss-vf-intake-heading">{title}</h3>
+        {hint ? <p className="ss-vf-intake-hint">{hint}</p> : null}
       </div>
       <div style={s('display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr))')}>
         {children}
@@ -90,7 +88,7 @@ export function Field({
     <div style={s('display:flex;flex-direction:column')}>
       <label htmlFor={id} style={s(LABEL)}>
         {label}
-        {missing ? <span style={s('color:var(--danger);margin-left:6px')}>needed</span> : null}
+        {missing ? <span style={s('color:var(--danger);margin-left:6px')}> needed</span> : null}
       </label>
       <input
         id={id}
@@ -131,7 +129,7 @@ export function SelectField({
     <div style={s('display:flex;flex-direction:column')}>
       <label htmlFor={id} style={s(LABEL)}>
         {label}
-        {missing ? <span style={s('color:var(--danger);margin-left:6px')}>needed</span> : null}
+        {missing ? <span style={s('color:var(--danger);margin-left:6px')}> needed</span> : null}
       </label>
       <select
         id={id}
@@ -189,12 +187,12 @@ export function ApplicantTypePicker({
     {
       value: 'owner_operator' as const,
       title: 'Owner-Operator / Individual',
-      body: 'One person applying in their own name. Needs licence, SSN card and residential address.',
+      body: 'Licence, SSN card and residential address.',
     },
     {
       value: 'carrier' as const,
       title: 'Carrier (Company)',
-      body: 'An LLC, corporation or partnership. Needs EIN, business address and owners.',
+      body: 'EIN, business address and owners.',
     },
   ];
   /**
@@ -246,7 +244,7 @@ export function ApplicantTypePicker({
               };transition:opacity .15s,border-color .15s`,
             )}
           >
-            <span style={s('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:var(--text-primary)')}>
+            <span style={s('display:flex;align-items:center;gap:8px;font-size:var(--ss-text-md);font-weight:800;color:var(--text-primary)')}>
               {working ? (
                 <Icon name="spinner" size={15} color="var(--accent)" className="ss-spin" />
               ) : active ? (
@@ -254,7 +252,7 @@ export function ApplicantTypePicker({
               ) : null}
               {o.title}
             </span>
-            <span style={s('font-size:12px;color:var(--text-muted);line-height:1.5')}>{o.body}</span>
+            <span style={s('font-size:var(--ss-text-sm);color:var(--text-muted);line-height:1.5')}>{o.body}</span>
           </button>
         );
       })}
@@ -272,63 +270,51 @@ export function GateBanner({
   complete,
   missing,
   submitted,
+  awaitingSave = false,
 }: {
   complete: boolean;
   missing: Array<{ field: string; label: string }>;
   submitted: boolean;
+  /** Local values filled the red list; Submit still waits on the server after Save. */
+  awaitingSave?: boolean;
 }) {
   if (submitted && complete) {
     return (
-      <div
-        role="status"
-        style={s(
-          'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-success-bg);border:1px solid var(--intent-success-bd)',
-        )}
-      >
+      <div role="status" className="ss-vf-gate is-ok">
         <Icon name="check" size={18} color="var(--success)" strokeWidth={2.4} />
-        <span style={s('font-size:13px;font-weight:700;color:var(--text-primary)')}>
-          Released to Verification — underwriting is under way.
-        </span>
+        <span className="ss-vf-gate-title">With Verification</span>
       </div>
     );
   }
   if (complete) {
     return (
-      <div
-        role="status"
-        style={s(
-          'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-success-bg);border:1px solid var(--intent-success-bd)',
-        )}
-      >
+      <div role="status" className="ss-vf-gate is-ok">
         <Icon name="check" size={18} color="var(--success)" strokeWidth={2.4} />
-        <span style={s('font-size:13px;font-weight:700;color:var(--text-primary)')}>
-          Everything needed is here. Submit to release it to Verification.
-        </span>
+        <span className="ss-vf-gate-title">Ready to submit</span>
+      </div>
+    );
+  }
+  if (awaitingSave) {
+    return (
+      <div role="status" className="ss-vf-gate">
+        <Icon name="warn" size={18} color="var(--warn)" strokeWidth={2.2} />
+        <span className="ss-vf-gate-title">Save to update Verification</span>
       </div>
     );
   }
   return (
-    <div
-      role="status"
-      style={s(
-        'display:grid;gap:8px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-danger-bg);border:1px solid var(--intent-danger-bd)',
-      )}
-    >
-      <div style={s('display:flex;align-items:center;gap:10px')}>
+    <div role="status" className="ss-vf-gate is-needed">
+      <div className="ss-vf-gate-row">
         <Icon name="warn" size={18} color="var(--danger)" strokeWidth={2.2} />
-        <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>
-          {missing.length} item{missing.length === 1 ? '' : 's'} still needed before Verification can start
+        <span className="ss-vf-gate-title">
+          {missing.length} item{missing.length === 1 ? '' : 's'} still needed
         </span>
       </div>
-      <ul style={s('margin:0;padding-left:28px;display:grid;gap:3px')}>
+      <ul className="ss-vf-gate-list">
         {missing.slice(0, 6).map((m) => (
-          <li key={m.field} style={s('font-size:12px;color:var(--text-secondary);line-height:1.5')}>
-            {m.label}
-          </li>
+          <li key={m.field}>{m.label}</li>
         ))}
-        {missing.length > 6 ? (
-          <li style={s('font-size:12px;color:var(--text-muted)')}>and {missing.length - 6} more…</li>
-        ) : null}
+        {missing.length > 6 ? <li>and {missing.length - 6} more…</li> : null}
       </ul>
     </div>
   );

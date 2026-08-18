@@ -33,7 +33,7 @@ import {
   formatBytes,
   rejectionFor,
 } from '../../_shared/verificationDocUpload';
-import type { ApplicationDetail, VerificationDocType } from '@/api/verificationFlow';
+import type { VerificationDocType, VerificationDocument } from '@/api/verificationFlow';
 
 export const DOC_LABELS: Record<VerificationDocType, string> = {
   bank_statement: 'Bank statement',
@@ -46,17 +46,16 @@ export const DOC_LABELS: Record<VerificationDocType, string> = {
   other: 'Other document',
 };
 
-/** Which document types Sales can attach unprompted. The desk can request any of the others. */
-export const UPLOADABLE: VerificationDocType[] = [
+/** Identity + bank-statement slots already cover these — the leftover panel must not. */
+export const SLOTTED_DOC_TYPES: ReadonlySet<VerificationDocType> = new Set([
   'bank_statement',
   'drivers_license',
   'ssn_card',
-  'insurance',
-  'lease_agreement',
-  'corporate_guarantee',
-  'authority',
-  'other',
-];
+]);
+
+export function isSlottedDocType(type: VerificationDocType): boolean {
+  return SLOTTED_DOC_TYPES.has(type);
+}
 
 export interface SlotDoc {
   id: string;
@@ -166,13 +165,13 @@ export function DocSlot({
           } ${border};background:${dragging ? 'rgba(var(--accent-rgb),.07)' : 'var(--alt)'};transition:border-color .15s,background .15s`,
         )}
       >
-        <span style={s('min-width:92px;font-size:12px;font-weight:800;color:var(--text2)')}>{label}</span>
+        <span style={s('min-width:92px;font-size:var(--ss-text-sm);font-weight:800;color:var(--text2)')}>{label}</span>
 
         {busy ? (
           <>
             {/* ONE affordance for this row: the spinner IS the loader. No overlay, no skeleton. */}
             <Icon name="spinner" size={15} color="var(--accent)" className="ss-spin" />
-            <span style={s('flex:1;min-width:0;font-size:12px;color:var(--text2)')}>
+            <span style={s('flex:1;min-width:0;font-size:var(--ss-text-sm);color:var(--text2)')}>
               {uploading ? 'Uploading…' : 'Removing…'}
             </span>
           </>
@@ -192,7 +191,7 @@ export function DocSlot({
             >
               <span
                 style={s(
-                  `min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:${onOpen ? 'var(--accent-text)' : 'var(--text)'}`,
+                  `min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ss-text-sm);font-weight:600;color:${onOpen ? 'var(--accent-text)' : 'var(--text)'}`,
                 )}
               >
                 {doc.fileName ?? 'Uploaded'}
@@ -256,16 +255,15 @@ export function DocSlot({
 }
 
 /**
- * The loose Documents section — what the desk asked for, what has landed, and how to add more.
+ * Leftover documents — requested extras and files that have no named slot.
  *
- * The drop panel here IS the big one, because this is the section whose whole job is adding files and
- * it is the last block on the form. Click, drag, or paste: an agent with a screenshot on the
- * clipboard should not have to save it to disk first.
+ * Licence, SSN and the three bank statements already have per-slot inputs. This panel is only
+ * for what those slots cannot take (insurance, a desk request, an "other"). No type dropdown
+ * and no second catch-all sitting under the slots.
  */
 export function DocumentsSection({
-  detail,
-  docType,
-  onDocType,
+  documents,
+  leftoverType,
   locked,
   uploading,
   removingId,
@@ -274,9 +272,9 @@ export function DocumentsSection({
   onDelete,
   onOpen,
 }: {
-  detail: ApplicationDetail | null;
-  docType: VerificationDocType;
-  onDocType: (v: VerificationDocType) => void;
+  /** Own list — never the case-data form blob. Already filtered to non-slot types. */
+  documents: readonly VerificationDocument[];
+  leftoverType: VerificationDocType;
   locked: boolean;
   uploading: boolean;
   /** WHICH row is being removed, so only that row reports. */
@@ -290,9 +288,9 @@ export function DocumentsSection({
   const [refused, setRefused] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const documents = detail?.documents ?? [];
   const requested = documents.filter((d) => d.status === 'requested');
   const received = documents.filter((d) => d.status === 'received');
+  const showLeftoverUpload = !locked && requested.length > 0;
 
   /**
    * ALL files are checked before ANY is sent.
@@ -303,7 +301,7 @@ export function DocumentsSection({
    * outcome an agent can act on.
    */
   const take = (list: FileList | null | undefined): void => {
-    if (locked || uploading) return;
+    if (locked) return;
     const files = Array.from(list ?? []);
     if (files.length === 0) return;
     const reason = firstRejection(files);
@@ -315,9 +313,9 @@ export function DocumentsSection({
     onUpload(files);
   };
 
-  /** Paste, while this section is live and idle. The listener is dropped the moment it is not. */
+  /** Paste while the section can accept files. Uploads in flight do not drop the listener. */
   useEffect(() => {
-    if (locked || uploading) return;
+    if (locked) return;
     const onPaste = (e: ClipboardEvent): void => {
       const items = e.clipboardData?.files;
       if (!items || items.length === 0) return;
@@ -327,10 +325,10 @@ export function DocumentsSection({
     document.addEventListener('paste', onPaste);
     return () => document.removeEventListener('paste', onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locked, uploading, docType]);
+  }, [locked, leftoverType]);
 
   return (
-    <Section title="Documents" hint="Stored in the Verification Dropbox folder.">
+    <Section title="Other documents">
       <div style={s('grid-column:1/-1;display:grid;gap:12px')}>
         {requested.length > 0 ? (
           <div
@@ -406,43 +404,15 @@ export function DocumentsSection({
           </ul>
         ) : null}
 
-        {!locked ? (
+        {showLeftoverUpload ? (
           /* Anchors the hidden multi-file input — see the note on the slot row above. */
           <div style={s('position:relative;display:grid;gap:10px')}>
-            <div style={s('display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end')}>
-              <label style={s('display:flex;flex-direction:column;gap:6px;flex:1 1 200px;min-width:0')}>
-                <span
-                  style={s(
-                    'font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em',
-                  )}
-                >
-                  What is this document?
-                </span>
-                <select
-                  value={docType}
-                  onChange={(e) => onDocType(e.currentTarget.value as VerificationDocType)}
-                  style={s(
-                    'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px',
-                  )}
-                >
-                  {UPLOADABLE.map((t) => (
-                    <option key={t} value={t}>
-                      {DOC_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {/* The drop panel. `.ss-attach` already ships the dashed edge, the hover and the drag
-                state — the same control the Create-ticket form uses, so an agent meets one upload
-                affordance in Sales and not two. */}
             <label
               htmlFor="app-docs-input"
               className={`ss-attach${dragging ? ' is-drag' : ''}`}
               aria-busy={uploading || undefined}
               onDragOver={(e) => {
-                if (locked || uploading) return;
+                if (locked) return;
                 e.preventDefault();
                 if (!dragging) setDragging(true);
               }}
@@ -456,21 +426,20 @@ export function DocumentsSection({
                 take(e.dataTransfer.files);
               }}
             >
-              {uploading ? (
-                <>
-                  <Icon name="spinner" size={24} color="var(--accent)" className="ss-spin" />
-                  <div style={s('font-size:14px;font-weight:700;color:var(--text2)')}>Uploading…</div>
-                </>
-              ) : (
-                <>
-                  <Icon name="upload" size={26} color="var(--accent)" strokeWidth={1.8} />
-                  <div style={s('font-size:14px;color:var(--text2)')}>
-                    <span style={s('color:var(--accent);font-weight:700')}>Click to upload</span>, drag
-                    &amp; drop, or paste
-                  </div>
-                  <div style={s('font-size:12px;color:var(--faint)')}>{DOC_ACCEPT_HINT}</div>
-                </>
-              )}
+              <Icon
+                name={uploading ? 'spinner' : 'upload'}
+                size={26}
+                color="var(--accent)"
+                strokeWidth={1.8}
+                {...(uploading ? { className: 'ss-spin' } : {})}
+              />
+              <div style={s('font-size:var(--ss-text-md);color:var(--text2)')}>
+                <span style={s('color:var(--accent);font-weight:700')}>
+                  {uploading ? 'Uploading — add more' : `Attach ${DOC_LABELS[leftoverType].toLowerCase()}`}
+                </span>
+                {uploading ? null : ', drag & drop, or paste'}
+              </div>
+              <div style={s('font-size:var(--ss-text-xs);color:var(--muted)')}>{DOC_ACCEPT_HINT}</div>
             </label>
             <input
               id="app-docs-input"
@@ -478,7 +447,7 @@ export function DocumentsSection({
               type="file"
               multiple
               accept={DOC_ACCEPT}
-              disabled={uploading}
+              disabled={locked}
               aria-label="Choose documents to upload"
               className="ss-file-hidden"
               onChange={(e) => {

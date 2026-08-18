@@ -20,6 +20,11 @@ import {
 } from '@/api/verificationFlow';
 import { DOC_ACCEPT, DOC_ACCEPT_HINT } from '../../_shared/verificationDocUpload';
 import { PHASE_SHORT, STATUS_LABEL } from './applicantsModel';
+import { identityChecklistLines } from './caseIdentity';
+import { SCREENING_CHECKLIST } from './caseScreening';
+import { authorityChecklistLines } from './caseAuthority';
+import { creditBankingChecklistLines } from './caseCreditBanking';
+import { deskReviewOrder, routingChecklistLines } from './caseRouting';
 
 /** The SOP's per-phase checks. Judgement calls the desk makes against the file, in its own words. */
 const CHECKLISTS: Record<string, readonly string[]> = {
@@ -27,19 +32,6 @@ const CHECKLISTS: Record<string, readonly string[]> = {
     'Application complete for the applicant type',
     'Fuel cards requested vs Octane / WEX route',
     'Documents attached or Plaid connected',
-  ],
-  p2_identity: [
-    'Name, address and contact consistent across application and ID',
-    'Bank account ownership matches the applicant',
-    'Company name, EIN and principals consistent (carrier)',
-    'Authority status and business / authority age',
-  ],
-  p4_authority: [
-    'MC status active',
-    'USDOT status active',
-    'Operating authority and insurance current',
-    'Related-company structure — Corporate Guarantee needed?',
-    'Third-party carrier — signed Lease Agreement and unit info?',
   ],
   p8_highway: [
     'Safety score and alerts',
@@ -153,10 +145,22 @@ export function CaseAside({
   canAttach: boolean;
 }) {
   const [asking, setAsking] = useState(false);
-  const [attachType, setAttachType] = useState<VerificationDocType>('bank_statement');
+  const [attachType, setAttachType] = useState<VerificationDocType>('other');
   const [docType, setDocType] = useState<VerificationDocType>('bank_statement');
 
-  const checklist = CHECKLISTS[phase.code] ?? [];
+  const checklist = !phase.applies
+    ? []
+    : phase.code === 'p2_identity'
+      ? identityChecklistLines(detail.case.applicantType)
+      : phase.code === 'p3_screening'
+        ? SCREENING_CHECKLIST
+        : phase.code === 'p4_authority'
+          ? authorityChecklistLines()
+          : phase.code === 'p5_routing'
+            ? routingChecklistLines(deskReviewOrder(detail).order)
+            : phase.code === 'p6_credit_banking'
+              ? creditBankingChecklistLines()
+              : (CHECKLISTS[phase.code] ?? []);
   const documents = detail.documents;
   const received = documents.filter((d) => d.status === 'received').length;
 

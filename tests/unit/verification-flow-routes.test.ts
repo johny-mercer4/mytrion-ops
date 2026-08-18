@@ -45,6 +45,24 @@ vi.mock('../../src/modules/verificationFlow/documentService.js', async (importOr
   };
 });
 
+vi.mock('../../src/modules/verificationFlow/deskSnapshot.js', () => ({
+  readDeskBrokerSnapshot: vi.fn(async () => ({ match: null })),
+}));
+
+vi.mock('../../src/modules/verificationFlow/deskPhase1Writes.js', () => ({
+  afterDeskDocumentUpload: vi.fn(async () => ({
+    case: { id: 'vc_1', statusCode: 'in_review', phaseCode: 'p3_screening' },
+    rail: [],
+    principals: [],
+    documents: [],
+    events: [],
+    screening: { hits: [], summary: { clear: true, unresolved: 0 } },
+    credit: null,
+    banking: null,
+    risk: { recommendedLimit: '4560.00' },
+  })),
+}));
+
 /** The desk's principal routes call the same service the Sales routes do. */
 vi.mock('../../src/modules/verificationFlow/applicationService.js', async (importOriginal) => {
   const mod =
@@ -73,6 +91,7 @@ import { deskService } from '../../src/modules/verificationFlow/deskService.js';
 import { documentService } from '../../src/modules/verificationFlow/documentService.js';
 import { verificationPolicyRepo } from '../../src/repos/verificationReviewRepo.js';
 import { applicationService } from '../../src/modules/verificationFlow/applicationService.js';
+import { readDeskBrokerSnapshot } from '../../src/modules/verificationFlow/deskSnapshot.js';
 
 const listMock = vi.mocked(deskService.list);
 const detailMock = vi.mocked(deskService.detail);
@@ -82,6 +101,7 @@ const riskMock = vi.mocked(deskService.saveRiskAssessment);
 const decideMock = vi.mocked(deskService.decide);
 const downloadMock = vi.mocked(documentService.downloadUrl);
 const uploadMock = vi.mocked(documentService.upload);
+const snapshotMock = vi.mocked(readDeskBrokerSnapshot);
 const addPrincipalMock = vi.mocked(applicationService.addPrincipal);
 const removePrincipalMock = vi.mocked(applicationService.removePrincipal);
 const policyGetMock = vi.mocked(verificationPolicyRepo.get);
@@ -205,6 +225,20 @@ describe('phase decision validation', () => {
     expect(res.statusCode).toBe(200);
     expect(decidePhaseMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'p3_screening', {
       outcome: 'pass',
+    });
+  });
+
+  it('stores a Phase 5 review-order finding on pass', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/flow/cases/vc_1/phases/p5_routing/decision',
+      headers: bearer(await workerToken('Verification')),
+      payload: { outcome: 'pass', findings: { reviewOrder: 'banking_first' } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(decidePhaseMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'p5_routing', {
+      outcome: 'pass',
+      findings: { reviewOrder: 'banking_first' },
     });
   });
 
@@ -355,6 +389,7 @@ describe('the desk can complete Phase 1 itself', () => {
       'vc_1',
       // The percentage stores as numeric TEXT — spreading the parsed number would beat the cast.
       expect.objectContaining({ fullName: 'Maria Okonkwo', ownershipPct: '51' }),
+      { asDesk: true },
     );
 
     const remove = await app.inject({
@@ -363,7 +398,9 @@ describe('the desk can complete Phase 1 itself', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(remove.statusCode).toBe(200);
-    expect(removePrincipalMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'p_1');
+    expect(removePrincipalMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'p_1', {
+      asDesk: true,
+    });
   });
 
   it('REFUSES a sales worker on all three — this is the Verification door', async () => {
@@ -514,5 +551,28 @@ describe('documents the desk reads', () => {
       url: '/v1/verification/flow/cases/vc_1/documents/vdoc_1/download',
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('Phase 2 broker snapshot', () => {
+  it('lets a verification worker read the match for comparison', async () => {
+    snapshotMock.mockResolvedValue({ match: null });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/snapshot',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(snapshotMock).toHaveBeenCalledWith(expect.anything(), 'vc_1');
+  });
+
+  it('refuses a sales-only worker — Sales already has the prefill door', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/snapshot',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(snapshotMock).not.toHaveBeenCalled();
   });
 });

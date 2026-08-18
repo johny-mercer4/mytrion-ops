@@ -1,10 +1,45 @@
 import { createInboxMessage } from '../inbox/service.js';
 import { errorMessage } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { publishInboxEvent } from '../realtime/hub.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { VERIFICATION_CASE_OWNER_NAME } from './verificationOwner.js';
 
 export const VERIFICATION_INBOX_TAG = 'verification';
+
+export const APPLICATION_DOCUMENTS_UPLOADED = 'verification.application.documents_uploaded';
+export const APPLICATION_UPDATED = 'verification.application.updated';
+
+/**
+ * Live refresh for a Sales write — not an inbox MESSAGE.
+ *
+ * Attaching a file must not spam the desk. Same `verification` tag / `verification.*` type the
+ * Verification inbox already listens for, published on the credit agent's topic plus the admin
+ * firehose (`publishInboxEvent`). `detail` carries `caseId=` so an open case can ignore everyone
+ * else's attach.
+ */
+export function publishVerificationApplicationEvent(input: {
+  caseId: string;
+  type: string;
+  verificationOwnerZohoUserId?: string | null | undefined;
+  title: string;
+}): number {
+  const now = new Date().toISOString();
+  const ownerId = (input.verificationOwnerZohoUserId ?? '').trim() || 'verification';
+  return publishInboxEvent({
+    id: `vf:${input.caseId}:${input.type}:${now}`,
+    type: input.type,
+    tag: VERIFICATION_INBOX_TAG,
+    ownerKind: 'worker',
+    ownerId,
+    title: input.title,
+    detail: `caseId=${input.caseId}`,
+    priority: 'low',
+    readAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 export interface ApplicationCreatedRecipients {
   caseId: string;

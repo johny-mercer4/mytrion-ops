@@ -368,6 +368,25 @@ export const applicationService = {
     return row;
   },
 
+  /**
+   * The desk may correct a red case — that is the point of this door. Only a decided file is off
+   * limits. Sales' ownership and "underwriting has started" rules must not apply here: a
+   * verification worker is not the Deal owner, and they attach the last statement after Sales has
+   * already handed the case over.
+   */
+  async assertDeskMayCorrect(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+    const row = await verificationFlowRepo.findById(ctx, caseId);
+    if (!row) throw new NotFoundError('Application not found');
+    if (row.closedAt) {
+      throw new AppError('This application has already been decided and can no longer be edited.', {
+        statusCode: 409,
+        code: 'VERIFICATION_CASE_CLOSED',
+        expose: true,
+      });
+    }
+    return row;
+  },
+
   async patch(ctx: TenantContext, caseId: string, patch: IntakePatch): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
       // The guard's own read is not thrown away: `assertSalesMayEdit` SELECTs the row to authorize
@@ -392,11 +411,16 @@ export const applicationService = {
       email?: string | undefined;
       address?: string | undefined;
     },
+    opts: { asDesk?: boolean } = {},
   ): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
-      await this.assertSalesMayEdit(ctx, caseId);
+      if (opts.asDesk) await this.assertDeskMayCorrect(ctx, caseId);
+      else await this.assertSalesMayEdit(ctx, caseId);
       await verificationCaseAssetRepo.addPrincipal(ctx, { caseId, ...input });
-      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
+      return refreshGate(ctx, caseId, {
+        actor: zohoFromCtx(ctx),
+        ...(opts.asDesk ? { submitting: true, actorName: ctx.userName || ctx.userId } : {}),
+      });
     });
   },
 
@@ -404,12 +428,17 @@ export const applicationService = {
     ctx: TenantContext,
     caseId: string,
     principalId: string,
+    opts: { asDesk?: boolean } = {},
   ): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
-      await this.assertSalesMayEdit(ctx, caseId);
+      if (opts.asDesk) await this.assertDeskMayCorrect(ctx, caseId);
+      else await this.assertSalesMayEdit(ctx, caseId);
       const removed = await verificationCaseAssetRepo.deletePrincipal(ctx, caseId, principalId);
       if (!removed) throw new NotFoundError('Principal not found');
-      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
+      return refreshGate(ctx, caseId, {
+        actor: zohoFromCtx(ctx),
+        ...(opts.asDesk ? { submitting: true, actorName: ctx.userName || ctx.userId } : {}),
+      });
     });
   },
 

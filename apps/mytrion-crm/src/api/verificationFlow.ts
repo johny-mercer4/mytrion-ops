@@ -531,7 +531,11 @@ export async function patchDeskIntake(
 export async function decidePhase(
   id: string,
   phase: string,
-  body: { outcome: VerificationPhaseOutcome; note?: string },
+  body: {
+    outcome: VerificationPhaseOutcome;
+    note?: string;
+    findings?: Record<string, unknown>;
+  },
 ): Promise<VerificationDeskDetail> {
   return (await request('POST', `/verification/flow/cases/${id}/phases/${phase}/decision`, {
     body,

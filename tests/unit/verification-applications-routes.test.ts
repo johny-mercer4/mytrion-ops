@@ -11,9 +11,10 @@ vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
 });
 
-const { resolveActAsMock, findBrokerMock } = vi.hoisted(() => ({
+const { resolveActAsMock, findBrokerMock, publishVfEventMock } = vi.hoisted(() => ({
   resolveActAsMock: vi.fn(),
   findBrokerMock: vi.fn(),
+  publishVfEventMock: vi.fn(),
 }));
 
 /** The warehouse is read through one function; stubbing it keeps the route under test. */
@@ -49,6 +50,11 @@ vi.mock('../../src/modules/verificationFlow/applicationService.js', async () => 
   };
 });
 
+vi.mock('../../src/modules/verification/caseNotify.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/verification/caseNotify.js')>();
+  return { ...mod, publishVerificationApplicationEvent: publishVfEventMock };
+});
+
 vi.mock('../../src/modules/verificationFlow/documentService.js', async () => {
   const actual = await vi.importActual<
     typeof import('../../src/modules/verificationFlow/documentService.js')
@@ -82,6 +88,8 @@ const listMock = vi.mocked(applicationService.listForAgent);
 const prefillInputsMock = vi.mocked(applicationService.prefillInputs);
 /** The inline-preview proxy — the only path that can SHOW a stored document rather than download it. */
 const getBytesMock = vi.mocked(documentService.getBytes);
+const uploadMock = vi.mocked(documentService.upload);
+const assertEditMock = vi.mocked(applicationService.assertSalesMayEdit);
 
 const detail = {
   case: {
@@ -89,6 +97,7 @@ const detail = {
     companyName: 'Kaiser Freight LLC',
     applicantType: 'carrier',
     verificationProcess: false,
+    verificationOwnerZohoUserId: 'credit-42',
     statusCode: 'intake_incomplete',
     phaseCode: 'p1_intake',
     fuelCardsRequested: 12,
@@ -446,6 +455,42 @@ describe('route wiring', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().error?.message ?? res.json().message).toMatch(/EIN/);
+  });
+});
+
+describe('document write emits a verification socket event', () => {
+  function multipartDoc() {
+    const boundary = '----vfdoc';
+    const body =
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="file"; filename="policy.pdf"\r\n' +
+      'Content-Type: application/pdf\r\n\r\n' +
+      'fake pdf bytes\r\n' +
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="docType"\r\n\r\n' +
+      'insurance\r\n' +
+      `--${boundary}--\r\n`;
+    return { payload: body, contentType: `multipart/form-data; boundary=${boundary}` };
+  }
+
+  it('publishes verification.application.documents_uploaded to the credit agent', async () => {
+    assertEditMock.mockResolvedValue(detail.case as never);
+    uploadMock.mockResolvedValue(undefined as never);
+    getMock.mockResolvedValue(detail);
+    const { payload, contentType } = multipartDoc();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/applications/vc_1/documents',
+      headers: { ...bearer(await workerToken('Sales Rep')), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(publishVfEventMock).toHaveBeenCalledWith({
+      caseId: 'vc_1',
+      type: 'verification.application.documents_uploaded',
+      verificationOwnerZohoUserId: 'credit-42',
+      title: 'Application documents updated',
+    });
   });
 });
 

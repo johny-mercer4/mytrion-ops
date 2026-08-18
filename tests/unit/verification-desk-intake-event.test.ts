@@ -144,4 +144,23 @@ describe('saveIntakeCorrection', () => {
 
     expect(appendEventMock).not.toHaveBeenCalled();
   });
+
+  it('forwards a type and MC/DOT correction without expanding the patch', async () => {
+    const before = caseRow({ applicantType: 'owner_operator', mc: null, dot: null });
+    patchIntakeMock.mockResolvedValue(
+      caseRow({ applicantType: 'carrier', mc: '123456', dot: '987654' }),
+    );
+
+    await saveIntakeCorrection(ctx, before, {
+      applicantType: 'carrier',
+      mc: '123456',
+      dot: '987654',
+    });
+
+    expect(patchIntakeMock).toHaveBeenCalledWith(ctx, 'vc_1', {
+      applicantType: 'carrier',
+      mc: '123456',
+      dot: '987654',
+    });
+  });
 });

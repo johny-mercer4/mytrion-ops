@@ -270,7 +270,11 @@ export const deskService = {
     ctx: TenantContext,
     caseId: string,
     phaseCode: string,
-    input: { outcome: VerificationPhaseOutcome; note?: string | undefined },
+    input: {
+      outcome: VerificationPhaseOutcome;
+      note?: string | undefined;
+      findings?: Record<string, unknown> | undefined;
+    },
   ) {
     return withFlowSchemaGuard(async () => {
       const row = await loadWorkable(ctx, caseId);
@@ -299,6 +303,7 @@ export const deskService = {
         actorZohoUserId: zohoFromCtx(ctx),
         actorName: ctx.userName || ctx.userId,
         ...(patch.eventNotes === undefined ? {} : { eventNotes: patch.eventNotes }),
+        ...(input.findings === undefined ? {} : { findings: input.findings }),
       });
 
       // A blacklist decline must also populate the blacklist, or the next application from the same

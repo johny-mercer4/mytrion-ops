@@ -32,28 +32,52 @@ import {
   getPolicy,
   patchDeskIntake,
   requestDocuments,
-  runScreening,
-  saveBankingReview,
-  saveCreditReview,
-  saveRiskAssessment,
-  setScreeningVerdict,
-  submitFinalDecision,
   uploadDeskDocuments,
   type VerificationDeskDetail,
   type VerificationPhaseOutcome,
   type VerificationRailPhase,
 } from '@/api/verificationFlow';
 import { useCachedLoad } from '../../_shared/swrCache';
-import { HardStopsPane, ScreeningPane } from '../flow/PhasePanes';
-import { BankingPane, CreditPane, DecisionPane, RiskPane } from '../flow/ReviewPanes';
 import '../flow/verificationFlow.css';
 import { CaseAside } from './CaseAside';
-import { IntakePane, RecordedPane, ReviewSummary, SkippedPane } from './CasePanes';
+import { AuthorityFallbackPane } from './CaseAuthorityPane';
+import { SkippedPane } from './CasePanes';
+import type { CaseActionKey } from './caseActions';
+import {
+  allIdentityOk,
+  caseMovedPastPhase,
+  identityChecksFor,
+  missingIdentityDocs,
+  showPhaseDecideActions,
+  type IdentityMark,
+} from './caseIdentity';
+import {
+  EMPTY_SCREENING_MARKS,
+  screeningCanPass,
+  screeningDeclineOutcome,
+  type ScreeningMarks,
+} from './caseScreening';
+import {
+  EMPTY_AUTHORITY_MARKS,
+  authorityCanPass,
+  missingAuthorityDocs,
+  type AuthorityMarks,
+} from './caseAuthority';
+import {
+  EMPTY_CREDIT_BANKING,
+  creditBankingCanPass,
+  missingBankingDocs,
+  type CreditBankingMarks,
+} from './caseCreditBanking';
+import { CaseDecideBar } from './CaseDecideBar';
+import { deskReviewOrder } from './caseRouting';
+import { PhaseBody } from './PhaseBody';
+import { PhaseSpine } from './PhaseSpine';
+import { useVerificationCaseLive } from './useVerificationCaseLive';
 import {
   APPLICANT_LABEL,
   caseInitials,
   caseName,
-  PHASE_SHORT,
   PHASE_STATE_LABEL,
   routeLabel,
   routeOf,
@@ -64,27 +88,6 @@ import {
 } from './applicantsModel';
 import './applicants.css';
 import './applicantsCase.css';
-
-/**
- * Every distinct thing the reviewer can set in motion on this screen.
- *
- * The keys are REGIONS as the reviewer sees them, not endpoints: the three decision-bar buttons are
- * three keys because they are three buttons, while the credit and banking panes are separate because
- * they save separately. `load` is here so a failed open renders through the same one error slot.
- */
-type ActionKey =
-  | 'load'
-  | 'intake'
-  | 'screening'
-  | 'credit'
-  | 'banking'
-  | 'risk'
-  | 'decision'
-  | 'attach'
-  | 'request'
-  | 'pass'
-  | 'manager'
-  | 'decline';
 
 /** Phase state → chip treatment. Each intent carries a glyph, so tone is never colour alone. */
 const STATE_CHIP: Record<string, { intent: BadgeIntent; icon: IconName }> = {
@@ -140,19 +143,22 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
    * together — five spinners for one request, which reads as a hung screen rather than a busy
    * button. `pending` names the action, so exactly one region reports.
    */
-  const [pending, setPending] = useState<ActionKey | null>(null);
+  const [pending, setPending] = useState<CaseActionKey | null>(null);
   /**
    * The failure, WITH the action that produced it. A 415 from the aside's Attach control belongs
    * beside that control; a refused decision belongs on the decision bar. One error, rendered where
    * the click was.
    */
-  const [error, setError] = useState<{ scope: ActionKey; message: string } | null>(null);
+  const [error, setError] = useState<{ scope: CaseActionKey; message: string } | null>(null);
   const [activeCode, setActiveCode] = useState<string | null>(null);
+  const [identityMarks, setIdentityMarks] = useState<Record<string, IdentityMark>>({});
+  const [screeningMarks, setScreeningMarks] = useState<ScreeningMarks>(EMPTY_SCREENING_MARKS);
+  const [authorityMarks, setAuthorityMarks] = useState<AuthorityMarks>(EMPTY_AUTHORITY_MARKS);
+  const [creditBankingMarks, setCreditBankingMarks] = useState<CreditBankingMarks>(EMPTY_CREDIT_BANKING);
 
   // Same cache key the queue warms, so the NSF threshold is already in hand on arrival.
   const loadPolicy = useCallback(() => getPolicy(), []);
   const policy = useCachedLoad('verification:flow:policy', loadPolicy, { staleMs: 60 * 60_000 });
-  const nsfThreshold = policy.data?.nsfReviewThreshold ?? null;
   const wexCardCutoff = policy.data?.wexCardCutoff ?? null;
 
   const adopt = useCallback((next: VerificationDeskDetail) => {
@@ -181,8 +187,22 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     };
   }, [caseId, adopt]);
 
+  useEffect(() => {
+    setIdentityMarks({});
+    setScreeningMarks(EMPTY_SCREENING_MARKS);
+    setAuthorityMarks(EMPTY_AUTHORITY_MARKS);
+    setCreditBankingMarks(EMPTY_CREDIT_BANKING);
+  }, [caseId]);
+
+  const refetchLive = useCallback(() => {
+    void getDeskCase(caseId)
+      .then(adopt)
+      .catch(() => undefined);
+  }, [caseId, adopt]);
+  useVerificationCaseLive(caseId, refetchLive);
+
   const run = useCallback(
-    async (scope: ActionKey, fn: () => Promise<VerificationDeskDetail>): Promise<void> => {
+    async (scope: CaseActionKey, fn: () => Promise<VerificationDeskDetail>): Promise<void> => {
       setPending(scope);
       try {
         adopt(await fn());
@@ -267,16 +287,69 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     { k: 'Requested limit', v: moneyOrNull(c.requestedLimit) },
   ];
 
-  const DECIDE_KEY: Record<string, ActionKey> = {
+  const DECIDE_KEY: Record<string, CaseActionKey> = {
     pass: 'pass',
     manager_review: 'manager',
+    deposit_prepaid: 'deposit',
     decline: 'decline',
+    decline_blacklist: 'decline',
   };
+  const routing = deskReviewOrder(detail);
   const onDecide = (outcome: VerificationPhaseOutcome, note?: string): void => {
+    const findings =
+      active.code === 'p5_routing' && outcome === 'pass' ? { reviewOrder: routing.order } : undefined;
     void run(DECIDE_KEY[outcome] ?? 'pass', () =>
-      decidePhase(caseId, active.code, { outcome, ...(note ? { note } : {}) }),
+      decidePhase(caseId, active.code, {
+        outcome,
+        ...(note ? { note } : {}),
+        ...(findings ? { findings } : {}),
+      }),
     );
   };
+
+  const movedPast = caseMovedPastPhase(active.order, c.phaseCode);
+  const showDecide = showPhaseDecideActions({
+    phaseStatus: active.status,
+    applies: active.applies,
+    closed,
+    locked,
+    movedPast,
+  });
+  const identityPhase = active.code === 'p2_identity';
+  const screeningPhase = active.code === 'p3_screening';
+  const authorityPhase = active.code === 'p4_authority';
+  const creditBankingPhase = active.code === 'p6_credit_banking';
+  const identityChecks = identityChecksFor(c.applicantType);
+  const identityReady = !identityPhase || allIdentityOk(identityChecks, identityMarks);
+  const screeningReady = !screeningPhase || screeningCanPass(screeningMarks);
+  const authorityReady = !authorityPhase || authorityCanPass(authorityMarks);
+  const creditBankingReady = !creditBankingPhase || creditBankingCanPass(creditBankingMarks);
+  const pendingDocs = identityPhase
+    ? missingIdentityDocs(identityChecks, identityMarks)
+    : authorityPhase
+      ? missingAuthorityDocs(authorityMarks)
+      : creditBankingPhase
+        ? missingBankingDocs(creditBankingMarks.banking)
+        : [];
+  const decideNote = locked
+    ? 'Locked while intake is incomplete.'
+    : closed
+      ? 'Decided.'
+      : !active.applies || active.status === 'skipped'
+        ? 'Not applicable — no decision here.'
+        : active.status === 'passed' || movedPast
+          ? 'This phase is signed off.'
+          : identityPhase
+            ? 'OK on every check passes. Missing asks Sales for documents.'
+            : screeningPhase
+              ? 'No blacklist and no duplicate passes. A confirmed match declines and informs Collections.'
+              : authorityPhase
+                ? 'Active authority and insurance pass. Inactive goes to the manager. Missing asks Sales.'
+                : active.code === 'p5_routing'
+                  ? 'Confirm the order. Passing stores it for Credit & banking.'
+                  : creditBankingPhase
+                    ? 'Strong or Acceptable credit plus complete banking passes. Borderline goes to the manager. Unacceptable is deposit / prepaid.'
+                    : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
 
   return (
     <div className="va-case">
@@ -431,7 +504,15 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
 
         <div className="va-phase-body">
           <div className="va-phase-main">
-            {!active.applies ? (
+            {!active.applies && active.code === 'p4_authority' ? (
+              <AuthorityFallbackPane
+                detail={detail}
+                closed={closed}
+                busy={pending === 'intake'}
+                skipReason={active.skipReason}
+                onSave={(body) => run('intake', () => patchDeskIntake(caseId, body))}
+              />
+            ) : !active.applies ? (
               <SkippedPane phase={active} />
             ) : (
               <PhaseBody
@@ -440,9 +521,16 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 caseId={caseId}
                 pending={pending}
                 canAct={canAct}
-                nsfThreshold={nsfThreshold}
                 wexCardCutoff={wexCardCutoff}
                 onRun={run}
+                identityMarks={identityMarks}
+                onIdentityMarks={setIdentityMarks}
+                screeningMarks={screeningMarks}
+                onScreeningMarks={setScreeningMarks}
+                authorityMarks={authorityMarks}
+                onAuthorityMarks={setAuthorityMarks}
+                creditBankingMarks={creditBankingMarks}
+                onCreditBankingMarks={setCreditBankingMarks}
               />
             )}
           </div>
@@ -472,231 +560,25 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           />
         </div>
 
-        <footer className="va-decide">
-          <span className="va-decide-note" data-tone={locked || closed ? 'muted' : 'plain'}>
-            <Icon name={locked || closed ? 'lock' : 'shield'} size="sm" />
-            {locked
-              ? 'Locked while intake is incomplete.'
-              : closed
-                ? 'Decided.'
-                : `Passing advances to phase ${Math.min(10, active.order + 1)}.`}
-          </span>
-          <div className="va-decide-actions">
-            <Button
-              variant="primary"
-              icon="check"
-              loading={pending === 'pass'}
-              disabled={!canAct || !idle || !active.applies}
-              onClick={() => onDecide('pass')}
-            >
-              Pass phase
-            </Button>
-            <Button
-              variant="secondary"
-              icon="gavel"
-              loading={pending === 'manager'}
-              disabled={!canAct || !idle}
-              onClick={() => onDecide('manager_review')}
-            >
-              Send to manager
-            </Button>
-            <Button
-              variant="danger"
-              icon="block"
-              loading={pending === 'decline'}
-              disabled={!canAct || !idle}
-              onClick={() => onDecide('decline')}
-            >
-              Decline
-            </Button>
-          </div>
-        </footer>
+        <CaseDecideBar
+          note={decideNote}
+          showDecide={showDecide}
+          canAct={canAct}
+          idle={idle}
+          passReady={identityReady && screeningReady && authorityReady && creditBankingReady}
+          pending={pending}
+          pendingDocs={pendingDocs.length > 0}
+          showDeposit={creditBankingPhase && creditBankingMarks.credit === 'unacceptable'}
+          onDecide={onDecide}
+          onRequestDocs={() =>
+            void run('request', () =>
+              requestDocuments(caseId, { phaseCode: active.code, items: pendingDocs }),
+            )
+          }
+          declineOutcome={screeningPhase ? screeningDeclineOutcome(screeningMarks) : 'decline'}
+        />
       </section>
     </div>
   );
 }
 
-/**
- * The ten-phase spine.
- *
- * A horizontal `<ol>` of buttons over one progress line. The line is drawn to the LAST PASSED
- * phase, not to the active one — the reviewer can look back at a signed-off phase without the
- * progress bar claiming the case moved backwards.
- */
-function PhaseSpine({
-  rail,
-  activeCode,
-  passed,
-  remaining,
-  notApplicable,
-  onPick,
-}: {
-  rail: readonly VerificationRailPhase[];
-  activeCode: string;
-  passed: number;
-  remaining: number;
-  notApplicable: number;
-  onPick: (code: string) => void;
-}) {
-  const lastPassed = rail.reduce((acc, p, i) => (p.status === 'passed' ? i : acc), -1);
-  const pct = rail.length <= 1 ? 0 : Math.max(0, (lastPassed / (rail.length - 1)) * 100);
-
-  return (
-    <section className="va-spine" aria-label="Underwriting phases">
-      <div className="va-spine-head">
-        <span className="t-eyebrow">Underwriting phases</span>
-        <span className="va-spine-counts">
-          <span>
-            <strong className="num" data-tone="ok">
-              {passed}
-            </strong>{' '}
-            passed
-          </span>
-          <span>
-            <strong className="num">{remaining}</strong> remaining
-          </span>
-          <span>
-            <strong className="num" data-tone="off">
-              {notApplicable}
-            </strong>{' '}
-            not applicable
-          </span>
-        </span>
-      </div>
-
-      <div className="va-spine-track">
-        <span className="va-spine-line" aria-hidden="true">
-          <span className="va-spine-fill" style={{ width: `${pct}%` }} />
-        </span>
-        <ol className="va-steps">
-          {rail.map((p) => {
-            const isActive = p.code === activeCode;
-            const state = p.applies ? p.status : 'skipped';
-            return (
-              <li key={p.code}>
-                <button
-                  type="button"
-                  className="va-step"
-                  data-state={state}
-                  data-active={isActive}
-                  aria-current={isActive ? 'step' : undefined}
-                  title={`${p.label} — ${PHASE_STATE_LABEL[state]}`}
-                  onClick={() => onPick(p.code)}
-                >
-                  <span className="va-step-dot" aria-hidden="true">
-                    {state === 'passed' ? (
-                      <Icon name="check" size="sm" />
-                    ) : (
-                      <span className="num">{p.order}</span>
-                    )}
-                  </span>
-                  <span className="va-step-text">
-                    <span className="va-step-label">{PHASE_SHORT[p.code] ?? p.label}</span>
-                    <span className="va-step-state">{PHASE_STATE_LABEL[state]}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </section>
-  );
-}
-
-/**
- * The working pane for the active phase.
- *
- * Phases 3, 6, 7, 9 and 10 carry the desk's real write surface and keep their existing panes; 1 is
- * the design's editable application; everything else is the design's recorded-so-far summary with
- * the checklist in the aside beside it.
- */
-function PhaseBody({
-  detail,
-  phase,
-  caseId,
-  pending,
-  canAct,
-  nsfThreshold,
-  wexCardCutoff,
-  onRun,
-}: {
-  detail: VerificationDeskDetail;
-  phase: VerificationRailPhase;
-  caseId: string;
-  /** Which action is in flight, so each pane reports only its OWN save. */
-  pending: ActionKey | null;
-  canAct: boolean;
-  nsfThreshold: number | null;
-  wexCardCutoff: number | null;
-  onRun: (scope: ActionKey, fn: () => Promise<VerificationDeskDetail>) => Promise<void>;
-}) {
-  /* A pane is disabled while ANY action runs — two concurrent saves against one case would race —
-     but only the pane whose action is running says it is busy. That distinction is the whole fix:
-     `disabled` is shared, `busy` is not. */
-  const idle = pending === null;
-  switch (phase.code) {
-    case 'p1_intake':
-      return (
-        <IntakePane
-          detail={detail}
-          wexCardCutoff={wexCardCutoff}
-          // Corrections stay open right up until the case is decided — see deskService.patchIntake.
-          closed={Boolean(detail.case.closedAt)}
-          busy={pending === 'intake'}
-          onSave={(body) => onRun('intake', () => patchDeskIntake(caseId, body))}
-        />
-      );
-    case 'p3_screening':
-      return (
-        <ScreeningPane
-          detail={detail}
-          busy={pending === 'screening' || !canAct || !idle}
-          onRun={() => void onRun('screening', () => runScreening(caseId))}
-          onVerdict={(hitId, verdict) =>
-            void onRun('screening', () => setScreeningVerdict(caseId, hitId, { verdict }))
-          }
-        />
-      );
-    case 'p6_credit_banking':
-      return (
-        <div className="va-stack">
-          <ReviewSummary detail={detail} nsfThreshold={nsfThreshold} />
-          <CreditPane
-            detail={detail}
-            busy={pending === 'credit'}
-            disabled={!canAct || !idle}
-            onSave={(b) => void onRun('credit', () => saveCreditReview(caseId, b))}
-          />
-          <BankingPane
-            detail={detail}
-            busy={pending === 'banking'}
-            disabled={!canAct || !idle}
-            onSave={(b) => void onRun('banking', () => saveBankingReview(caseId, b))}
-          />
-        </div>
-      );
-    case 'p7_hard_stops':
-      return <HardStopsPane detail={detail} />;
-    case 'p9_risk_capacity':
-      return (
-        <RiskPane
-          detail={detail}
-          busy={pending === 'risk'}
-          disabled={!canAct || !idle}
-          onSave={(b) => void onRun('risk', () => saveRiskAssessment(caseId, b))}
-        />
-      );
-    case 'p10_decision':
-      return (
-        <DecisionPane
-          detail={detail}
-          busy={pending === 'decision'}
-          disabled={!canAct || !idle}
-          onDecide={(b) => void onRun('decision', () => submitFinalDecision(caseId, b))}
-        />
-      );
-    default:
-      return <RecordedPane detail={detail} phase={phase} wexCardCutoff={wexCardCutoff} />;
-  }
-}

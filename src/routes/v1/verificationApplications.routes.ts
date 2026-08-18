@@ -13,6 +13,11 @@ import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
+  APPLICATION_DOCUMENTS_UPLOADED,
+  APPLICATION_UPDATED,
+  publishVerificationApplicationEvent,
+} from '../../modules/verification/caseNotify.js';
+import {
   applicationService,
   type IntakePatch,
 } from '../../modules/verificationFlow/applicationService.js';
@@ -261,6 +266,12 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       resourceId: id,
       detail: { fields: Object.keys(body), complete: detail.intake.complete },
     });
+    publishVerificationApplicationEvent({
+      caseId: id,
+      type: APPLICATION_UPDATED,
+      verificationOwnerZohoUserId: detail.case.verificationOwnerZohoUserId,
+      title: 'Application updated',
+    });
     return detail;
   });
 
@@ -358,6 +369,12 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       // Uploading a bank statement can complete the application, so the caller gets the refreshed
       // gate rather than having to re-fetch to learn the card turned green.
       const detail = await applicationService.get(ctx, id);
+      publishVerificationApplicationEvent({
+        caseId: id,
+        type: APPLICATION_DOCUMENTS_UPLOADED,
+        verificationOwnerZohoUserId: detail.case.verificationOwnerZohoUserId,
+        title: 'Application documents updated',
+      });
       return reply.code(201).send(detail);
     },
   );
@@ -380,7 +397,14 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       const { id, documentId } = docParams.parse(request.params);
       await applicationService.assertSalesMayEdit(ctx, id);
       await documentService.remove(ctx, id, documentId);
-      return applicationService.get(ctx, id);
+      const detail = await applicationService.get(ctx, id);
+      publishVerificationApplicationEvent({
+        caseId: id,
+        type: APPLICATION_UPDATED,
+        verificationOwnerZohoUserId: detail.case.verificationOwnerZohoUserId,
+        title: 'Application document removed',
+      });
+      return detail;
     },
   );
 

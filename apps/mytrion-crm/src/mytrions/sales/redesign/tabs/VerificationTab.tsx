@@ -321,12 +321,10 @@ export function VerificationTab() {
             setOpenId(null);
             void reload();
           }}
-          style={s(
-            'align-self:flex-start;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer',
-          )}
+          className="ss-vf-case-back"
         >
           <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
-          All applications
+          Applications
         </button>
         <ApplicationIntake applicationId={openId} />
       </SalesPage>
