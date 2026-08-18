@@ -18116,3 +18116,115 @@ flake as always; frontend 1046 passed). Verified live: no bulk-select checkboxes
 column/filter still present and correctly populated, modal still shows the real value read-only.
 Bundle rebuilt — confirmed "Push to Love's" / the bulk route string are gone from the built JS,
 "Love's Verification" (the filter label) still there.
+
+## 2026-08-18 (later still) — Maintenance/CitiFuel phone search, agent selects, phone display parity
+
+Follow-on QA pass, all on `fix/cs-applications-required-fields-loves-bulk`. Four independent fixes,
+same root theme (things that quietly never worked, or drifted, across modules):
+
+**1. Maintenance phone search — a plain omission, not a formatting bug.** `buildFilters()`
+(`maintenanceCaseRepo.ts`) never referenced `maintenanceCases.phone` at all — typing any phone
+number, in any format, could not match. Added a `PHONE_NORM` predicate mirroring the existing
+`UNIT_NORM` pattern (`regexp_replace(phone, '[^0-9]', '', 'g') LIKE '%digits%'`), same
+no-minimum-length behavior as the Applications digit search it's modeled on. Search placeholder
+updated to mention phone. New tests in `cs-maintenance-repo.test.ts` assert the exact SQL/params.
+
+**2. CitiFuel phone search — a real bug, not a missing feature.** Any all-digit query was
+unconditionally routed to `App_ID:equals:` — a query that happened to be all digits (i.e. every
+phone number) could never reach phone search at all. Zoho's search API already exposes a dedicated
+`phone` param (`zohoCrmRecords.ts`'s `SearchOptions.phone`, doc comment describes it as "how the
+widget's digit-normalized phone search behaves") — it was simply never wired into
+`csCitifuel.routes.ts`. Fixed: a query with 7+ stripped digits tries the phone param first (Zoho's
+own normalized phone index, punctuation-agnostic); falls back to the existing App_ID exact/prefix
+match only if that comes up empty. 7-digit floor keeps ordinary text+number searches (a unit number,
+an address) from paying an extra round-trip for a single incidental digit. 4 new tests in
+`cs-routes.test.ts` cover the phone-first path, formatting-agnostic input, the App_ID fallback, and
+short digit queries skipping the phone attempt entirely.
+
+**3. Reference Number (Maintenance) made read-only.** It always auto-generates server-side
+(`withGeneratedReferenceNumber`, a random unique 9-digit value on create if left blank) — the form
+field was a plain editable `<input>` regardless. Converted to the same read-only/derived pattern
+already used for Carrier ID in the same form (`readOnly`, `aria-readonly`, `cs-mt-derived` styling),
+placeholder now reads "Generated automatically on save." Note: this removes the backend's documented
+"type a real one and it sticks" override-at-creation path from the UI (the backend still honors it
+if called directly) — flagged in case that override was actually load-bearing for someone; nobody
+surfaced a use for it.
+
+**4. Agent selects made searchable, via `ds/Select` (not `SearchableSelect`).** Converted the four
+plain native `<select>`s used to pick an agent — `DealTransferDrawer.tsx` (Transfer to),
+`ApplicationsFilterPanel.tsx` (Agent (Deal) filter), `TasksBlock.tsx` (assignee filter),
+`TaskAssignModal.tsx` (Assign to) — to `apps/mytrion-crm/src/ds/Select`. Deliberately NOT
+`customer-service/SearchableSelect.tsx` (the component built earlier for the Maintenance Owner
+filter): its styling is entirely CS-module-scoped CSS (`cs-lookup-*` classes only defined under
+`customer-service/styles/`), so it would render unstyled outside that module. `ds/Select` already
+exists, is fully self-contained (its own CSS module, shared design tokens), and its own doc comment
+already declares it as the intended replacement for `SearchableSelect` and six other bespoke
+pickers — nothing currently uses it. No native Company/Carrier `<select>` was found anywhere in the
+app (a "carrier" filter in `billing/Transactions.tsx` turned out to be an invoice-mapped/unmapped
+toggle, not a carrier list) — reported rather than inventing work.
+
+**5. Phone display format standardized.** Three near-identical hand-rolled formatters had drifted:
+`ApplicationsTable.tsx`'s `formatPhone` and `sales/redesign/createTicketForms.tsx`'s `displayPhone`
+both produced `(702) 989-4445`; `sales/redesign/retentionData.ts`'s `formatUsPhone` produced
+`+1 (702) 989-4445` — the only place in the app with a country-code prefix. Several other modules
+(CitiFuel, Sales `ClientModal`, Verification client modal, HR employee detail) rendered the raw
+stored value with no formatting at all. Consolidated into `apps/mytrion-crm/src/lib/phone.ts`
+(`formatPhone`, handles bare-10-digit and 11-digit-with-leading-1, no country-code prefix, falls
+back to raw trimmed input otherwise) with its own test file; every module above now imports it.
+`retentionData.ts`'s `formatUsPhone` kept as a name (5 call sites elsewhere didn't need touching)
+but now just delegates to the shared function — the visible change there is dropping the "+1 "
+prefix nothing else in the app ever had. Left untouched, deliberately: Maintenance's phone field and
+Recruit's candidate phone field are both live-editable inputs, not display cells — reformatting
+while someone is typing is a different (and separately risky) problem, not what was reported.
+
+Verified: full backend + frontend suites green (only the two pre-existing, unrelated failures —
+`sales-golive-contract.test.ts`'s known CEO-marker gap and `comms-admin-routes.test.ts` — confirmed
+via `git stash` to fail identically with none of this session's changes present). Typecheck clean
+both sides. Live-verified in the browser against real data: Reference Number field genuinely
+rejects keyboard input; Agent (Deal) filter opens as a real typeahead and filters actual live agent
+names. Not independently re-verified live: the Manager-module Tasks board's agent selects (same
+component, same code path as the one confirmed working) and the CitiFuel/Maintenance phone search
+against real matching data (local dev Postgres has no seeded Maintenance rows) — covered instead by
+the SQL/route-level unit tests added above, which assert the exact query Zoho/Postgres receives.
+
+**Follow-up same day — CitiFuel table left a large dead gap under a short result set.** User
+searched a phone number (confirming fix #2 above works end-to-end against real Zoho data — one
+real matching row rendered correctly, phone formatted) but the table wrapper still reserved a fixed
+`min-height: 240px` (`customer-service/styles/citi-fuel-panel.css`'s `.cs-citi-table-wrap`) regardless
+of how many rows actually came back — with 1 row, ~140px of visibly empty box below it. Removed the
+`min-height` entirely; `max-height` (the scroll cap for long lists) was untouched, so the wrapper now
+just hugs its real content. Re-verified live with the exact same search — gap is gone, table height
+now matches the single row. Did NOT touch `retention-panel.css`'s similarly-shaped `.cs-ret-split`
+`min-height: 420px` — that one is a deliberate master-detail split (list + a real "Select a case"
+placeholder message on the right, not blank space), a different situation from a bare table
+reserving room for rows that never render.
+
+**Follow-up same day — Maintenance list view: copy-on-click reversed (again) into an icon, Case
+Type filter trimmed to 3 options.**
+
+1. **Copy affordance moved from whole-cell click to a small icon button.** Company / Carrier ID /
+   Unit # / Amount were click-to-copy on the entire `<td>` (`MaintenanceListView.tsx`'s `copyable()`
+   helper, `cellProps` + `stopPropagation`) — the one behavior difference from every other column,
+   which could not be clicked into the case record. Per direct request, flipped again: every column
+   now opens the record on click (removed the per-cell `onClick`/`stopPropagation`, kept only the
+   `<td>`'s styling className), and those four columns render a small `content_copy` icon button
+   (`ds/Icon`, new `cs-mt-copy-btn`/`cs-mt-cell-copy-row`/`cs-mt-cell-copy-text` CSS) that copies on
+   its own click, with its own `stopPropagation` so it doesn't also open the record. Overhanging
+   `::before` hit area rather than a bigger visual icon, per `modern-web-guidance`'s touch-target
+   note (this control is desktop-only, so a full 44px wasn't warranted, but the pattern still
+   applies at a smaller scale). `MaintenanceListView.test.tsx` fully rewritten — the old suite
+   asserted the exact opposite behavior (whole-cell click-to-copy blocking row-open) by design.
+2. **Case Type filter trimmed to 3 options.** The filter dropdown (`Maintenance.tsx`) was pulling
+   its full 9-value picklist straight from `/cs/maintenance/meta` — the same array the create/edit
+   form's picklist uses. Confirmed live that combo types ("PMs / Mechanical", "PMs and CARB", ...)
+   and "DOT Inspection" are real, populated case types (not junk) before touching anything — so the
+   fix is filter-side only: a new `CASE_TYPE_FILTER_OPTIONS` local allowlist
+   (`['Mechanical', 'PMs', 'Tire Replacement']`) filters the rendered `<option>` list, leaving
+   `MAINTENANCE_PICKLISTS.caseType` and the create/edit form's options completely untouched — an
+   agent can still record a combo type on a case, it's just not offered as a filter chip. "All
+   types" (the reset option) is unaffected and still returns everything.
+
+Verified live against real prod data: Case Type filter now shows exactly All types / Mechanical
+(1035) / PMs (1092) / Tire Replacement (616); clicking a company name opens the real case record
+(confirmed on "BAXT SAODAT INC"); clicking the copy icon on Carrier ID copies and shows the
+"✓ Copied" toast without opening the modal. Full suite green (1061/1061), typecheck clean.
