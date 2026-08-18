@@ -207,6 +207,38 @@ describe('resolveWorkerAccess — mytrion access modes (read|full)', () => {
     expect(r.mytrionAccessModes.sales).toBe('full');
   });
 
+  it('defaults HR to READ (directory-only) while other Mytrions default to full', async () => {
+    // The HR write tier flip: a bare grant is look-only, so creating employees/departments is the
+    // explicit "HR Manager" (hr: full) capability, not something every directory reader gets.
+    pd.findByKey.mockResolvedValue(
+      profileDefault({ allowedMytrions: ['hr', 'sales'], homeMytrion: 'hr' }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'HR' }));
+    expect(r.accessibleMytrions.sort()).toEqual(['hr', 'sales']);
+    expect(r.mytrionAccessModes.hr).toBe('read');
+    // Every other Mytrion keeps the historical full-by-default — the flip is HR and only HR.
+    expect(r.mytrionAccessModes.sales).toBe('full');
+  });
+
+  it('an explicit user full override promotes an HR directory user to HR Manager', async () => {
+    pd.findByKey.mockResolvedValue(profileDefault({ allowedMytrions: ['hr'], homeMytrion: 'hr' }));
+    wa.findByZohoUserId.mockResolvedValue(
+      override({ allowedMytrions: ['hr'], homeMytrion: 'hr', mytrionAccessModes: { hr: 'full' } }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'HR' }));
+    expect(r.mytrionAccessModes.hr).toBe('full');
+  });
+
+  it('all-department access makes HR full', async () => {
+    pd.findByKey.mockResolvedValue(
+      profileDefault({ allowedMytrions: ['hr'], allDepartmentAccess: true }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Administrator' }),
+    );
+    expect(r.mytrionAccessModes.hr).toBe('full');
+  });
+
   it('user override mode wins over role mode', async () => {
     rd.findByKey.mockResolvedValue(
       roleDefault({

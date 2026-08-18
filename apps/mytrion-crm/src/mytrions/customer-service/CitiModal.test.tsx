@@ -30,6 +30,7 @@ vi.mock('@/api/cs', () => ({
 let currentUser: UserContext;
 vi.mock('@/context/UserContextProvider', () => ({
   useUserContext: () => currentUser,
+  useRealUserContext: () => currentUser,
 }));
 
 function renderCreate(user: UserContext) {

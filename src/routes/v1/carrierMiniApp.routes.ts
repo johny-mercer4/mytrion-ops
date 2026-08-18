@@ -18,6 +18,7 @@ import { markNotificationRead, readNotificationIds } from '../../modules/notific
 import { miniAppTopicFor, realtimeHub } from '../../modules/realtime/hub.js';
 import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardByIdAnyStatus, findDwhCardByNumberAnyStatus } from '../../integrations/dwhCards.js';
 import { listLiveCardRows } from '../../modules/carrier/liveCards.js';
+import { resolveCarrierBalance } from '../../modules/carrier/carrierBalance.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
@@ -1107,16 +1108,15 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   });
 
   // ── Self-service reads — real servercrm/DWH data behind the mini-app's demo action sheets ────
-
-  // Owner-only. The only balance that exists is the CARRIER's EFS pool — there is no per-card
-  // figure (stg_cmp_card.balance is 0.00 across the board), so for a driver this endpoint could
-  // only ever return company money. The driver card and catalog no longer offer it, and the gate
-  // here is what makes that real: a missing button must never be the only thing standing between a
-  // driver's initData and the company's finances (the same lesson as /invoices and /tracking).
+  // Owner-only. The only balance that exists is the CARRIER's EFS pool (stg_cmp_card.balance is
+  // 0.00 across the board), so for a driver this could only ever return company money — and the
+  // gate here, not the missing catalog button, keeps a driver's initData away from it.
+  // resolveCarrierBalance falls back to /carrier-overview when the dedicated upstream fails: the
+  // sheet was dead-ending on "Couldn't load this" for owners whose Account Status loaded fine.
   app.post('/carrier/mini-app/balance', async (request) => {
     const body = selfServiceSchema.parse(request.body);
     const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'financial:read', miniAuthOpts(request));
-    return serverCrmWrapper.getCarrierBalance(carrierId);
+    return resolveCarrierBalance(carrierId);
   });
 
   /**

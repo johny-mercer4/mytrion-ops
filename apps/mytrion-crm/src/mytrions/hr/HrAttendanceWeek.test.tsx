@@ -48,6 +48,7 @@ const summary: AttendanceSummaryDto = {
     weekend: 0,
     absent: 0,
     unscheduled: 0,
+    scheduled: 0,
     onDuty: 0,
     paidLeave: 0,
     holidays: 0,
@@ -294,5 +295,61 @@ describe('day order', () => {
     const strip = within(container.querySelector('.hr-att-presence') as HTMLElement);
     // Seven days x 2h30m of the fixture session = 17h 30m.
     expect(strip.getByText('17h 30m')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Today, before the night starts, names the shift instead of denying it.
+ *
+ * A 19:00–03:00 window only closes at 03:00 tomorrow, so for the whole of today an assigned night
+ * worker's card scores `Scheduled`. It used to reuse `Unscheduled` and print "No shift scheduled" —
+ * a flat denial of the shift they are about to work. This is the bug the split fixes.
+ */
+describe('a scheduled day that has not produced a visit yet', () => {
+  /** One empty day, today, covered by a shift whose window has not closed. */
+  function scheduledToday(shift: AttendanceSummaryDto['shift']): AttendanceSummaryDto {
+    return {
+      ...summary,
+      shift,
+      days: [
+        {
+          date: '2026-07-30',
+          status: 'Scheduled',
+          firstIn: null,
+          lastOut: null,
+          hoursWorked: '00:00',
+          hoursWorkedMs: 0,
+          punchCount: 0,
+          currentState: 'no_activity',
+          unmatchedPunches: 0,
+          sessions: [],
+        },
+      ],
+      totals: { ...summary.totals, present: 0, payableDays: 0, scheduled: 1 },
+      lastPunch: null,
+      currentState: 'no_activity',
+    };
+  }
+
+  it('names the shift window rather than saying no shift is scheduled', () => {
+    render(<HrAttendanceWeek data={scheduledToday(summary.shift)} today="2026-07-30" />);
+    expect(screen.getByText('Shift 19:00–03:00 UZT · no entry scan yet')).toBeInTheDocument();
+    // The old, wrong copy must be gone.
+    expect(screen.queryByText('No shift scheduled')).toBeNull();
+  });
+
+  it('badges the day Scheduled, not Unscheduled', () => {
+    render(<HrAttendanceWeek data={scheduledToday(summary.shift)} today="2026-07-30" />);
+    // Exact match: "Scheduled" is a substring of "Unscheduled", so an exact node match proves the
+    // badge is not the old label.
+    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.queryByText('Unscheduled')).toBeNull();
+  });
+
+  it('falls back to a generic line when the shift window is unknown', () => {
+    // `Scheduled` implies a shift exists, but the top-level `shift` can still be null in odd data; the
+    // copy must not render "undefined–undefined".
+    render(<HrAttendanceWeek data={scheduledToday(null)} today="2026-07-30" />);
+    expect(screen.getByText('Shift scheduled · no entry scan yet')).toBeInTheDocument();
   });
 });

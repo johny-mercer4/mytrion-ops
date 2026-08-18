@@ -2248,3 +2248,45 @@ describe('driver transaction export is always retail-priced', () => {
     expect(caption).not.toMatch(/saved/i);
   });
 });
+
+// Owner feedback 2026-08-07 (#4): "Balance Check ... Couldn't load this. Pull down to try again."
+// The route returned servercrm's /carrier-balance verbatim, so one failing upstream endpoint took
+// the whole sheet down — while Account Status, which reads /carrier-overview, kept working on the
+// same account. Same money, one call away.
+describe('Balance Check survives a carrier-balance outage', () => {
+  it('serves the overview figures when the dedicated balance endpoint fails', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+    crm.getCarrierBalance.mockRejectedValueOnce(new AppError('servercrm request failed', { statusCode: 502 }));
+    crm.getCarrierOverview.mockResolvedValueOnce({
+      company_name: 'Acme Transport LLC',
+      account_type: 'Prepay',
+      efs_balance: 1875.25,
+      is_active: true,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/balance',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ efs_balance: 1875.25, account_type: 'Prepay' });
+  });
+
+  it('still surfaces a real outage when both endpoints are down', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+    crm.getCarrierBalance.mockRejectedValueOnce(new AppError('servercrm request failed', { statusCode: 502 }));
+    crm.getCarrierOverview.mockRejectedValueOnce(new AppError('servercrm request failed', { statusCode: 502 }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/balance',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(502);
+  });
+});

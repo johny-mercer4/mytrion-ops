@@ -2,24 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
-import { useLocation } from 'react-router-dom';
-import {
-  getImpersonation,
-  mytrionIdFromPath,
-  setImpersonation,
-  type Impersonation,
-} from '../api/impersonation';
-import type { MytrionId } from '../access/mytrions.config';
+import { getImpersonation, setImpersonation, type Impersonation } from '../api/impersonation';
 
 interface ImpersonationCtx {
-  /** Mytrion the current route belongs to, or null on `/main` picker. */
-  mytrionId: MytrionId | null;
-  /** Rep for THIS Mytrion only, or null (acting as self / outside a Mytrion). */
+  /** The active global "View as" identity, or null (acting as self). */
   actingAs: Impersonation | null;
   setActingAs(imp: Impersonation | null): void;
 }
@@ -27,33 +17,19 @@ interface ImpersonationCtx {
 const Ctx = createContext<ImpersonationCtx | null>(null);
 
 /**
- * Mirrors per-Mytrion act-as into React. Switching Mytrion or returning to the picker
- * rebinds `actingAs` to that route's slot (null on `/main`).
+ * Global "View as" state — one identity across the whole app, persisted in localStorage (see
+ * api/impersonation.ts). Was per-Mytrion; it is global now so a chosen user survives navigation
+ * between sections, and EffectiveUserProvider re-resolves that user's access so the UI renders as them.
  */
 export function ImpersonationProvider({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
-  const mytrionId = useMemo(() => mytrionIdFromPath(pathname), [pathname]);
-  const [actingAs, setState] = useState<Impersonation | null>(() =>
-    getImpersonation(mytrionIdFromPath(pathname)),
-  );
+  const [actingAs, setState] = useState<Impersonation | null>(() => getImpersonation());
 
-  useEffect(() => {
-    setState(getImpersonation(mytrionId));
-  }, [mytrionId]);
+  const setActingAs = useCallback((imp: Impersonation | null) => {
+    setImpersonation(imp);
+    setState(imp);
+  }, []);
 
-  const setActingAs = useCallback(
-    (imp: Impersonation | null) => {
-      if (!mytrionId) return;
-      setImpersonation(imp, mytrionId);
-      setState(imp);
-    },
-    [mytrionId],
-  );
-
-  const value = useMemo(
-    () => ({ mytrionId, actingAs, setActingAs }),
-    [mytrionId, actingAs, setActingAs],
-  );
+  const value = useMemo(() => ({ actingAs, setActingAs }), [actingAs, setActingAs]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

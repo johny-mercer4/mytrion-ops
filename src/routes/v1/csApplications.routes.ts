@@ -92,7 +92,15 @@ export async function csApplicationsRoutes(app: FastifyInstance): Promise<void> 
     const { id } = idParam.parse(request.params);
     const body = onboardingBody.parse(request.body);
     try {
-      const result = await saveApplication(ctx, id, { [body.field]: body.value });
+      // Tick-box toggles skip the required-fields hard block (saveApplication defaults it on) —
+      // this isn't the profile-completion screen the gap was reported on, and gating it too would
+      // freeze onboarding work on every already-incomplete legacy record.
+      const result = await saveApplication(
+        ctx,
+        id,
+        { [body.field]: body.value },
+        { enforceRequiredFields: false },
+      );
       await auditFromContext(ctx, {
         action: 'cs.application.onboarding_toggle',
         status: 'ok',

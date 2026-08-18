@@ -8,6 +8,7 @@
 import { memo, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
 
 import type { OnboardingField } from '@/api/cs';
+import { formatPhone } from '@/lib/phone';
 import { dotStyle } from './colors';
 import { type Application, fullName } from './data';
 
@@ -61,6 +62,9 @@ const CLIENT_COLUMNS: AppColumn[] = [
   { key: 'picklist', label: 'Business Type', field: 'Type_of_Business', thStyle: { minWidth: 150 } },
   { key: 'stage', label: 'Stage', thStyle: { minWidth: 150 } },
   { key: 'wex_status', label: 'WEX Status', thStyle: { minWidth: 160 } },
+  // No minWidth — breakpoints.test.ts's inline-minWidth budget only ever goes down; "Approved" /
+  // "Not Approved" / "Pending" is short enough that the table's own auto-layout sizes this fine.
+  { key: 'picklist', label: "Love's", field: 'Loves_Verification' },
   { key: 'contact', label: 'Contact', thStyle: { minWidth: 140 } },
   { key: 'generic', label: 'MC', field: 'emc', thStyle: { minWidth: 100 } },
   { key: 'generic', label: 'DOT', field: 'DOT', thStyle: { minWidth: 100 } },
@@ -95,6 +99,9 @@ const APPS_COLUMNS: AppColumn[] = [
   { key: 'picklist', label: 'Business Type', field: 'Type_of_Business', thStyle: { minWidth: 150 } },
   { key: 'stage', label: 'Stage', thStyle: { minWidth: 150 } },
   { key: 'wex_status', label: 'WEX Status', thStyle: { minWidth: 160 } },
+  // No minWidth — breakpoints.test.ts's inline-minWidth budget only ever goes down; "Approved" /
+  // "Not Approved" / "Pending" is short enough that the table's own auto-layout sizes this fine.
+  { key: 'picklist', label: "Love's", field: 'Loves_Verification' },
   { key: 'generic', label: 'MC', field: 'emc', thStyle: { minWidth: 100 } },
   { key: 'generic', label: 'DOT', field: 'DOT', thStyle: { minWidth: 100 } },
   { key: 'phone', label: 'Phone', thStyle: { minWidth: 130 } },
@@ -122,13 +129,6 @@ export function columnsFor(tab: SubTab): AppColumn[] {
 }
 
 /* ─── Formatters (widget parity) ─────────────────────────────────────────── */
-
-export function formatPhone(v: string): string {
-  if (!v) return '';
-  const d = v.replace(/\D/g, '');
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  return v;
-}
 
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
@@ -183,6 +183,7 @@ const FIELD_GET: Record<string, (a: Application) => string | number | null> = {
   Billing_Form_Y_N: () => null,
   Verification_Notes: () => null,
   Tracking_Number: (a) => a.trackingNumber ?? null,
+  Loves_Verification: (a) => a.lovesVerification,
 };
 
 function fieldValue(app: Application, field: string | undefined): string {

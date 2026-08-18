@@ -346,7 +346,7 @@ export async function deleteHrDepartment(id: string): Promise<void> {
 
 // ── Attendance (Mytrion-owned punches + shifts) ───────────────────────────────
 
-export type AttendanceDayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled';
+export type AttendanceDayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled' | 'Scheduled';
 export type AttendancePresenceState =
   | 'in_office'
   | 'out_of_office'
@@ -396,6 +396,8 @@ export interface AttendanceSummaryDto {
     weekend: number;
     absent: number;
     unscheduled: number;
+    /** A shift covers the day but its window has not closed yet — upcoming or still running. */
+    scheduled: number;
     onDuty: number;
     paidLeave: number;
     holidays: number;

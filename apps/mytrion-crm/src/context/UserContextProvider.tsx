@@ -9,12 +9,24 @@ import {
 import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
 import { bindHorizonTelegramAfterLogin, resetHorizonTelegramBind } from '../api/horizonTelegram';
 import { getSession, SESSION_CHANGED_EVENT } from '../api/session';
+import { fetchViewAsContext } from '../api/viewAs';
+import { isAdmin } from '../access/resolveAccess';
 import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
 import { isTelegramWebView } from '../telegram/webApp';
+import { useImpersonation } from './ImpersonationProvider';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
 
+/**
+ * The EFFECTIVE identity every RBAC gate reads: the "View as" target while an admin is previewing,
+ * else the real signed-in worker. Consumers call `useUserContext()`.
+ */
 const Ctx = createContext<UserContext | null>(null);
+/**
+ * The REAL signed-in identity, never impersonated — for the header account cluster and the View-as
+ * picker/Exit (which must keep working while previewing a non-admin). Consumers call `useRealUserContext()`.
+ */
+const RealCtx = createContext<UserContext | null>(null);
 /** Lets profile picture uploads re-read the stored session without a full reload. */
 const ReloadCtx = createContext<(() => void) | null>(null);
 
@@ -157,15 +169,65 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
   if (state.phase === 'anon') return <LoginGate initialError={state.error} />;
   return (
     <ReloadCtx.Provider value={reloadFromSession}>
-      <Ctx.Provider value={state.context}>{children}</Ctx.Provider>
+      <RealCtx.Provider value={state.context}>{children}</RealCtx.Provider>
     </ReloadCtx.Provider>
   );
 }
 
-/** The session user context. Throws if used outside the provider (a programming error). */
+/**
+ * Overlays the "View as" target's access onto `useUserContext()` so every RBAC gate — the Mytrion
+ * list, tabs, Settings, the HR manage buttons — renders as the previewed user, while the real admin
+ * stays available via `useRealUserContext()`. Only admins get the preview; for everyone else this is a
+ * pass-through. Mount BELOW UserContextProvider and ImpersonationProvider.
+ */
+export function EffectiveUserProvider({ children }: { children: ReactNode }) {
+  const real = useRealUserContext();
+  const { actingAs } = useImpersonation();
+  const [effective, setEffective] = useState<UserContext>(real);
+
+  useEffect(() => {
+    // Self, or a non-admin who somehow has an act-as set: no UI override, always your own context.
+    if (!actingAs || !isAdmin(real)) {
+      setEffective(real);
+      return undefined;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    // Show the real context until the target's access resolves — never a broken intermediate.
+    setEffective(real);
+    fetchViewAsContext(actingAs.zohoUserId, controller.signal)
+      .then((ctx) => {
+        if (!cancelled) setEffective(ctx);
+      })
+      .catch(() => {
+        /* keep the real context on failure — the backend still enforces the target's real limits */
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [actingAs, real]);
+
+  return <Ctx.Provider value={effective}>{children}</Ctx.Provider>;
+}
+
+/**
+ * The effective user context — the View-as target while previewing, else the signed-in worker. Falls
+ * back to the real context when no EffectiveUserProvider is mounted (e.g. isolated component tests), so
+ * it never throws just because the preview layer is absent.
+ */
 export function useUserContext(): UserContext {
-  const ctx = useContext(Ctx);
+  const effective = useContext(Ctx);
+  const real = useContext(RealCtx);
+  const ctx = effective ?? real;
   if (!ctx) throw new Error('useUserContext must be used within <UserContextProvider>');
+  return ctx;
+}
+
+/** The REAL signed-in identity, never impersonated. For the account cluster + the View-as picker. */
+export function useRealUserContext(): UserContext {
+  const ctx = useContext(RealCtx);
+  if (!ctx) throw new Error('useRealUserContext must be used within <UserContextProvider>');
   return ctx;
 }
 

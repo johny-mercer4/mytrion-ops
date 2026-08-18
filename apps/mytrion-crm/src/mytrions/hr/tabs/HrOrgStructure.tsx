@@ -11,7 +11,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { isAdmin } from '../../../access/resolveAccess';
+import { canManageHr } from '../../../access/resolveAccess';
 import type { HrDepartmentDto, HrEmployeeDto } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
 import { HrDepartmentModal, type DepartmentModalMode } from '../HrDepartmentModal';
@@ -49,7 +49,9 @@ const MISSING_RECORD = 'That record has not loaded yet — press Refresh, then t
  */
 export function HrOrgStructure() {
   const user = useUserContext();
-  const admin = isAdmin(user);
+  // "May manage" — admins AND HR Managers (granted HR in full mode). A plain HR grant is read-only,
+  // so this gates canvas editing below. Backend re-checks with requireHrManage.
+  const admin = canManageHr(user);
 
   const org = useHrOrgStructure();
   const departments = useHrDepartments();

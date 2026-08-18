@@ -22,6 +22,7 @@ import { useAccessibleDialog } from './useAccessibleDialog';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
 import { useIsPhone } from '@/hooks/useMediaQuery';
+import { formatPhone } from '@/lib/phone';
 import {
   resolveProjectedTierForRow,
   resolveTierForRow,
@@ -326,7 +327,7 @@ export function ClientModal({
               <div style={s(`grid-column:1 / -1;${tile}`)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Primary Contact</div>
                 <div style={s('font-size:15px;font-weight:700;margin-top:5px')}>{client.contact}</div>
-                <div style={s("font-size:13px;color:var(--text2);font-family:var(--font-mono);margin-top:3px")}>{client.phone}</div>
+                <div style={s("font-size:13px;color:var(--text2);font-family:var(--font-mono);margin-top:3px")}>{formatPhone(client.phone)}</div>
               </div>
               <div style={s(tile)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Cards</div>

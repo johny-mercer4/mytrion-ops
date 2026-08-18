@@ -75,6 +75,7 @@ function mapAppRow(r: CsApplicationRow): Application {
     chn: bool01(pick(r, 'Chain_Policy', 'Chain_policy')),
     verified: r.Verified === true || r.Verified === 'true',
     carrierId: str(r.Carrier_ID),
+    lovesVerification: str(r.Loves_Verification),
   };
 }
 
@@ -87,7 +88,7 @@ export interface AppsPage {
   truncated: boolean;
 }
 
-const EMPTY_FACETS: CsApplicationsFacets = { stage: [], biz: [], agent: [], wex: [] };
+const EMPTY_FACETS: CsApplicationsFacets = { stage: [], biz: [], agent: [], wex: [], loves: [] };
 
 /** Short TTL cache — tab switches / revisits skip another round-trip. Matches the backend's own
  *  90s per-params read-cache TTL (touchpoints.routes.ts) rather than trying to outlive it. */
@@ -126,13 +127,13 @@ export async function loadApplications(
       perPage: APPLICATIONS_PAGE_SIZE,
       sortKey: queryParams.sortKey,
       sortDir: queryParams.sortDir,
-      company: queryParams.company,
       dateFrom: queryParams.dateFrom,
       dateTo: queryParams.dateTo,
       stage: queryParams.stage,
       biz: queryParams.biz,
       agent: queryParams.agent,
       wex: queryParams.wex,
+      loves: queryParams.loves,
       fresh,
     },
     { force: fresh },

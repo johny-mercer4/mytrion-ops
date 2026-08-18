@@ -28,6 +28,7 @@ import { findDwhCardByIdAnyStatus, getCardEfsIdentity } from '../../integrations
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import { withPrepayDrawWindow } from '../../modules/carrier/carrierBalance.js';
 import { moneyCodeRequestRepo } from '../../repos/moneyCodeRequestRepo.js';
 import { notifyMiniApp } from '../../modules/notifications/service.js';
 import {
@@ -355,7 +356,9 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     requireMoneyCodeEnabled();
     const body = initDataSchema.parse(request.body);
     const { carrierId } = await requireRegisteredOwnerUser(body.initData, miniAuthOpts(request));
-    return serverCrmWrapper.getMoneyCodePreview(carrierId);
+    // servercrm's window is a % of the latest invoice, which is $0 for every prepay carrier —
+    // those draw against their prepaid EFS balance instead. LOC accounts pass through untouched.
+    return withPrepayDrawWindow(carrierId, await serverCrmWrapper.getMoneyCodePreview(carrierId));
   });
 
   /**

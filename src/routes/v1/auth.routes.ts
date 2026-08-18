@@ -11,6 +11,7 @@ import { systemContext } from '../../modules/auth/authService.js';
 import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
 import { managesAnyone } from '../../modules/hr/attendance/teamScope.js';
+import { canDeleteChaseTransactionsFact } from '../../modules/billing/paymentDeleteAccess.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import { workerProfileRepo } from '../../repos/workerProfileRepo.js';
 import { requireContext } from './helpers.js';
@@ -234,6 +235,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
            * boundary.
            */
           leadsTeam: await leadsTeamFor(session.worker.zohoUserId),
+          /** Same "fact, not a grant" convention as leadsTeam above — real gate is
+           *  canDeletePaymentTransaction, re-checked on the actual delete route. */
+          canDeleteChaseTransactions: await canDeleteChaseTransactionsFact(session.worker.zohoUserId),
         },
       };
     } catch (err) {
@@ -282,6 +286,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           viewAsUserIds: access.viewAsUserIds,
           viewAsTargets: await viewAsTargets(access.viewAsUserIds),
           leadsTeam: await leadsTeamFor(zohoUserId),
+          canDeleteChaseTransactions: await canDeleteChaseTransactionsFact(zohoUserId),
         },
       };
     }
@@ -289,6 +294,51 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!user) throw new NotFoundError('User not found');
     return { user: toPublicUser(user) };
   });
+
+  /**
+   * The effective access of ANOTHER user — powers the admin "View as" RBAC preview.
+   *
+   * Admin-only (all-department). This does NOT grant the caller anything: it reports what the target
+   * would see, so the client can render its workspace AS them for testing. Every real request still
+   * carries the caller's own Bearer plus `x-act-as-*`, and the backend re-derives the target's context
+   * server-side (buildCallerContext) — so this preview can never widen what the target may actually do.
+   * The identity (name/profile/role) comes from the CRM directory, never from client input.
+   */
+  app.get<{ Params: { zohoUserId: string } }>(
+    '/auth/view-as/:zohoUserId',
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const ctx = requireContext(request);
+      if (!ctx.allDepartmentAccess && !ctx.bypassRbac && ctx.role !== 'admin') {
+        throw new RBACError('View-as preview is available to admins only');
+      }
+      const zohoUserId = z.string().min(1).max(120).parse(request.params.zohoUserId);
+      const target = await resolveActAsTarget(zohoUserId);
+      if (!target) throw new NotFoundError('No active user matches that id');
+      const access = await mytrionAccessService.resolveWorkerAccess({
+        tenantId: ctx.tenantId,
+        zohoUserId: target.zohoUserId,
+        profileName: target.profile ?? null,
+        zohoRole: target.role ?? null,
+        userName: target.name ?? null,
+      });
+      return {
+        worker: {
+          zohoUserId: target.zohoUserId,
+          userName: target.name ?? null,
+          email: target.email ?? null,
+          profile: target.profile ?? null,
+          role: target.role ?? null,
+          allDepartmentAccess: access.allDepartmentAccess,
+          accessibleMytrions: access.accessibleMytrions,
+          homeMytrion: access.homeMytrion,
+          mytrionAccessModes: access.mytrionAccessModes,
+          mytrionTabGrants: access.mytrionTabGrants,
+          leadsTeam: await leadsTeamFor(target.zohoUserId),
+        },
+      };
+    },
+  );
 
   /**
    * Upload / clear the signed-in worker's profile picture.

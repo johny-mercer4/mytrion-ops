@@ -84,7 +84,7 @@ export function Applications() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<AppFilters>(emptyFilters);
   const [queryFilters, setQueryFilters] = useState<AppFilters>(emptyFilters);
-  const [facets, setFacets] = useState<CsApplicationsFacets>({ stage: [], biz: [], agent: [], wex: [] });
+  const [facets, setFacets] = useState<CsApplicationsFacets>({ stage: [], biz: [], agent: [], wex: [], loves: [] });
 
   useEffect(() => {
     const t = setTimeout(() => {

@@ -7,8 +7,7 @@
  * `MaintenanceModal` a desktop row-click does, so the columns that drop off the card are still one
  * tap away — they are in the case record, which is the detail view here.
  */
-import type { MouseEvent } from 'react';
-import { DataTable, type DataColumn } from '@/ds';
+import { DataTable, Icon, type DataColumn } from '@/ds';
 import { copyWithToast } from './copyToast';
 import { fmtMoneyStr, fmtYmd, maintenanceTitle, type MaintenanceRecord } from './live';
 
@@ -29,40 +28,34 @@ const PAY_BADGE: Record<string, string> = {
 const dash = (v: string | null | undefined): string => (v && v.trim() ? v : '—');
 
 /**
- * A cell you can click to copy — QA feedback 2026-08-11: clicking Company / Carrier ID / Unit # /
- * Amount opened the record modal instead of copying, because those cells had no handler at all.
+ * A small copy-to-clipboard button next to a cell's value (2026-08-18: previously the WHOLE cell
+ * was the copy target via `cellProps`, which meant Company / Carrier ID / Unit # / Amount could
+ * not be clicked into the record like every other column — that read as broken, not as a feature.
+ * Every column now opens the record on click; copying gets its own explicit target instead.
  *
- * THE WHOLE CELL is the target, via `cellProps` — exactly as the original did by spreading onto the
- * `<td>`. Putting the handler on the rendered content instead leaves the cell's padding still
- * activating the row, so a click copies or opens the record depending on which pixel it hit.
+ * `stopPropagation` is still required: the row is the activate target, so without it the button's
+ * own click would also open the modal. Nothing to copy means no button, rather than a control that
+ * looks live and does nothing.
  *
- * `stopPropagation` is what makes it work at all: the row is the activate target, so without it a
- * copy click opens the modal too. Nothing to copy means no handler and no pointer cursor, rather
- * than a control that looks live and does nothing.
- *
- * DESKTOP ONLY, deliberately — `cellProps` is table-mode only. Below the structure line the row
- * becomes a card that IS a button, and a second click target nested inside it is ambiguous under a
- * thumb, so the copy columns give `mobileCell` plain text. Every value is in the record the card
- * opens.
+ * DESKTOP ONLY, deliberately — the mobile card IS a button, and a second nested click target under
+ * a thumb is ambiguous, so the copy columns give `mobileCell` plain text. Every value is in the
+ * record the card opens.
  */
-function copyable(
-  baseClass: string,
-  text: string,
-  label: string,
-): {
-  className: string;
-  title?: string | undefined;
-  onClick?: ((event: MouseEvent<HTMLTableCellElement>) => void) | undefined;
-} {
-  if (!text) return { className: baseClass };
-  return {
-    className: `${baseClass} cs-mt-cell-copyable`,
-    title: `Click to copy ${label}`,
-    onClick: (event) => {
-      event.stopPropagation();
-      copyWithToast(text, event);
-    },
-  };
+function copyButton(text: string, label: string) {
+  if (!text) return null;
+  return (
+    <button
+      type="button"
+      className="cs-mt-copy-btn"
+      aria-label={`Copy ${label}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        copyWithToast(text, event);
+      }}
+    >
+      <Icon name="content_copy" size="sm" />
+    </button>
+  );
 }
 
 /**
@@ -80,24 +73,42 @@ export const COLUMNS: DataColumn<MaintenanceRecord>[] = [
     header: 'Company',
     rowHeader: true,
     mobile: 'primary',
-    cellProps: (row) => copyable('cs-mt-list-company', maintenanceTitle(row), 'Company'),
-    cell: (row) => maintenanceTitle(row),
+    cellProps: () => ({ className: 'cs-mt-list-company' }),
+    cell: (row) => {
+      const name = maintenanceTitle(row);
+      return (
+        <span className="cs-mt-cell-copy-row">
+          <span className="cs-mt-cell-copy-text">{name}</span>
+          {copyButton(name, 'Company')}
+        </span>
+      );
+    },
     mobileCell: (row) => maintenanceTitle(row),
   },
   {
     id: 'carrierId',
     header: 'Carrier ID',
     mobile: 'secondary',
-    cellProps: (row) => copyable('cs-mt-list-mono', row.carrierId ?? '', 'Carrier ID'),
-    cell: (row) => dash(row.carrierId),
+    cellProps: () => ({ className: 'cs-mt-list-mono' }),
+    cell: (row) => (
+      <span className="cs-mt-cell-copy-row">
+        {dash(row.carrierId)}
+        {copyButton(row.carrierId ?? '', 'Carrier ID')}
+      </span>
+    ),
     mobileCell: (row) => dash(row.carrierId),
   },
   {
     id: 'unit',
     header: 'Unit #',
     mobile: 'secondary',
-    cellProps: (row) => copyable('cs-mt-list-mono', row.unitNumber ?? '', 'Unit #'),
-    cell: (row) => dash(row.unitNumber),
+    cellProps: () => ({ className: 'cs-mt-list-mono' }),
+    cell: (row) => (
+      <span className="cs-mt-cell-copy-row">
+        {dash(row.unitNumber)}
+        {copyButton(row.unitNumber ?? '', 'Unit #')}
+      </span>
+    ),
     mobileCell: (row) => dash(row.unitNumber),
   },
   {
@@ -164,9 +175,13 @@ export const COLUMNS: DataColumn<MaintenanceRecord>[] = [
     header: 'Amount',
     numeric: true,
     align: 'end',
-    cellProps: (row) =>
-      copyable('cs-mt-list-amount', row.totalAmount ? fmtMoneyStr(row.totalAmount) : '', 'Amount'),
-    cell: (row) => fmtMoneyStr(row.totalAmount),
+    cellProps: () => ({ className: 'cs-mt-list-amount' }),
+    cell: (row) => (
+      <span className="cs-mt-cell-copy-row">
+        {fmtMoneyStr(row.totalAmount)}
+        {copyButton(row.totalAmount ? fmtMoneyStr(row.totalAmount) : '', 'Amount')}
+      </span>
+    ),
     mobileCell: (row) => fmtMoneyStr(row.totalAmount),
   },
 ];

@@ -20,7 +20,7 @@ import {
   Settings,
   Users,
 } from 'lucide-react';
-import { isAdmin, isHrAttendanceOnly } from '../../access/resolveAccess';
+import { isAdmin } from '../../access/resolveAccess';
 import type { UserContext } from '../../context/userContext';
 import { canSeeTab } from '../../access/resolveAccess';
 
@@ -62,7 +62,7 @@ export const HR_TABS: HrTab[] = [
     icon: Home,
     tone: 'var(--tone-rose)',
     keywords: ['overview', 'dashboard', 'hub'],
-    access: (user) => !isHrAttendanceOnly(user),
+    access: () => true,
   },
   {
     id: 'employees',
@@ -71,7 +71,7 @@ export const HR_TABS: HrTab[] = [
     icon: Users,
     tone: 'var(--tone-sky)',
     keywords: ['directory', 'people', 'staff', 'headcount', 'roster'],
-    access: (user) => !isHrAttendanceOnly(user),
+    access: () => true,
   },
   {
     id: 'departments',
@@ -80,7 +80,7 @@ export const HR_TABS: HrTab[] = [
     icon: Building2,
     tone: 'var(--tone-indigo)',
     keywords: ['org', 'teams', 'units', 'structure', 'dept'],
-    access: (user) => !isHrAttendanceOnly(user),
+    access: () => true,
   },
   {
     id: 'org',
@@ -89,7 +89,7 @@ export const HR_TABS: HrTab[] = [
     icon: Network,
     tone: 'var(--tone-teal)',
     keywords: ['hierarchy', 'tree', 'org chart', 'structure'],
-    access: (user) => !isHrAttendanceOnly(user),
+    access: () => true,
   },
   {
     id: 'attendance',
@@ -98,6 +98,8 @@ export const HR_TABS: HrTab[] = [
     icon: CalendarClock,
     tone: 'var(--tone-emerald)',
     keywords: ['time', 'check-in', 'hours', 'absence', 'shifts', 'faceid'],
+    // Everyone sees Attendance — a regular employee gets their OWN data (My Data); team leads add
+    // their team, HR/admins add everyone. The tab scopes itself per viewer.
     access: () => true,
   },
   {
@@ -107,7 +109,7 @@ export const HR_TABS: HrTab[] = [
     icon: Inbox,
     tone: 'var(--tone-amber)',
     keywords: ['leave', 'time off', 'approvals', 'vacation', 'sick', 'holidays', 'balance'],
-    access: (user) => !isHrAttendanceOnly(user),
+    access: () => true,
   },
   {
     id: 'settings',
