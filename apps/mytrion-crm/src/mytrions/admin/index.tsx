@@ -20,6 +20,7 @@ import { KpiData } from './KpiData';
 import { MytrionDatabase } from './MytrionDatabase';
 import { OctaneScope } from './scope/OctaneScope';
 import { OctaneTelegramUsers } from './OctaneTelegramUsers';
+import { PaymentDeleteGrants } from './PaymentDeleteGrants';
 import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
@@ -120,6 +121,15 @@ export default function AdminMytrion() {
           active: tab === 'permission-sets',
           onClick: () => setTab('permission-sets'),
           keywords: ['rbac', 'sets', 'salesforce', 'grants', 'tabs', 'assign'],
+        },
+        {
+          key: 'delete-access',
+          tone: 'var(--tone-rose)',
+          label: 'Delete Access',
+          icon: <AccessIcon />,
+          active: tab === 'delete-access',
+          onClick: () => setTab('delete-access'),
+          keywords: ['chase', 'transactions', 'billing', 'delete', 'grants'],
         },
         {
           key: 'carriers',
@@ -323,6 +333,7 @@ export default function AdminMytrion() {
       {tab === 'access' && <UserManagement />}
       {tab === 'octane-telegram-users' && <OctaneTelegramUsers />}
       {tab === 'permission-sets' && <PermissionSets />}
+      {tab === 'delete-access' && <PaymentDeleteGrants />}
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
       {tab === 'news' && <ClientNews />}

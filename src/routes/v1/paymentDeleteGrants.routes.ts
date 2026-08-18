@@ -8,6 +8,7 @@ import type { FastifyInstance, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { RBACError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { listActiveUsersCached } from '../../modules/auth/actAsDirectory.js';
 import { paymentDeleteGrantRepo } from '../../repos/paymentDeleteGrantRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
@@ -32,11 +33,28 @@ export async function paymentDeleteGrantsRoutes(app: FastifyInstance): Promise<v
     return ctx;
   }
 
+  /**
+   * `roster` carries every active Zoho worker with `assigned` precomputed — same shape/reasoning as
+   * GET /admin/permission-sets: an admin can grant someone who has no delete-grant row yet, and the
+   * roster is what makes them pickable by name instead of typing a raw Zoho user id.
+   */
   app.get('/billing/delete-grants', guard, async (request) => {
     requireAdmin(request);
     const { source } = sourceQuery.parse(request.query);
-    const grants = await paymentDeleteGrantRepo.listBySource(source);
-    return { grants };
+    const [grants, roster] = await Promise.all([
+      paymentDeleteGrantRepo.listBySource(source),
+      listActiveUsersCached().catch(() => []),
+    ]);
+    const grantedIds = new Set(grants.map((g) => g.zohoUserId));
+    return {
+      grants,
+      roster: roster.map((u) => ({
+        zohoUserId: u.zohoUserId,
+        name: u.name ?? null,
+        email: u.email ?? null,
+        granted: grantedIds.has(u.zohoUserId),
+      })),
+    };
   });
 
   app.post('/billing/delete-grants', guard, async (request) => {
