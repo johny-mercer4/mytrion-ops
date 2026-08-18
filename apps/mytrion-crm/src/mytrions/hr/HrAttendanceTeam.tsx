@@ -4,7 +4,7 @@
  * Admins / HR Manager: Team = direct reports; All = every Active employee.
  */
 import { useEffect, useRef, useState } from 'react';
-import { CalendarClock, ChevronLeft, Search, Users } from 'lucide-react';
+import { CalendarClock, ChevronLeft, Download, Search, Users } from 'lucide-react';
 import {
   assignAttendanceShift,
   getAttendanceSummary,
@@ -17,6 +17,7 @@ import {
   type AttendanceTeamListItem,
   type AttendanceTeamScope,
 } from '../../api/hr';
+import { exportPersonAttendanceXlsx, exportTeamAttendanceXlsx } from './attendanceExport';
 import { formatCachedAt, useCachedLoad } from '../_shared/swrCache';
 import { HrBusy, HrEmpty, HrPageLoader } from './HrBits';
 import { HrSelect, type HrSelectOption } from './HrSelect';
@@ -162,6 +163,7 @@ export function HrAttendanceTeam({
    * assignment had failed.
    */
   const [actionError, setActionError] = useState('');
+  const [exporting, setExporting] = useState(false);
   /**
    * The person has no Face ID, so the door readers cannot produce anything for them.
    *
@@ -312,6 +314,41 @@ export function HrAttendanceTeam({
       ? 'No direct reports yet. Ask HR to set reporting lines, or open All if you have org-wide access.'
       : 'No people in departments you lead. Confirm leadership on the department, or ask HR to set reporting lines.';
 
+  /** The whole team/all roster → .xlsx. Re-fetches WITH totals (the roster runs totals-off for speed). */
+  const exportTeam = async (): Promise<void> => {
+    setExporting(true);
+    setActionError('');
+    try {
+      const full = await getAttendanceTeam({ weekOf, scope, withTotals: true });
+      await exportTeamAttendanceXlsx({
+        items: full.items,
+        weekLabel: full.from,
+        scopeLabel: orgWide ? 'Everyone' : 'Team',
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /** One employee's week → .xlsx, from the detail already on screen. */
+  const exportPerson = async (): Promise<void> => {
+    if (!detail) return;
+    setExporting(true);
+    setActionError('');
+    try {
+      await exportPersonAttendanceXlsx({
+        summary: detail,
+        name: selected ? `${selected.firstName} ${selected.lastName}`.trim() : 'employee',
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="hr-att-team">
       <div className="hr-att-toolbar">
@@ -354,6 +391,16 @@ export function HrAttendanceTeam({
                 : ''}
           </span>
         ) : null}
+        <button
+          type="button"
+          className="hr-btn"
+          disabled={exporting || !data || data.items.length === 0}
+          onClick={() => void exportTeam()}
+          title="Export this roster to Excel"
+        >
+          <Download size={14} />
+          {exporting ? 'Exporting…' : 'Export Excel'}
+        </button>
       </div>
 
       {/*
@@ -428,17 +475,29 @@ export function HrAttendanceTeam({
                 </div>
                 {/* A labelled Back, not an X: this returns to the roster rather than dismissing a
                     panel, and an unlabelled X on a full-width view reads as "discard". */}
-                <button
-                  type="button"
-                  className="hr-btn"
-                  onClick={() => {
-                    setSelectedId(null);
-                    setSelectedEmp(null);
-                  }}
-                >
-                  <ChevronLeft size={14} />
-                  All employees
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="hr-btn"
+                    disabled={exporting || !detail}
+                    onClick={() => void exportPerson()}
+                    title="Export this week to Excel"
+                  >
+                    <Download size={14} />
+                    {exporting ? 'Exporting…' : 'Export Excel'}
+                  </button>
+                  <button
+                    type="button"
+                    className="hr-btn"
+                    onClick={() => {
+                      setSelectedId(null);
+                      setSelectedEmp(null);
+                    }}
+                  >
+                    <ChevronLeft size={14} />
+                    All employees
+                  </button>
+                </div>
               </header>
 
               {/*

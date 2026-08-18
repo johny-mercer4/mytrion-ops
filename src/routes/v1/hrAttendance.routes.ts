@@ -189,7 +189,9 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/attendance/me', auth, async (request) => {
-    const { ctx } = await requireAttendanceAccess(request);
+    // Your OWN attendance is open to every internal employee — no HR grant or team needed. The route
+    // only ever resolves the caller's own employee id below, so this can never read anyone else.
+    const ctx = requireInternal(request, 'Attendance');
     const q = z
       .object({
         from: dateStr.optional(),

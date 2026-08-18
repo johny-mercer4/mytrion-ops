@@ -19,7 +19,7 @@ import {
   syncAttendanceFromDwh,
   type AttendanceTeamScope,
 } from '../../../api/hr';
-import { isAdmin } from '../../../access/resolveAccess';
+import { hasFullHrAccess, isAdmin } from '../../../access/resolveAccess';
 import { useUserContext } from '../../../context/UserContextProvider';
 import type { UserContext } from '../../../context/userContext';
 import { HrAttendanceTeam, type TeamSummary } from '../HrAttendanceTeam';
@@ -55,6 +55,7 @@ const PRESENCE_LABEL: Record<string, string> = {
   no_activity: 'No activity',
 };
 
+/** Sees EVERYONE's attendance ("All"): admins and HR Managers. Mirrors the backend `canViewAllAttendance`. */
 function canViewOrgAttendance(user: UserContext): boolean {
   return (
     isAdmin(user) ||
@@ -66,6 +67,10 @@ function canViewOrgAttendance(user: UserContext): boolean {
 export function HrAttendance() {
   const user = useUserContext();
   const canViewOrganization = canViewOrgAttendance(user);
+  // Who has a roster at all: HR staff (the hr grant, via hasFullHrAccess) and team leads see one — HR
+  // its whole managed reach, a lead their team. A plain employee has none, so they get only My Data,
+  // and the Excel export (roster + person) rides on the same gate.
+  const canSeeRoster = hasFullHrAccess(user) || user.leadsTeam === true;
   const [today, setToday] = useState(() => tashkentToday());
   const [pane, setPane] = useState<AttPane>(() => (canViewOrganization ? 'roster' : 'me'));
   const [weekOf, setWeekOf] = useState(today);
@@ -330,26 +335,30 @@ export function HrAttendance() {
       ) : null}
 
       <div className="hr-att-chrome">
-        <div className="hr-att-panes" role="tablist" aria-label="Attendance views">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={pane === 'me'}
-            className={`hr-att-pane${pane === 'me' ? ' is-on' : ''}`}
-            onClick={() => choosePane('me')}
-          >
-            My Data
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={pane === 'roster'}
-            className={`hr-att-pane${pane === 'roster' ? ' is-on' : ''}`}
-            onClick={() => choosePane('roster')}
-          >
-            {orgWide ? 'All' : 'Team'}
-          </button>
-        </div>
+        {/* A regular employee has only their own data, so there is no view to choose — the pane
+            switcher appears only for someone who can also see a team or the whole org. */}
+        {canSeeRoster ? (
+          <div className="hr-att-panes" role="tablist" aria-label="Attendance views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={pane === 'me'}
+              className={`hr-att-pane${pane === 'me' ? ' is-on' : ''}`}
+              onClick={() => choosePane('me')}
+            >
+              My Data
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={pane === 'roster'}
+              className={`hr-att-pane${pane === 'roster' ? ' is-on' : ''}`}
+              onClick={() => choosePane('roster')}
+            >
+              {orgWide ? 'All' : 'Team'}
+            </button>
+          </div>
+        ) : null}
 
         {/* The arrows stay live during a fetch: the cache hook's run-id guard discards superseded
             responses, and each week keeps its own entry — so four quick clicks back a month are three
@@ -375,7 +384,7 @@ export function HrAttendance() {
         </div>
       </div>
 
-      {pane === 'me' ? (
+      {pane === 'me' || !canSeeRoster ? (
         <>
           <div className="hr-att-toolbar hr-att-toolbar-me">
             {data?.shift ? (
