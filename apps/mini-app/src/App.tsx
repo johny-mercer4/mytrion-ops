@@ -2926,11 +2926,18 @@ function ActionSheet({
                         const status = fmt(c['status']);
                         const pan = fmt(c['card_number']);
                         const unit = fmt(c['unit_number']);
+                        // Feedback 2026-08-07 (#1): the unit alone does not say WHO the card is
+                        // for. Same sub-line grammar as the card-management list, and the same
+                        // live EFS field it reads — /status already returns driver_name.
+                        // fmt() renders a missing value as '—', so an absent unit or driver has to
+                        // be dropped from the join rather than printed as "Unit — · —".
+                        const driver = fmt(c['driver_name']);
+                        const sub = [unit === '—' ? null : `Unit ${unit}`, driver === '—' ? null : driver].filter(Boolean).join(' · ');
                         return (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
                             <span style={{ flex: 1, minWidth: 0 }}>
                               <span className="selectable" style={{ display: 'block', fontSize: showFullPan ? 13 : 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{showFullPan ? groupCardNumber(pan) : `•••• ${tail6(pan, null)}`}</span>
-                              {unit && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>Unit {unit}</span>}
+                              {sub && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
                             </span>
                             <span style={{ flex: 'none', fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
                           </div>
@@ -2944,6 +2951,21 @@ function ActionSheet({
           ) : data?.kind === 'txns' ? (
             (() => {
               const rows = data.v.data ?? [];
+              // Feedback 2026-08-07 (#3): Period / Price / Card could each be set but there was no
+              // single way back to the default view — an owner narrowed to one card in a custom
+              // window had to walk all three controls back by hand. Shown only when something is
+              // actually off-default, so the default sheet keeps its clean filter row.
+              const filtersDirty = range !== 'month' || exportRetail || txnCardSel !== null;
+              const clearFilters = () => {
+                haptic('tap');
+                setRange('month');
+                setExportRetail(false);
+                setTxnCardSel(null);
+                // The custom window is part of Period — leaving last month's dates behind means
+                // re-picking "Custom" reopens a range the owner already cleared.
+                setFrom(isoDay(new Date(Date.now() - 30 * 864e5)));
+                setTo(isoDay(new Date()));
+              };
               return (
                 <>
                   {/* ONE filter row, two labeled dropdowns: Period + Card. Replaced the two
@@ -2994,6 +3016,19 @@ function ActionSheet({
                       </div>
                     )}
                   </div>
+                  {filtersDirty && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, marginBottom: 10 }}>
+                      <button
+                        type="button"
+                        className="press"
+                        onClick={clearFilters}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--secondary)', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
+                      >
+                        <Icon name="x" size={13} strokeWidth={2.2} className="" />
+                        {t('txns.clearFilters')}
+                      </button>
+                    </div>
+                  )}
                   {range === 'custom' && (
                     /* Stack From/To vertically — side-by-side native date inputs overflow/merge on narrow mobile. */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
@@ -3517,6 +3552,19 @@ function ActionSheet({
                 const STATUS_FILTERS: ReadonlyArray<{ v: typeof coStatus; k: string }> = [
                   { v: 'all', k: 'co.fAll' }, { v: 'active', k: 'co.fActive' }, { v: 'inactive', k: 'co.fInactive' }, { v: 'hold', k: 'co.fHold' },
                 ];
+                // Feedback 2026-08-07 (#5): card status was only readable one row at a time, so
+                // "how is the fleet doing?" meant scrolling the whole list. The filter chips are
+                // already at the top of this screen and already know each bucket — carrying the
+                // count turns them into the fast status view without a second screen (the
+                // "Check card status" quick action stays the per-card path). Same predicates as
+                // the filter below, so a chip's number always matches what tapping it shows.
+                const countFor = (v: typeof coStatus): number =>
+                  v === 'all' ? allCards.length : allCards.filter((c) => {
+                    const st = stOf(c);
+                    if (v === 'active') return st.includes('active') && !st.includes('inactive');
+                    if (v === 'inactive') return st.includes('inactive');
+                    return st.includes('hold');
+                  }).length;
                 return (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 12px', marginBottom: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
@@ -3524,9 +3572,15 @@ function ActionSheet({
                       <input className="selectable" value={coSearch} onChange={(e) => setCoSearch(e.target.value)} placeholder={t('co.searchCard')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
                     </div>
                     <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
-                      {STATUS_FILTERS.map((f) => (
-                        <button key={f.v} type="button" onClick={() => { haptic('tap'); setCoStatus(f.v); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: coStatus === f.v ? 'var(--primary)' : 'var(--secondary)', color: coStatus === f.v ? '#FFFFFF' : 'var(--muted-fg)' }}>{t(f.k)}</button>
-                      ))}
+                      {STATUS_FILTERS.map((f) => {
+                        const active = coStatus === f.v;
+                        return (
+                          <button key={f.v} type="button" onClick={() => { haptic('tap'); setCoStatus(f.v); }} style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                            {t(f.k)}
+                            <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: active ? 'rgba(255,255,255,.72)' : 'var(--fg)' }}>{countFor(f.v)}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                     {cards.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '28px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noMatch')}</div>
