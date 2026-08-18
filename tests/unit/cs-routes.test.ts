@@ -278,6 +278,81 @@ describe('/cs/* route gates', () => {
   });
 });
 
+describe('citifuel search — phone tried before App_ID, formatting-agnostic', () => {
+  it('a phone-shaped digit query hits the phone param first and returns its rows', async () => {
+    records.searchRecords.mockResolvedValueOnce({
+      rows: [{ id: '1', App_ID: 999 }],
+      moreRecords: false,
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/citifuel?search=7029894445',
+      headers: bearer(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(records.searchRecords).toHaveBeenCalledTimes(1);
+    expect(records.searchRecords).toHaveBeenCalledWith(
+      'Citifuel_Clients',
+      expect.objectContaining({ phone: '7029894445' }),
+    );
+  });
+
+  it('strips formatting before the phone search — dashes/parens do not block a match', async () => {
+    records.searchRecords.mockResolvedValueOnce({
+      rows: [{ id: '1', App_ID: 999 }],
+      moreRecords: false,
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/citifuel?search=' + encodeURIComponent('(702) 989-4445'),
+      headers: bearer(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(records.searchRecords).toHaveBeenCalledWith(
+      'Citifuel_Clients',
+      expect.objectContaining({ phone: '7029894445' }),
+    );
+  });
+
+  it('falls back to the App_ID exact/prefix match when the phone search comes up empty', async () => {
+    records.searchRecords
+      .mockResolvedValueOnce({ rows: [], moreRecords: false }) // phone attempt
+      .mockResolvedValueOnce({ rows: [{ id: '1', App_ID: 4021234 }], moreRecords: false }); // App_ID fallback
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/citifuel?search=4021234',
+      headers: bearer(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(records.searchRecords).toHaveBeenCalledTimes(2);
+    expect(records.searchRecords).toHaveBeenNthCalledWith(
+      1,
+      'Citifuel_Clients',
+      expect.objectContaining({ phone: '4021234' }),
+    );
+    expect(records.searchRecords).toHaveBeenNthCalledWith(
+      2,
+      'Citifuel_Clients',
+      expect.objectContaining({ criteria: expect.stringContaining('App_ID:equals:4021234') }),
+    );
+  });
+
+  it('a short digit query (e.g. a 3-digit App_ID prefix) skips the phone attempt entirely', async () => {
+    records.searchRecords.mockResolvedValueOnce({ rows: [], moreRecords: false });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/citifuel?search=578',
+      headers: bearer(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(records.searchRecords).toHaveBeenCalledTimes(1);
+    expect(records.searchRecords).toHaveBeenCalledWith(
+      'Citifuel_Clients',
+      expect.objectContaining({ criteria: expect.stringContaining('App_ID:equals:578') }),
+    );
+  });
+});
+
 describe('bulk card tracking (Clients tab Tracking # column)', () => {
   it('chunks carrier ids into one COQL call and maps Carrier_ID -> Fedex_Tracking', async () => {
     runCoql.mockResolvedValue({

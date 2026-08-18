@@ -130,21 +130,36 @@ function coqlLiteral(value: string): string {
 export async function csCitifuelRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
-  /** Paged list — plain, status-filtered, or searched (numeric = App_ID, text = word). */
+  /** Paged list — plain, status-filtered, or searched (phone-shaped, numeric = App_ID, text = word). */
   app.get('/cs/citifuel', guard, async (request) => {
     requireCsAccess(request);
     const q = listQuery.parse(request.query);
     const paging = { page: q.page, perPage: q.perPage };
-    if (q.search && /^\d+$/.test(q.search.trim())) {
-      const appId = q.search.trim();
+    const search = q.search?.trim();
+    // Phone numbers get typed in every format ('(702) 989-4445', raw digits, ...). A query with
+    // enough digits to plausibly BE one is tried against Zoho's dedicated phone index first — a
+    // false hit is negligible (App_IDs don't coincide with real phone digits), a miss just falls
+    // through to the App_ID/word search below unchanged.
+    const phoneDigits = search ? search.replace(/\D/g, '') : '';
+    if (phoneDigits.length >= 7) {
+      const phonePage = await zohoCrmRecords.searchRecords(CITI_MODULE, {
+        phone: phoneDigits,
+        fields: CITI_FIELDS,
+        ...paging,
+      });
+      if (q.status) phonePage.rows = phonePage.rows.filter((r) => r.Status_of_App === q.status);
+      if (phonePage.rows.length > 0) return phonePage;
+    }
+    if (search && /^\d+$/.test(search)) {
+      const appId = search;
       const criteria = q.status
         ? `((Status_of_App:equals:${q.status})and(App_ID:equals:${appId}))`
         : `(App_ID:equals:${appId})`;
       return zohoCrmRecords.searchRecords(CITI_MODULE, { criteria, fields: CITI_FIELDS, ...paging });
     }
-    if (q.search) {
+    if (search) {
       const page = await zohoCrmRecords.searchRecords(CITI_MODULE, {
-        word: q.search.trim(),
+        word: search,
         fields: CITI_FIELDS,
         ...paging,
       });

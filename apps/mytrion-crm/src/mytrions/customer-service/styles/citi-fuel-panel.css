@@ -99,7 +99,6 @@
     -webkit-overflow-scrolling: touch;
     background: var(--surface);
     max-height: calc(100vh - 320px);
-    min-height: 240px;
     position: relative;
 }
 
