@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { useSales } from './ctx';
+import { NO_PRIORITY, type PriorityValue } from '@/api/desk';
 
 export const LABEL =
   'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
@@ -98,5 +99,55 @@ export function BackBtn({ onClick }: { onClick: () => void }) {
     <button type="button" onClick={onClick} className="ss-ico-btn" style={s('height:46px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:14px;font-weight:700')}>
       <Icon name="chevronLeft" size={15} strokeWidth={2.2} />Back
     </button>
+  );
+}
+
+/**
+ * Zoho Desk's `priority` picklist as a segmented control. The values are Desk's own
+ * (case-sensitive), and the tints mirror the colours Desk shows the queue: green / amber / red.
+ * 'None' is Desk's `-None-` member and the default — a ticket gets a priority only when the agent
+ * picks one. `busy` disables the control while a change is in flight.
+ */
+const PRIORITY_TONES: Record<PriorityValue, string> = {
+  [NO_PRIORITY]: 'var(--muted)',
+  Low: 'var(--ok)',
+  Medium: 'var(--orange)',
+  High: 'var(--danger)',
+};
+
+export function PrioritySelect({
+  value,
+  onChange,
+  busy = false,
+}: {
+  value: PriorityValue;
+  onChange: (v: PriorityValue) => void;
+  busy?: boolean;
+}) {
+  return (
+    <div role="group" aria-label="Priority" style={s('display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:8px')}>
+      {([NO_PRIORITY, 'Low', 'Medium', 'High'] as PriorityValue[]).map((p) => {
+        const on = value === p;
+        const tone = PRIORITY_TONES[p];
+        return (
+          <button
+            key={p}
+            type="button"
+            aria-pressed={on}
+            disabled={busy}
+            onClick={() => onChange(p)}
+            style={s(
+              `height:44px;border-radius:var(--radius-md);font-size:14px;font-weight:700;cursor:${busy ? 'wait' : 'pointer'};` +
+                'transition:background-color .18s cubic-bezier(0.2,0,0,1),border-color .18s cubic-bezier(0.2,0,0,1),color .18s cubic-bezier(0.2,0,0,1);' +
+                (on
+                  ? `border:1.5px solid ${tone};background:color-mix(in srgb, ${tone} 14%, transparent);color:${tone}`
+                  : 'border:1px solid var(--border);background:var(--surface);color:var(--muted)'),
+            )}
+          >
+            {p === NO_PRIORITY ? 'None' : p}
+          </button>
+        );
+      })}
+    </div>
   );
 }

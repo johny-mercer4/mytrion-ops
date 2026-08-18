@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { ICO, NAV_DESC } from '../salesData';
 import { SalesPage, SalesPageHead, SalesSubTabs, type SalesSubTab } from '../SalesPage';
 import { TicketWizard, EscalationForm, CreateLeadForm } from '../createTicketForms';
+import { RecentTicketsStrip } from '../recentTickets';
 
 type Mode = 'ticket' | 'escalation' | 'lead';
 
@@ -24,13 +25,18 @@ const MODE_DESC: Record<Mode, string> = {
 
 export function CreateTab() {
   const [mode, setMode] = useState<Mode>('ticket');
+  // Bumped on every successful create so the strip below picks the new ticket up.
+  const [filed, setFiled] = useState(0);
 
   return (
     <SalesPage width="narrow">
       <SalesPageHead description={`${NAV_DESC.create} ${MODE_DESC[mode]}`} />
       <SalesSubTabs items={TABS} value={mode} onChange={setMode} label="What to create" />
       {mode === 'ticket' ? (
-        <TicketWizard />
+        <>
+          <TicketWizard onFiled={() => setFiled((n) => n + 1)} />
+          <RecentTicketsStrip refreshKey={filed} />
+        </>
       ) : mode === 'escalation' ? (
         <EscalationForm />
       ) : (

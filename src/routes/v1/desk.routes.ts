@@ -30,6 +30,7 @@ import {
   getTicketThreads,
   pageTicketsByCreator,
   searchTicketsByCreator,
+  updateTicketPriority,
   uploadTicketAttachment,
 } from '../../integrations/zohoDesk.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
@@ -127,11 +128,20 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
 
 const listQuery = z.object({
   zoho_user_id: z.string().max(120).optional(),
+  // Depth of the no-search-scope fallback scan (pages of 99 org tickets). The full 100-page sweep
+  // costs ~28s, which blows the client's 20s timeout — small readers ask for a shallow window.
+  scan_pages: z.coerce.number().int().min(1).max(100).optional(),
   // Desk search accepts from=0 (zoho-octane ticketdashboard.html); list endpoints use 1-based.
   from: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(99).optional(),
 });
 const commentsQuery = z.object({ limit: z.coerce.number().int().min(1).max(99).optional() });
+
+/** Desk's picklist values, verbatim — Desk rejects other casings/values. */
+const prioritySchema = z.enum(['Low', 'Medium', 'High']);
+/** The same list plus Desk's own "no priority" member, which only the change route accepts
+ *  (a create simply omits the field). Desk stores it and reads it back as null. */
+const priorityChangeSchema = z.enum(['-None-', 'Low', 'Medium', 'High']);
 
 const createTicketFields = z.object({
   department: z.enum(['cs', 'billing', 'verification', 'maintenance']),
@@ -140,6 +150,7 @@ const createTicketFields = z.object({
   dealId: z.string().regex(/^\d+$/, 'dealId must be a CRM record id').max(60),
   subject: z.string().min(1).max(300),
   description: z.string().min(1).max(8000),
+  priority: prioritySchema.optional(),
   carrierId: z.string().max(60).optional(),
   applicationId: z.string().max(60).optional(),
   cardNumber: z.string().max(60).optional(),
@@ -192,7 +203,10 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
         if (/SCOPE_MISMATCH|403|422|UNPROCESSABLE|INVALID_/.test(msg)) {
-          const page = await pageTicketsByCreator(crmUserId, paging);
+          const page = await pageTicketsByCreator(crmUserId, {
+            ...paging,
+            ...(q.scan_pages !== undefined ? { maxOrgPages: q.scan_pages } : {}),
+          });
           return {
             tickets: await enrichTicketOwners(page.tickets),
             scoped: false,
@@ -326,6 +340,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         description: f.description,
         departmentId: DESK_DEPARTMENTS[f.department],
         channel: 'Ticket Form',
+        priority: f.priority,
         contact: {
           lastName: f.contactName || f.accountName || 'Customer',
           email: f.email,
@@ -361,9 +376,41 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         status: 'ok',
         resourceType: 'desk_ticket',
         resourceId: deskTicketId,
-        detail: { department: f.department, ticketType: f.ticketType, dealId: f.dealId, attached, warnings },
+        detail: {
+          department: f.department,
+          ticketType: f.ticketType,
+          dealId: f.dealId,
+          priority: f.priority,
+          attached,
+          warnings,
+        },
       });
       return { ticketId: deskTicketId, attached, warnings };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw deskError(err);
+    }
+  });
+
+  /**
+   * Change a ticket's priority after it was filed. Owner-scoped (a rep may only re-prioritise a
+   * ticket they created); the value goes straight to Desk's standard `priority` picklist.
+   */
+  app.patch('/desk/tickets/:id/priority', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { id } = request.params as { id: string };
+    const { priority } = z.object({ priority: priorityChangeSchema }).parse(request.body);
+    try {
+      await assertTicketOwned(ctx, id);
+      const saved = await updateTicketPriority(id, priority);
+      await auditFromContext(ctx, {
+        action: 'desk.ticket.priority.update',
+        status: 'ok',
+        resourceType: 'desk_ticket',
+        resourceId: id,
+        detail: { priority: saved },
+      });
+      return { ticketId: id, priority: saved };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);

@@ -21,7 +21,7 @@ import { useSessionUser } from './sessionUser';
 import { useLoad, loadClientCards, type ClientCardVM } from './live';
 import { loadDeals, type DealVM } from './dataCenterLive';
 import { AUTO_LIST, type Automation } from './autoLive';
-import { createDeskTicket, type CreateTicketInput } from '@/api/desk';
+import { createDeskTicket, NO_PRIORITY, type CreateTicketInput, type PriorityValue } from '@/api/desk';
 import { formatPhone } from '@/lib/phone';
 import { invalidateDcCache } from './dcCache';
 import { invalidateDeduped } from './fetchDedupe';
@@ -34,6 +34,7 @@ import {
   DROP_PANEL,
   FIELD,
   LABEL,
+  PrioritySelect,
   SELECT_BTN,
 } from './createTicketShared';
 
@@ -96,6 +97,7 @@ interface CrState {
   cardOpen: boolean;
   subject: string;
   body: string;
+  priority: PriorityValue;
   submitting: boolean;
   /** The matched automation when the picked ticket type is self-serviceable (opens the prompt). */
   autoPrompt: Automation | null;
@@ -104,7 +106,8 @@ interface CrState {
 const CR0: CrState = {
   step: 1, dept: '', dealQ: '', dealId: '', carrierId: '', app: '', company: '', dealName: '',
   contact: '', account: '', email: '', phone: '', ticketType: '', typeOpen: false,
-  cardQ: '', card: '', cardOpen: false, subject: '', body: '', submitting: false, autoPrompt: null,
+  cardQ: '', card: '', cardOpen: false, subject: '', body: '', priority: NO_PRIORITY, submitting: false,
+  autoPrompt: null,
 };
 
 /**
@@ -119,7 +122,8 @@ function dealIdChip(d: DealVM): { text: string; tone: 'carrier' | 'app' | 'none'
   return { text: 'No ID', tone: 'none' };
 }
 
-export function TicketWizard() {
+/** `onFiled` lets the Create tab refresh its recent-tickets strip after a successful create. */
+export function TicketWizard({ onFiled }: { onFiled?: () => void } = {}) {
   const { pushToast, openAutomation } = useSales();
   const { name: submitterName } = useSessionUser();
   const [cr, setCr] = useState<CrState>(CR0);
@@ -187,6 +191,8 @@ export function TicketWizard() {
         dealId: cr.dealId,
         subject: cr.subject.trim(),
         description: cr.body.trim(),
+        // None = leave the field off entirely; Desk then applies its own default.
+        ...(cr.priority === NO_PRIORITY ? {} : { priority: cr.priority }),
         carrierId: cr.carrierId,
         applicationId: cr.app && cr.app !== '—' ? cr.app : undefined,
         cardNumber: cr.card || undefined,
@@ -212,6 +218,7 @@ export function TicketWizard() {
       );
       invalidateDcCache('sales:tickets');
       invalidateDeduped('desk:tickets:');
+      onFiled?.();
     } catch (e) {
       pushToast('Couldn’t create ticket', e instanceof Error ? e.message : 'Please try again.');
       patch({ submitting: false });
@@ -509,6 +516,7 @@ export function TicketWizard() {
               </div>
             </div>
             <div><div style={s(LABEL)}>Subject <span style={s('color:var(--accent)')}>*</span></div><input value={cr.subject} onChange={(e) => patch({ subject: e.currentTarget.value })} placeholder="Brief summary of the request" className="ss-in" style={s(FIELD)} /></div>
+            <div><div style={s(LABEL)}>Priority</div><PrioritySelect value={cr.priority} onChange={(v) => patch({ priority: v })} /></div>
             <div><div style={s(LABEL)}>Description <span style={s('color:var(--accent)')}>*</span></div><textarea value={cr.body} onChange={(e) => patch({ body: e.currentTarget.value })} placeholder="What's needed, which card / driver, and any context…" className="ss-in" style={s('width:100%;min-height:104px;padding:11px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;resize:vertical;line-height:1.5')} /></div>
             <div><div style={s(LABEL)}>Attachment <span style={s('font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0')}>· max 20MB</span></div><AttachZone id="cr-att" file={att} onFile={setAtt} /></div>
             <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:2px')}>
