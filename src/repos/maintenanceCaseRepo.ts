@@ -90,14 +90,6 @@ const UNIT_NORM = sql`lower(regexp_replace(${maintenanceCases.unitNumber}, '[^a-
 const normalizeUnit = (q: string): string => q.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
- * Phones arrive as '(702) 989-4445', '702-989-4445', or raw digits, so a raw `ilike` never matches
- * across formats. Digit-only substring match mirrors `matchesSearch`/`digitsOf` in
- * `applicationsListQuery.ts` — no minimum length, same as that shipped behavior.
- */
-const PHONE_NORM = sql`regexp_replace(${maintenanceCases.phone}, '[^0-9]', '', 'g')`;
-const normalizePhone = (q: string): string => q.replace(/[^0-9]/g, '');
-
-/**
  * Every ordering ends in `id` so the sort is TOTAL. Without that tiebreak an offset page can skip or
  * duplicate rows whenever many cases share a date — the same failure the referral drain hit when 680
  * of 687 records shared one timestamp.
@@ -150,8 +142,7 @@ function buildFilters(f: MaintenanceFilters): SQL[] {
     }
     const unitKey = normalizeUnit(q);
     if (unitKey) terms.push(sql`${UNIT_NORM} = ${unitKey}`);
-    const phoneKey = normalizePhone(q);
-    if (phoneKey) terms.push(sql`${PHONE_NORM} LIKE ${`%${phoneKey}%`}`);
+    if (q.replace(/[^0-9]/g, '')) terms.push(sql`regexp_replace(${maintenanceCases.phone}, '[^0-9]', '', 'g') LIKE ${`%${q.replace(/[^0-9]/g, '')}%`}`); // phone: digit-substring match
 
     const search = or(...terms);
     if (search) conds.push(search);
@@ -452,7 +443,6 @@ export const maintenanceCaseRepo = {
     }
     return { written, skipped, chunks };
   },
-
 
   /**
    * Individual maintenance cases for one carrier in a window — the itemized lines behind the

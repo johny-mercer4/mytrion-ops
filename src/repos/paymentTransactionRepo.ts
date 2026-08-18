@@ -5,15 +5,13 @@ import {
   type NewPaymentTransaction,
   type PaymentTransaction,
 } from '../db/schema/index.js';
+import { deleteIfUnmapped } from './paymentTransactionDeleteRepo.js';
+import { sumForPrepayByDay } from './paymentTransactionPrepayDailyRepo.js';
 
 /**
  * paymentTransactionRepo — read/write access to the unified payments store (replaces the four Zoho
- * payment modules). Reads back the whole ledger for the billing panel (which filters/groups
- * client-side); writes are the PG-owned mapping columns (the actual payment is applied/reversed in
- * CMP, external). Ingest uses `upsertMany`, which NEVER overwrites the mapping columns.
- *
- * Not tenant-scoped (global operational table, money-code precedent). NUMERIC round-trips as a
- * string in Drizzle — the `money()` helper formats writes at fixed scale.
+ * payment modules). Writes are PG-owned mapping columns only (payment applied/reversed in CMP,
+ * external); `upsertMany` never overwrites them. Not tenant-scoped. NUMERIC round-trips as a string.
  */
 
 /** NUMERIC → fixed-scale string (or undefined to leave unset). */
@@ -294,26 +292,7 @@ export const paymentTransactionRepo = {
     return rows[0];
   },
 
-  /**
-   * Hard delete — for a manually-entered row (Chase is the only rail with no automated feed) that
-   * should never have existed, not a correction to a real payment. Guarded to UNMAPPED only: a row
-   * still holding an invoice/prepay mapping has to go through the existing (audited) unmap flow
-   * first, so a real CMP reversal actually happens before the row that recorded it disappears.
-   * Conditional on `is_invoice_mapped = false` at the DB level (not just checked-then-deleted) so a
-   * concurrent map cannot land between the check and the delete.
-   *
-   * Returns the deleted row so the caller can audit-log a full snapshot — this is the one place in
-   * the system a payment_transactions row is destroyed rather than corrected in place, so the audit
-   * trail is the only remaining record of what it was.
-   */
-  async deleteIfUnmapped(id: number): Promise<PaymentTransaction | undefined> {
-    const rows = await db
-      .delete(paymentTransactions)
-      .where(and(eq(paymentTransactions.id, id), eq(paymentTransactions.isInvoiceMapped, false)))
-      .returning();
-    return rows[0];
-  },
-
+  deleteIfUnmapped,
   /** Look up a row by its natural key (source, source_record_id) — e.g. to detect a duplicate
    *  manual add before upserting (the upsert would silently update, hiding the duplicate). */
   async findBySourceRecord(source: string, sourceRecordId: string): Promise<PaymentTransaction | undefined> {
@@ -556,47 +535,7 @@ export const paymentTransactionRepo = {
     return rows.map((r) => ({ carrierId: String(r.carrierId), source: r.source, total: Number(r.total) || 0 }));
   },
 
-  /**
-   * Same semantics as `sumForPrepay`, one carrier, bucketed per calendar day (UTC, matching that
-   * function's own bounds) — the prepay ledger modal's zelle/chase/merchant daily columns.
-   *
-   * The modal's other columns (top_up/rmve/money_code/stripe) still come from servercrm's Zoho-era
-   * ledger (services/prepayLedger.js) via a straight proxy; only `maintenance` had been overridden
-   * from our own Postgres so far (see modules/billing/prepayLedger.ts). Zelle/Chase/Merchant need the
-   * exact same treatment: servercrm's columns read Zoho's `Zelle_Transactions`/`Chase_Transactions`
-   * modules directly, which newer payments (ingested straight into `payment_transactions` since the
-   * Postgres migration) never get written back into — so the modal shows them as missing even though
-   * `sumForPrepay` above already counts them correctly in the company list total.
-   */
-  async sumForPrepayByDay(
-    sources: string[],
-    carrierId: string,
-    startYmd: string,
-    endExclusiveYmd: string,
-  ): Promise<Array<{ day: string; source: string; total: number }>> {
-    if (sources.length === 0) return [];
-    const startUtc = `${startYmd}T00:00:00+00:00`;
-    const endUtc = `${endExclusiveYmd}T00:00:00+00:00`;
-    const dayExpr = sql`(${paymentTransactions.occurredAt} at time zone 'UTC')::date`;
-    const rows = await db
-      .select({
-        day: sql<string>`${dayExpr}::text`,
-        source: paymentTransactions.source,
-        total: sql<number>`sum(${paymentTransactions.amount})::float8`,
-      })
-      .from(paymentTransactions)
-      .where(
-        and(
-          inArray(paymentTransactions.source, sources),
-          eq(paymentTransactions.carrierId, carrierId),
-          sql`${paymentTransactions.occurredAt} >= ${startUtc}`,
-          sql`${paymentTransactions.occurredAt} < ${endUtc}`,
-        ),
-      )
-      .groupBy(dayExpr, paymentTransactions.source);
-    return rows.map((r) => ({ day: r.day, source: r.source, total: Number(r.total) || 0 }));
-  },
-
+  sumForPrepayByDay,
   /**
    * Money RECEIVED per carrier in a window — the Debit of the Billing Ledger's Un Top-Upped Payments
    * sub-ledger (TZ §5.2).
