@@ -3,7 +3,7 @@
  * Managers: Team = reportees ∪ departments they lead.
  * Admins / HR Manager: Team = direct reports; All = every Active employee.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { CalendarClock, ChevronLeft, Download, Search, Users } from 'lucide-react';
 import {
   assignAttendanceShift,
@@ -18,6 +18,7 @@ import {
   type AttendanceTeamScope,
 } from '../../api/hr';
 import { exportPersonAttendanceXlsx, exportTeamAttendanceXlsx } from './attendanceExport';
+import { weekRangeContaining } from './attendanceTime';
 import { formatCachedAt, useCachedLoad } from '../_shared/swrCache';
 import { HrBusy, HrEmpty, HrPageLoader } from './HrBits';
 import { HrSelect, type HrSelectOption } from './HrSelect';
@@ -164,6 +165,10 @@ export function HrAttendanceTeam({
    */
   const [actionError, setActionError] = useState('');
   const [exporting, setExporting] = useState(false);
+  // The export asks which period first (see the dialog): `exportKind` is which export is being set up.
+  const [exportKind, setExportKind] = useState<'team' | 'person' | null>(null);
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
   /**
    * The person has no Face ID, so the door readers cannot produce anything for them.
    *
@@ -314,17 +319,37 @@ export function HrAttendanceTeam({
       ? 'No direct reports yet. Ask HR to set reporting lines, or open All if you have org-wide access.'
       : 'No people in departments you lead. Confirm leadership on the department, or ask HR to set reporting lines.';
 
-  /** The whole team/all roster → .xlsx. Re-fetches WITH totals (the roster runs totals-off for speed). */
-  const exportTeam = async (): Promise<void> => {
+  /** Open the "which period?" dialog, defaulting to the week currently in view. */
+  const openExport = (kind: 'team' | 'person'): void => {
+    const range = weekRangeContaining(weekOf);
+    setExportFrom(range.from);
+    setExportTo(range.to);
+    setActionError('');
+    setExportKind(kind);
+  };
+
+  /** Run the chosen export for the chosen period, fetching that range fresh. */
+  const runExport = async (): Promise<void> => {
+    if (!exportKind || exportFrom > exportTo) return;
     setExporting(true);
     setActionError('');
     try {
-      const full = await getAttendanceTeam({ weekOf, scope, withTotals: true });
-      await exportTeamAttendanceXlsx({
-        items: full.items,
-        weekLabel: full.from,
-        scopeLabel: orgWide ? 'Everyone' : 'Team',
-      });
+      if (exportKind === 'team') {
+        // Re-fetch WITH totals for the chosen window (the roster runs totals-off for speed).
+        const full = await getAttendanceTeam({ from: exportFrom, to: exportTo, scope, withTotals: true });
+        await exportTeamAttendanceXlsx({
+          items: full.items,
+          weekLabel: exportFrom === exportTo ? exportFrom : `${exportFrom}_${exportTo}`,
+          scopeLabel: orgWide ? 'Everyone' : 'Team',
+        });
+      } else if (selectedId) {
+        const summary = await getAttendanceSummary({ from: exportFrom, to: exportTo, employeeId: selectedId });
+        await exportPersonAttendanceXlsx({
+          summary,
+          name: selected ? `${selected.firstName} ${selected.lastName}`.trim() : 'employee',
+        });
+      }
+      setExportKind(null);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Export failed.');
     } finally {
@@ -332,21 +357,13 @@ export function HrAttendanceTeam({
     }
   };
 
-  /** One employee's week → .xlsx, from the detail already on screen. */
-  const exportPerson = async (): Promise<void> => {
-    if (!detail) return;
-    setExporting(true);
-    setActionError('');
-    try {
-      await exportPersonAttendanceXlsx({
-        summary: detail,
-        name: selected ? `${selected.firstName} ${selected.lastName}`.trim() : 'employee',
-      });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Export failed.');
-    } finally {
-      setExporting(false);
-    }
+  const dateInputStyle: CSSProperties = {
+    padding: '8px 10px',
+    borderRadius: 'var(--hr-r-md)',
+    border: '1px solid var(--hz-pane-bd, var(--border))',
+    background: 'var(--hz-field, var(--surface))',
+    color: 'var(--text-primary)',
+    colorScheme: 'dark',
   };
 
   return (
@@ -394,12 +411,12 @@ export function HrAttendanceTeam({
         <button
           type="button"
           className="hr-btn"
-          disabled={exporting || !data || data.items.length === 0}
-          onClick={() => void exportTeam()}
-          title="Export this roster to Excel"
+          disabled={!data || data.items.length === 0}
+          onClick={() => openExport('team')}
+          title="Export the roster to Excel"
         >
           <Download size={14} />
-          {exporting ? 'Exporting…' : 'Export Excel'}
+          Export Excel
         </button>
       </div>
 
@@ -479,12 +496,12 @@ export function HrAttendanceTeam({
                   <button
                     type="button"
                     className="hr-btn"
-                    disabled={exporting || !detail}
-                    onClick={() => void exportPerson()}
-                    title="Export this week to Excel"
+                    disabled={!detail}
+                    onClick={() => openExport('person')}
+                    title="Export this employee's attendance to Excel"
                   >
                     <Download size={14} />
-                    {exporting ? 'Exporting…' : 'Export Excel'}
+                    Export Excel
                   </button>
                   <button
                     type="button"
@@ -561,6 +578,83 @@ export function HrAttendanceTeam({
           ) : null}
         </div>
       )}
+
+      {/* Ask which period before exporting — a week by default, but any range the user picks. */}
+      {exportKind ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Choose export period"
+          onClick={() => (exporting ? undefined : setExportKind(null))}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 60,
+            display: 'grid',
+            placeItems: 'center',
+            background: 'rgba(2,6,23,0.55)',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              minWidth: 320,
+              padding: 20,
+              borderRadius: 'var(--hr-r-lg)',
+              border: '1px solid var(--hz-pane-bd, var(--border))',
+              background: 'var(--hz-pane, var(--surface))',
+              boxShadow: 'var(--hz-shadow-rest)',
+            }}
+          >
+            <div>
+              <h3 style={{ margin: 0, fontSize: 'var(--text-lg)' }}>
+                Export {exportKind === 'team' ? (orgWide ? 'everyone’s' : 'team') : 'employee'}{' '}
+                attendance
+              </h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                Which period do you want?
+              </p>
+            </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--text-sm)' }}>
+              From
+              <input
+                type="date"
+                value={exportFrom}
+                max={exportTo}
+                onChange={(e) => setExportFrom(e.target.value)}
+                style={dateInputStyle}
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--text-sm)' }}>
+              To
+              <input
+                type="date"
+                value={exportTo}
+                min={exportFrom}
+                onChange={(e) => setExportTo(e.target.value)}
+                style={dateInputStyle}
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <button type="button" className="hr-btn" disabled={exporting} onClick={() => setExportKind(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="hr-btn hr-btn-primary"
+                disabled={exporting || !exportFrom || !exportTo || exportFrom > exportTo}
+                onClick={() => void runExport()}
+              >
+                <Download size={14} />
+                {exporting ? 'Exporting…' : 'Export Excel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
