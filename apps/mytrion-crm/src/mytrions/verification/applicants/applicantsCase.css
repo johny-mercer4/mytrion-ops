@@ -890,6 +890,14 @@
   gap: var(--space-2);
 }
 [data-mytrion='verification'] .va-doc-attach {
+  /* THE ANCHOR. The hidden `<input type="file">` below is `position: absolute`; with nothing
+     positioned between it and `.shell .body`, its containing block WAS `.shell .body` — so the input
+     resolved ~990px above where it appears to sit. Clicking this label focuses that control, and the
+     browser scrolls the nearest scrollport to reveal it: the whole app slid up, further with every
+     document row already rendered above the control. `position: relative` gives the input its own
+     containing block back. Nothing moves — the input keeps auto offsets, so it stays at its static
+     position inside this label — and no `z-index` is set, so no stacking context is created. */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -913,6 +921,40 @@
   color: var(--text-disabled);
   border-color: var(--border-subtle);
 }
+/* Uploading. The dashed edge goes solid accent and the shimmer runs along it — the label IS the
+   loader for this region, which is why no spinner is added beside it. `background-position` only, so
+   nothing here promotes a new composited layer. */
+[data-mytrion='verification'] .va-doc-attach[data-busy] {
+  cursor: progress;
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background:
+    linear-gradient(90deg, transparent 25%, var(--surface-raised) 50%, transparent 75%) var(--field);
+  background-size: 300% 100%;
+  animation: va-attach-sweep 1.4s linear infinite;
+}
+@keyframes va-attach-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -150% 0; }
+}
+/* The refusal, beside the control that produced it. */
+[data-mytrion='verification'] .va-aside-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-2_5);
+  border-radius: var(--va-r-sm);
+  border: 1px solid var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+  color: var(--text-primary);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+[data-mytrion='verification'] .va-aside-error > span { min-width: 0; }
+
 /* The input is the control; the label is its surface. Hidden without `display:none` so it keeps
    its place in the focus order and a keyboard user can still reach it through the label. */
 [data-mytrion='verification'] .va-doc-attach input {

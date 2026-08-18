@@ -340,6 +340,11 @@
 }
 
 .mg-root .mg-lty-reward-grid > label {
+  /* Anchors the visually-hidden `input` below (see `_shared/absPosAnchor.test.ts`). Without it that
+     `position: absolute` input resolves against the app shell and focusing it — which is what
+     clicking this label does — scrolls the whole page. Found while fixing the same defect on the
+     Verification desk's attach control. */
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
