@@ -9,7 +9,7 @@ import { NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { recruitRepo } from '../../repos/recruitRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment, requireMytrionWrite } from './helpers.js';
+import { requireContext, withDepartmentAccess } from './helpers.js';
 
 const jobStatus = z.enum(RECRUIT_JOB_STATUSES);
 const employmentType = z.enum(RECRUIT_EMPLOYMENT_TYPES);
@@ -48,12 +48,41 @@ const convertBody = z.object({
   mobile: z.string().max(50).nullable().optional(),
 });
 
+/**
+ * Recruit is co-owned by two departments — Recruiters (the `recruit` grant) and HR — plus admins.
+ * Declared here instead of a bare `requireDepartment('recruit')` so an HR user always reaches the
+ * hiring workspace, whether or not their per-user grant also lists `recruit`: hiring is an HR
+ * function. Anyone with NEITHER department is refused, so this never opens up like `hr` (which is
+ * read-open to every internal worker). A plain employee — and a team lead, who has no `hr`/`recruit`
+ * department of their own — has no way in.
+ */
 function requireRecruitRead(request: FastifyRequest): TenantContext {
-  return requireDepartment(request, 'recruit', 'Recruit workspace');
+  const base = requireContext(request);
+  if (base.audience !== 'internal') throw new RBACError('Recruit workspace is internal-only');
+  const ctx = withDepartmentAccess(base, request);
+  const ok =
+    ctx.role === 'admin' ||
+    ctx.bypassRbac === true ||
+    ctx.allDepartmentAccess ||
+    ctx.departments.includes('recruit') ||
+    ctx.departments.includes('hr');
+  if (!ok) throw new RBACError('Recruit workspace requires Recruiter or HR access');
+  return ctx;
 }
 
+/**
+ * Full CRUD for HR and admins; a dedicated Recruiter writes unless their `recruit` access is
+ * read-only. HR carries no `recruit` access-mode, so they are never the read-only case — hiring CRUD
+ * is theirs by policy.
+ */
 function requireRecruitWrite(request: FastifyRequest): TenantContext {
-  return requireMytrionWrite(request, 'recruit', 'Recruit workspace');
+  const ctx = requireRecruitRead(request);
+  if (ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess) return ctx;
+  if (ctx.departments.includes('hr')) return ctx;
+  if (ctx.mytrionAccessModes?.recruit === 'read') {
+    throw new RBACError('Recruit workspace requires full (write) access — your access is read-only');
+  }
+  return ctx;
 }
 
 function requireRecruitAdmin(request: FastifyRequest): TenantContext {

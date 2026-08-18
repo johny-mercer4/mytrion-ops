@@ -106,6 +106,30 @@ describe('Recruit workspace routes', () => {
     expect(response.json()).toEqual({ items: [] });
   });
 
+  it('gives HR full CRUD in the hiring workspace (co-owned with Recruiters)', async () => {
+    const token = await workerToken('HR', 'recruit-hr');
+    const read = await app.inject({
+      method: 'GET',
+      url: '/v1/recruit/jobs',
+      headers: bearer(token),
+    });
+    expect(read.statusCode).toBe(200);
+
+    repo.createJob.mockResolvedValueOnce({ id: 'rjo_hr' } as never);
+    const write = await app.inject({
+      method: 'POST',
+      url: '/v1/recruit/jobs',
+      headers: bearer(token),
+      payload: { title: 'Backend Engineer', departmentId: 'hrd_1' },
+    });
+    // The write GUARD admitted HR — the point of this test — and their input reached the repo.
+    expect(write.statusCode).not.toBe(403);
+    expect(repo.createJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ title: 'Backend Engineer', departmentId: 'hrd_1' }),
+    );
+  });
+
   it('keeps candidate conversion admin-only', async () => {
     const token = await workerToken('Recruiter', 'recruit-convert-denied');
     const response = await app.inject({
