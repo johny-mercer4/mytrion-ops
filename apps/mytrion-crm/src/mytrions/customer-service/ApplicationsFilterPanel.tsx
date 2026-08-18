@@ -10,6 +10,7 @@
  * fields, for the same reason: fewer, denser controls read better than a long flat row of them.
  */
 import type { CsApplicationsFacets } from '@/api/touchpointTypes';
+import { Select } from '@/ds';
 import { emptyFilters, type AppFilters } from './applicationsFilters';
 
 export function ApplicationsFilterPanel({
@@ -79,19 +80,14 @@ export function ApplicationsFilterPanel({
           </select>
         </div>
         <div className="cs-app-filter-field">
-          <label className="cs-app-filter-label">Agent (Deal)</label>
-          <select
-            className="cs-form-input"
-            value={filters.agent}
-            onChange={(e) => setFilters((f) => ({ ...f, agent: e.target.value }))}
-          >
-            <option value="">All</option>
-            {facets.agent.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+          <Select
+            label="Agent (Deal)"
+            placeholder="All"
+            clearable
+            options={facets.agent.map((a) => ({ value: a, label: a }))}
+            value={filters.agent || null}
+            onChange={(v) => setFilters((f) => ({ ...f, agent: v ?? '' }))}
+          />
         </div>
         <div className="cs-app-filter-field">
           <label className="cs-app-filter-label">Love's Verification</label>
