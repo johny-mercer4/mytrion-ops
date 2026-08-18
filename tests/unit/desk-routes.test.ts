@@ -36,6 +36,7 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
       contentType: 'text/plain',
     })),
     createDeskTicket: vi.fn(async () => 'tk_new'),
+    updateTicketPriority: vi.fn(async (_id: string, priority: string) => priority),
   };
 });
 vi.mock('../../src/integrations/salesDataCenter.js', async (importOriginal) => {
@@ -72,6 +73,7 @@ import {
   getTicketAttachmentContent,
   getTicketAttachments,
   searchTicketsByCreator,
+  updateTicketPriority,
   uploadTicketAttachment,
 } from '../../src/integrations/zohoDesk.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
@@ -83,6 +85,7 @@ const getTicketMock = vi.mocked(getTicket);
 const attachmentMock = vi.mocked(getTicketAttachmentContent);
 const getAttachmentsMock = vi.mocked(getTicketAttachments);
 const createTicketMock = vi.mocked(createDeskTicket);
+const updatePriorityMock = vi.mocked(updateTicketPriority);
 const uploadAttachmentMock = vi.mocked(uploadTicketAttachment);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
 const dispatchMock = vi.mocked(dispatchTouchpoint);
@@ -119,6 +122,7 @@ beforeEach(() => {
   clearTicketOwnerCache();
   searchMock.mockResolvedValue([]);
   createTicketMock.mockResolvedValue('tk_new');
+  updatePriorityMock.mockImplementation(async (_id, priority) => priority);
   uploadAttachmentMock.mockResolvedValue({ id: 'att_1' } as never);
   crmAttachMock.mockResolvedValue('crm_att_1');
   dealOwnerMock.mockResolvedValue(null);
@@ -380,6 +384,89 @@ describe('ticket create — deal ownership (restored Desk write path)', () => {
     // tells the agent the file did not attach rather than that the ticket did not file.
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: false });
+  });
+});
+
+describe('ticket priority — Desk picklist (create + change afterwards)', () => {
+  const FIELDS = {
+    department: 'cs',
+    ticketType: 'Card Issue',
+    dealId: '5550001',
+    subject: 'Card not working',
+    description: 'Pump declines the card.',
+  };
+
+  const post = async (fields: Record<string, string>) => {
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(fields);
+    return app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+  };
+
+  const patch = async (ticketId: string, body: Record<string, string>, profile = 'Sales Rep') => {
+    const token = await workerToken(profile);
+    return app.inject({
+      method: 'PATCH',
+      url: `/v1/desk/tickets/${ticketId}/priority`,
+      headers: bearer(token),
+      payload: body,
+    });
+  };
+
+  it('the picked priority reaches Desk as a top-level field, not a custom field', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    const res = await post({ ...FIELDS, priority: 'High' });
+    expect(res.statusCode).toBe(200);
+    expect(createTicketMock).toHaveBeenCalledWith(expect.objectContaining({ priority: 'High' }));
+    const arg = createTicketMock.mock.calls[0]?.[0];
+    expect(arg?.cf).not.toHaveProperty('priority');
+  });
+
+  it('omitting priority leaves it unset (Desk keeps its own default)', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    const res = await post(FIELDS);
+    expect(res.statusCode).toBe(200);
+    expect(createTicketMock.mock.calls[0]?.[0].priority).toBeUndefined();
+  });
+
+  it('a value Desk does not have (Urgent / lowercase) is rejected before the API call', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    expect((await post({ ...FIELDS, priority: 'Urgent' })).statusCode).toBe(400);
+    expect((await post({ ...FIELDS, priority: 'high' })).statusCode).toBe(400);
+    expect(createTicketMock).not.toHaveBeenCalled();
+  });
+
+  it('changing priority on your own ticket hits Desk and is audited', async () => {
+    getTicketMock.mockResolvedValue({ cf: { cf_crm_created_by_id: '42' } });
+    const res = await patch('tk_1', { priority: 'Low' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_1', priority: 'Low' });
+    expect(updatePriorityMock).toHaveBeenCalledWith('tk_1', 'Low');
+  });
+
+  it("changing priority on someone else's ticket → 403, Desk never called", async () => {
+    getTicketMock.mockResolvedValue({ cf: { cf_crm_created_by_id: '999' } });
+    const res = await patch('tk_777', { priority: 'High' });
+    expect(res.statusCode).toBe(403);
+    expect(updatePriorityMock).not.toHaveBeenCalled();
+  });
+
+  it("clearing a priority sends Desk's own '-None-' member", async () => {
+    getTicketMock.mockResolvedValue({ cf: { cf_crm_created_by_id: '42' } });
+    const res = await patch('tk_1', { priority: '-None-' });
+    expect(res.statusCode).toBe(200);
+    expect(updatePriorityMock).toHaveBeenCalledWith('tk_1', '-None-');
+  });
+
+  it('a bogus priority on the change route → 400, Desk never called', async () => {
+    getTicketMock.mockResolvedValue({ cf: { cf_crm_created_by_id: '42' } });
+    const res = await patch('tk_1', { priority: 'Critical' });
+    expect(res.statusCode).toBe(400);
+    expect(updatePriorityMock).not.toHaveBeenCalled();
   });
 });
 
