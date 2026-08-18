@@ -6,7 +6,18 @@
 /* `width:100%` is load-bearing: `.ss-page` is a flex column whose items shrink-to-fit here, so
    without it this wrapper collapsed to its content — measured 559px inside a 1132px page, pushed
    to x=565 while the page head stayed at x=278. A max-width alone does not make a box wide. */
-.ss-root .ss-verification-page { width:100%;max-width:1180px;margin:0 auto; }
+.ss-root .ss-verification-page {
+  /* A flex column with `.ss-page`'s own 16px gap. Wrapping the filters + list in this box took them
+     OUT of `.ss-page`'s flex flow, so its gap stopped applying and the tablist sat flush against
+     the skeleton and the empty state with nothing between them. The wrapper has to restate the
+     rhythm it displaced. */
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  width:100%;
+  max-width:1180px;
+  margin:0 auto;
+}
 .ss-root .ss-verification-page .ss-skel-grid,
 .ss-root .ss-verification-grid {
   display:grid;

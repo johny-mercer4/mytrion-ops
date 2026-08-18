@@ -11,8 +11,11 @@ import { describe, expect, it } from 'vitest';
 import { NAV, isSectionParked } from './salesData';
 
 describe('Sales section parking', () => {
-  it('parks Verification for a non-admin and opens it for an admin', () => {
-    expect(isSectionParked('verification', false)).toBe(true);
+  it('opens Verification for a Sales AGENT, not just an admin', () => {
+    // It was admin-only while the Sales-side surface was still settling. That surface is built, and
+    // the agent is the person the roster and the intake form are for — parking it from them made
+    // the whole flow untestable as the user who has to use it.
+    expect(isSectionParked('verification', false)).toBe(false);
     expect(isSectionParked('verification', true)).toBe(false);
   });
 
@@ -32,9 +35,11 @@ describe('Sales section parking', () => {
     }
   });
 
-  it('does not park anything else for non-admins', () => {
-    // Guards against ADMIN_ONLY_SECTIONS quietly growing: only Verification is admin-gated.
+  it('admin-gates nothing at all right now', () => {
+    // Guards against ADMIN_ONLY_SECTIONS quietly growing. It is empty by design — a tab parked from
+    // agents is a tab whose owners cannot test it, so adding one should be a deliberate act that
+    // fails this test and gets a reason written next to it.
     const gated = NAV.filter((n) => n.comingSoon !== true && isSectionParked(n.id, false)).map((n) => n.id);
-    expect(gated).toEqual(['verification']);
+    expect(gated).toEqual([]);
   });
 });
