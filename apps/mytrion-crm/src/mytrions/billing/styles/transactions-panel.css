@@ -764,6 +764,37 @@
     margin-bottom: 0.5rem;
 }
 
+/* The right-hand group of the invoice card's top row: outstanding-days chip + status badge.
+   Exists because the row is `space-between` — a bare third child would spread the three apart. */
+.bm-root .tx-invoice-status-group {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex: none;
+}
+
+/* Outstanding days: `paid date - (created date + 1)`. Mono so the digits line up down the list, and
+   deliberately quieter than the status badge next to it — it qualifies the status, it is not one. */
+.bm-root .dc-inv-outstanding {
+    font-family: var(--font-mono);
+    font-size: 0.5875rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Anything above the grace day is the case worth seeing. Tinted, not filled — a filled chip here
+   competes with the status badge it sits beside. */
+.bm-root .dc-inv-outstanding-late {
+    color: var(--warning-text);
+    border-color: color-mix(in srgb, var(--warning-text) 40%, var(--border));
+    background: color-mix(in srgb, var(--warning-text) 10%, transparent);
+}
+
 .bm-root .tx-invoice-num {
     display: block;
     font-family: var(--font-mono);
