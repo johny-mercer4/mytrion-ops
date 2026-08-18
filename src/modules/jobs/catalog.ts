@@ -197,6 +197,26 @@ export const kpiSalesMonthCloseJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 3600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/** Local browser usage rollup; deliberately independent from the parked external KPI jobs. */
+export const mytrionUsageDailyJob = defineJob({
+  name: 'analytics.mytrion.sales-daily-rollup',
+  schema: z.object({
+    days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(31).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 1800, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/** Bounded raw/daily retention, and only for rows protected by a completed usage rollup. */
+export const mytrionUsageRetentionJob = defineJob({
+  name: 'analytics.mytrion.sales-retention',
+  schema: z.object({
+    batchSize: z.number().int().min(1).max(50_000).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 1800, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 /** C-27 BOCA browser automation — queued so the HTTP/UI request returns immediately. */
 export const salesBocaRequestJob = defineJob({
   name: 'sales.boca-request',
@@ -316,6 +336,8 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   kpiSalesReconcileJob,
   kpiSalesDailyRollupJob,
   kpiSalesMonthCloseJob,
+  mytrionUsageDailyJob,
+  mytrionUsageRetentionJob,
   salesBocaRequestJob,
   billingLedgerSnapshotJob,
   verificationRecheckJob,
@@ -344,6 +366,11 @@ export const KPI_JOB_QUEUES = new Set<string>([
   kpiSalesReconcileJob.name,
   kpiSalesDailyRollupJob.name,
   kpiSalesMonthCloseJob.name,
+]);
+
+/** Usage queues whose collection schedule is controlled by FF_MYTRION_USAGE_COLLECTION_ENABLED. */
+export const MYTRION_USAGE_COLLECTION_JOB_QUEUES = new Set<string>([
+  mytrionUsageDailyJob.name,
 ]);
 
 export const DISABLED_JOB_QUEUES = new Set<string>([
@@ -387,6 +414,8 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   { name: kpiSalesReconcileJob.name, cron: '15 2 * * *', timezone: 'America/New_York' },
   { name: kpiSalesDailyRollupJob.name, cron: '0 4 * * *', timezone: 'America/New_York' },
   { name: kpiSalesMonthCloseJob.name, cron: '15 0 3 * *', timezone: 'America/New_York' },
+  { name: mytrionUsageDailyJob.name, cron: '5 4 * * *', timezone: 'America/New_York' },
+  { name: mytrionUsageRetentionJob.name, cron: '35 4 * * *', timezone: 'America/New_York' },
 ];
 
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */
@@ -396,6 +425,7 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,
   referralBonusCalcJob.name,
+  mytrionUsageDailyJob.name,
   verificationCaseIngestJob.name,
   // The desk's "Refresh scoring" button enqueues this rather than running it inline.
   mytrionWatchScoringJob.name,

@@ -40,6 +40,7 @@ import {
   type SalesMetric,
 } from '../SalesPage';
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
+import { emitKpiActivity } from '../kpiTelemetry';
 
 const COLUMNS: Array<{
   id: WorkerTaskStatus;
@@ -108,6 +109,7 @@ export function TasksTab() {
 
   useEffect(() => {
     if (!selectedId) return;
+    emitKpiActivity('ui.record_open', { entityType: 'task', entityId: selectedId });
     markTaskOpened(selectedId);
   }, [selectedId]);
 

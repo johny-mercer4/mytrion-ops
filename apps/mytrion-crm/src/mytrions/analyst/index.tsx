@@ -1,26 +1,28 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { canAccess, isAdmin } from '@/access/resolveAccess';
+import { isAdmin } from '@/access/resolveAccess';
 import { useImpersonation } from '@/context/ImpersonationProvider';
-import { useUserContext } from '@/context/UserContextProvider';
+import { useRealUserContext, useUserContext } from '@/context/UserContextProvider';
 
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import {
-  ANALYTICS_CATEGORIES,
   categoryById,
   parseFilters,
+  resolveAnalyticsCategory,
+  visibleAnalyticsCategories,
   writeFilters,
   type AnalyticsCategory,
   type DashboardFilterParams,
 } from './categories';
 import { CategoryDashboard } from './tabs/CategoryDashboard';
+import { MytrionDashboard } from './tabs/MytrionDashboard';
 import { AnalystReports } from './tabs/AnalystReports';
 import './analyst.css';
 
 /**
  * Analytics Mytrion — category dashboards in the sidebar (Sales, CRM, Customer Service, Finance,
- * Billing, Transactions) + Reports.
+ * Billing, Transactions, Mytrion) + Reports.
  *
  * The date window lives in the URL so a view stays shareable:
  *   /main/analystmytrion?category=sales&range=last_7_days
@@ -32,6 +34,7 @@ export default function AnalystMytrion() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { actingAs } = useImpersonation();
   const user = useUserContext();
+  const principal = useRealUserContext();
   const requested = categoryById(searchParams.get('category'));
   const urlFilters = useMemo(() => parseFilters(searchParams), [searchParams]);
 
@@ -41,14 +44,11 @@ export default function AnalystMytrion() {
    * `analytics.routes.ts` — `requireDepartment(…, 'management')` — where `manager` is the Mytrion
    * that maps to the `management` department. Hiding the card is not the boundary; the route is.
    */
-  const canSeeReports = isAdmin(user) || canAccess(user, 'manager');
-  const visibleCategories = canSeeReports
-    ? ANALYTICS_CATEGORIES
-    : ANALYTICS_CATEGORIES.filter((c) => c.id !== 'reports');
-  /** A deep link to ?category=reports must not render for someone who cannot see the card. */
-  const category =
-    requested.id === 'reports' && !canSeeReports ? visibleCategories[0]! : requested;
+  const visibleCategories = visibleAnalyticsCategories(user, principal);
+  /** A hidden, forbidden, or stale deep link resolves to the first destination this user can see. */
+  const category = resolveAnalyticsCategory(user, requested.id, principal);
   const showReports = category.id === 'reports';
+  const showMytrion = category.id === 'mytrion';
 
   /**
    * Date window comes from the URL; the agent identity comes from "View as", not a second picker.
@@ -117,6 +117,8 @@ export default function AnalystMytrion() {
         <div className="an-root">
           {showReports ? (
             <AnalystReports filters={filters} />
+          ) : showMytrion ? (
+            <MytrionDashboard filters={filters} onFiltersChange={onFiltersChange} />
           ) : (
             <CategoryDashboard
               category={category}

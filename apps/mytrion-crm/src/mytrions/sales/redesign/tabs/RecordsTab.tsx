@@ -5,7 +5,7 @@
  *
  * Clients use the owner-scoped DWH roster; pipeline tabs use Zoho CRM; Money Codes use Ops DB.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useIsPhone } from '@/hooks/useMediaQuery';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
@@ -51,6 +51,7 @@ import { MoneyCodesView } from '../dataCenterMoneyCodes';
 import { RejectionDetailModal } from '../RejectionDetailModal';
 import { ManagerLoyaltyBadge } from '../LoyaltyOverrideNotice';
 import { createSalesAgentMiniAppInvitation } from '@/api/carrierUsers';
+import { emitKpiActivity, useKpiSearchCompleted } from '../kpiTelemetry';
 
 /** A styled native dropdown (accessible) for the Leads/Deals filters. */
 function DcSelect({
@@ -291,6 +292,13 @@ export function RecordsTab() {
   const [openRejection, setOpenRejection] = useState<RejectionVM | null>(null);
   const [launchingCarrier, setLaunchingCarrier] = useState<string | null>(null);
 
+  useEffect(() => {
+    emitKpiActivity('navigation.view_open', {
+      entityType: 'view',
+      entityId: `records.${dcSub}`,
+    });
+  }, [dcSub]);
+
   const openAgentMiniApp = async (carrierId: string): Promise<void> => {
     // Open synchronously so browser popup protection does not discard the Telegram window while
     // the authenticated invitation request is in flight.
@@ -405,6 +413,12 @@ export function RecordsTab() {
   };
   for (const c of recsLoad.data ?? []) tierCounts[tierBucketOf(resolveTierForRow(c))] += 1;
   const clientTotal = (recsLoad.data ?? []).length;
+  useKpiSearchCompleted(
+    'records.clients',
+    dcSub === 'clients' ? search.clients : '',
+    clients.length,
+    !recsLoad.loading && !recsLoad.revalidating,
+  );
 
   return (
     <SalesPage busy={activeLoad?.loading === true || activeLoad?.revalidating === true}>
@@ -633,7 +647,17 @@ export function RecordsTab() {
           emptyMsg="Nothing has been declined for your clients yet."
           skeleton={<SalesBodySkeleton variant={phone ? 'rows' : 'table'} label="rejection reports" cols={5} />}
         >
-          <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} onOpen={setOpenRejection} />
+          <RejectionsView
+            rejections={rejLoad.data ?? []}
+            search={search.rejections}
+            onOpen={(row) => {
+              emitKpiActivity('ui.record_open', {
+                entityType: 'rejection_report',
+                entityId: row.id,
+              });
+              setOpenRejection(row);
+            }}
+          />
         </Gate>
       )}
 

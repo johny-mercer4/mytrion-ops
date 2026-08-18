@@ -60,9 +60,24 @@ const presenceSchema = z.object({
     .min(1)
     .max(100),
 });
-const primitiveMetadata = z
-  .record(z.union([z.string().max(200), z.number().finite(), z.boolean(), z.null()]))
-  .refine((value) => Object.keys(value).length <= 10, 'At most 10 metadata keys are allowed');
+const activityMetadata = z.object({
+  surface: z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/i).optional(),
+  resultState: z.enum(['zero', 'nonzero']).optional(),
+  format: z.enum(['csv', 'xlsx', 'pdf', 'txt']).optional(),
+  rowCount: z.number().int().min(0).max(1_000_000).optional(),
+}).strict();
+
+function normalizedActivityMetadata(
+  value: z.infer<typeof activityMetadata> | undefined,
+): Record<string, string | number | boolean | null> | null {
+  if (!value) return null;
+  const normalized: Record<string, string | number | boolean | null> = {};
+  if (value.surface !== undefined) normalized['surface'] = value.surface;
+  if (value.resultState !== undefined) normalized['resultState'] = value.resultState;
+  if (value.format !== undefined) normalized['format'] = value.format;
+  if (value.rowCount !== undefined) normalized['rowCount'] = value.rowCount;
+  return normalized;
+}
 const activitySchema = z.object({
   events: z
     .array(
@@ -70,10 +85,24 @@ const activitySchema = z.object({
         clientEventId: z.string().trim().min(8).max(128),
         eventName: z.enum(KPI_ACTIVITY_EVENT_NAMES),
         sessionId: z.string().trim().max(128).optional(),
-        entityType: z.enum(['lead', 'deal', 'tab']).optional(),
-        entityId: z.string().trim().max(120).optional(),
+        entityType: z.enum([
+          'lead',
+          'deal',
+          'tab',
+          'view',
+          'record',
+          'client',
+          'rejection_report',
+          'retention_case',
+          'task',
+          'inbox_message',
+          'call',
+          'search',
+          'report',
+        ]).optional(),
+        entityId: z.string().trim().regex(/^[a-z0-9][a-z0-9:._-]{0,119}$/i).optional(),
         outcome: z.enum(['success', 'failed', 'attempted']).optional(),
-        metadata: primitiveMetadata.optional(),
+        metadata: activityMetadata.optional(),
         occurredAt: z.string().datetime({ offset: true }).optional(),
       }),
     )
@@ -88,6 +117,10 @@ function salesContext(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'sales', 'Sales tasks and KPI telemetry');
 }
 
+function usageCollectionEnabled(): boolean {
+  return env.FF_MYTRION_USAGE_COLLECTION_ENABLED || env.FF_KPI_COLLECTION_ENABLED;
+}
+
 function zohoUserId(ctx: TenantContext): string {
   if (!ctx.userId.startsWith('zoho:')) {
     throw new RBACError('A verified Zoho worker session is required');
@@ -100,6 +133,7 @@ async function telemetryWorker(ctx: TenantContext) {
     throw new RBACError('Telemetry requires the signed-in worker identity');
   }
   const profileName = ctx.profiles?.[0] ?? null;
+  if (profileName !== 'Sales Agent') return null;
   const worker = await kpiWorkerRepo.sync(ctx, {
     zohoUserId: zohoUserId(ctx),
     displayName: ctx.userName ?? null,
@@ -297,7 +331,7 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
     { ...guard, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
     async (request, reply) => {
       const ctx = salesContext(request);
-      if (!env.FF_KPI_COLLECTION_ENABLED) {
+      if (!usageCollectionEnabled()) {
         reply.code(202);
         return { accepted: 0, enabled: false };
       }
@@ -329,7 +363,7 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
     { ...guard, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
     async (request, reply) => {
       const ctx = salesContext(request);
-      if (!env.FF_KPI_COLLECTION_ENABLED) {
+      if (!usageCollectionEnabled()) {
         reply.code(202);
         return { accepted: 0, enabled: false };
       }
@@ -349,7 +383,7 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
           entityType: event.entityType ?? null,
           entityId: event.entityId ?? null,
           outcome: event.outcome ?? null,
-          metadata: event.metadata ?? null,
+          metadata: normalizedActivityMetadata(event.metadata),
           clientOccurredAt: event.occurredAt ? new Date(event.occurredAt) : null,
         })),
       );

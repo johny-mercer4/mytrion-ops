@@ -1,5 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
-import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 /**
  * Which surface fired the automation.
@@ -12,6 +13,8 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 export const AUTOMATION_ORIGIN_SOURCES = ['Mytrion Horizon', 'Mytrion Zoho'] as const;
 export type AutomationOriginSource = (typeof AUTOMATION_ORIGIN_SOURCES)[number];
 export const DEFAULT_AUTOMATION_ORIGIN: AutomationOriginSource = 'Mytrion Zoho';
+export const AUTOMATION_PHASES = ['started', 'succeeded', 'failed'] as const;
+export type AutomationPhase = (typeof AUTOMATION_PHASES)[number];
 
 /**
  * Automation_Logs — an append-only log of automation triggers, written from the front-end
@@ -32,6 +35,15 @@ export const automationLogs = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     tenantId: text('tenant_id').notNull(),
+    runId: text('run_id')
+      .notNull()
+      .$defaultFn(() => createId()),
+    phase: text('phase').$type<AutomationPhase>().notNull().default('succeeded'),
+    durationMs: integer('duration_ms'),
+    errorCode: text('error_code'),
+    sourceMytrion: text('source_mytrion').notNull().default('sales'),
+    actorUserId: text('actor_user_id'),
+    impersonatorUserId: text('impersonator_user_id'),
     triggerTime: text('trigger_time'),
     triggerDate: text('trigger_date'),
     automationType: text('automation_type').notNull(),
@@ -48,6 +60,19 @@ export const automationLogs = pgTable(
     typeIdx: index('automation_logs_type_idx').on(table.automationType),
     originIdx: index('automation_logs_origin_idx').on(table.tenantId, table.originSource),
     agentIdx: index('automation_logs_agent_idx').on(table.tenantId, table.agentName),
+    tenantRunPhaseUk: uniqueIndex('automation_logs_tenant_run_phase_uk').on(
+      table.tenantId,
+      table.runId,
+      table.phase,
+    ),
+    tenantRunTerminalUk: uniqueIndex('automation_logs_tenant_run_terminal_uk')
+      .on(table.tenantId, table.runId)
+      .where(sql`${table.phase} in ('succeeded', 'failed')`),
+    tenantActorTimeIdx: index('automation_logs_tenant_actor_time_idx').on(
+      table.tenantId,
+      table.actorUserId,
+      table.createdAt,
+    ),
   }),
 );
 

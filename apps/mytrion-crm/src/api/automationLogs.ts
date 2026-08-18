@@ -6,9 +6,15 @@ import { request } from './transport';
 
 export const AUTOMATION_ORIGIN_SOURCES = ['Mytrion Horizon', 'Mytrion Zoho'] as const;
 export type AutomationOriginSource = (typeof AUTOMATION_ORIGIN_SOURCES)[number];
+export type AutomationPhase = 'started' | 'succeeded' | 'failed';
 
 export interface AutomationLogEntry {
   id: string;
+  runId: string;
+  phase: AutomationPhase;
+  durationMs: number | null;
+  errorCode: string | null;
+  sourceMytrion: string;
   automationType: string;
   agentName: string | null;
   originSource: AutomationOriginSource;

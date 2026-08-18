@@ -2,11 +2,12 @@
  * Retention — Cases (Phase 1) + Open Pool (Sales agents).
  * The sub-tab names the pane, so neither pane repeats its own name as a heading.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { SalesPage, SalesSubTabs, type SalesSubTab } from '../SalesPage';
 import { RetentionCasesPane } from '../RetentionCasesPane';
 import { PoolTab } from './PoolTab';
+import { emitKpiActivity } from '../kpiTelemetry';
 
 type RetentionPane = 'cases' | 'pool';
 
@@ -17,6 +18,13 @@ export function RetentionTab() {
 
   const onCasesCount = useCallback((n: number) => setCasesCount(n), []);
   const onPoolCount = useCallback((n: number) => setPoolCount(n), []);
+
+  useEffect(() => {
+    emitKpiActivity('navigation.view_open', {
+      entityType: 'view',
+      entityId: `retention.${pane}`,
+    });
+  }, [pane]);
 
   const tabs: ReadonlyArray<SalesSubTab<RetentionPane>> = [
     { id: 'cases', label: 'My cases', count: casesCount ?? undefined },

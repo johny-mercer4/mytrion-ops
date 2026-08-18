@@ -17,6 +17,7 @@ import {
   type AutomationLogFacets,
   type AutomationLogFilter,
   type AutomationOriginSource,
+  type AutomationPhase,
 } from '../../api/automationLogs';
 import { ApiError } from '../../api/transport';
 import { SearchIcon } from '../../components/icons';
@@ -55,6 +56,9 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<AutomationLogEntry>> = [
   { header: 'Automation type (raw)', width: 30, value: (e) => e.automationType },
   { header: 'Agent', width: 26, value: (e) => e.agentName ?? '' },
   { header: 'Origin source', width: 18, value: (e) => e.originSource },
+  { header: 'Outcome', width: 14, value: (e) => e.phase },
+  { header: 'Duration (ms)', width: 16, value: (e) => e.durationMs ?? '' },
+  { header: 'Error code', width: 22, value: (e) => e.errorCode ?? '' },
   { header: 'Trigger date', width: 14, value: (e) => e.triggerDate ?? '' },
   { header: 'Trigger time', width: 14, value: (e) => e.triggerTime ?? '' },
   { header: 'Id', width: 26, value: (e) => e.id },
@@ -193,8 +197,8 @@ export function AutomationLogs() {
           <div className={s.eyebrow}>Automation trail</div>
           <h2 className={s.h2}>Automation Logs</h2>
           <p className={s.sub}>
-            One row per automation run, newest first — which action fired, which agent triggered it,
-            and which surface it came from.
+            One row per completed automation run, newest first — outcome, duration, agent, and
+            originating surface. Started lifecycle rows are not counted as separate runs.
           </p>
         </div>
       </div>
@@ -298,7 +302,7 @@ export function AutomationLogs() {
           <span>Automation</span>
           <span>Agent</span>
           <span>Origin</span>
-          <span>Triggered</span>
+          <span>Outcome</span>
         </div>
         {showSkeleton && (
           <>
@@ -322,10 +326,12 @@ export function AutomationLogs() {
               <span>
                 <OriginPill origin={e.originSource} />
               </span>
-              <span className={s.mono}>
-                {e.triggerDate || e.triggerTime
-                  ? `${e.triggerDate ?? ''} ${e.triggerTime ?? ''}`.trim()
-                  : '—'}
+              <span className={s.docCell}>
+                <OutcomePill phase={e.phase} />
+                <span className={s.cellSub}>
+                  {e.durationMs === null ? 'Duration unavailable' : formatDuration(e.durationMs)}
+                  {e.errorCode ? ` · ${e.errorCode}` : ''}
+                </span>
               </span>
             </div>
           ))}
@@ -367,4 +373,19 @@ function OriginPill({ origin }: { origin: AutomationOriginSource }) {
       {origin}
     </span>
   );
+}
+
+function OutcomePill({ phase }: { phase: AutomationPhase }) {
+  const tone = phase === 'succeeded' ? s.pillGood : phase === 'failed' ? s.pillBad : s.pillNeutral;
+  return (
+    <span className={`${s.pill} ${tone}`}>
+      <span className={s.dot} />
+      {phase === 'succeeded' ? 'Succeeded' : phase === 'failed' ? 'Failed' : 'Started'}
+    </span>
+  );
+}
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1_000) return `${durationMs} ms`;
+  return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
 }

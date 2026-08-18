@@ -3,10 +3,11 @@
  * "Escalate Request" form, and the "Create Lead" form — all wired to live writes. The heavy
  * lifting lives in ../createTicketForms; this file is just the mode switch + layout.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ICO, NAV_DESC } from '../salesData';
 import { SalesPage, SalesPageHead, SalesSubTabs, type SalesSubTab } from '../SalesPage';
 import { TicketWizard, EscalationForm, CreateLeadForm } from '../createTicketForms';
+import { emitKpiActivity } from '../kpiTelemetry';
 
 type Mode = 'ticket' | 'escalation' | 'lead';
 
@@ -24,6 +25,13 @@ const MODE_DESC: Record<Mode, string> = {
 
 export function CreateTab() {
   const [mode, setMode] = useState<Mode>('ticket');
+
+  useEffect(() => {
+    emitKpiActivity('navigation.view_open', {
+      entityType: 'view',
+      entityId: `create.${mode}`,
+    });
+  }, [mode]);
 
   return (
     <SalesPage width="narrow">

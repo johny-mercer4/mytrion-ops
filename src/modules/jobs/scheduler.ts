@@ -10,6 +10,7 @@ import {
   CRON_SCHEDULES,
   DEPARTMENT_AUTOMATION_QUEUES,
   DISABLED_JOB_QUEUES,
+  MYTRION_USAGE_COLLECTION_JOB_QUEUES,
   verificationCaseIngestJob,
 } from './catalog.js';
 import { buildSystemContext } from './systemContext.js';
@@ -24,6 +25,8 @@ export async function applySchedules(boss: PgBoss): Promise<void> {
       (s) =>
         !DISABLED_JOB_QUEUES.has(s.name) &&
         (env.FF_KPI_COLLECTION_ENABLED || !s.name.startsWith('kpi.sales.')) &&
+        (env.FF_MYTRION_USAGE_COLLECTION_ENABLED ||
+          !MYTRION_USAGE_COLLECTION_JOB_QUEUES.has(s.name)) &&
         (orchestratorOn || !DEPARTMENT_AUTOMATION_QUEUES.has(s.name)),
     ).map((s) => [s.name, s]),
   );

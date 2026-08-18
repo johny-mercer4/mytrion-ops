@@ -63,6 +63,11 @@ export const auditLog = pgTable(
       table.resourceType,
       table.resourceId,
     ),
+    tenantUserTimeIdx: index('audit_log_tenant_user_time_idx').on(
+      table.tenantId,
+      table.userId,
+      table.createdAt,
+    ),
   }),
 );
 

@@ -33,6 +33,7 @@ import {
 import { isSalesLocked, isSalesPooled, salesLockBadge, salesLockTitle, stageTimer } from './retentionTimers';
 import { subscribeRetentionLive } from './retentionLiveBus';
 import { useSales } from './ctx';
+import { emitKpiActivity, useKpiSearchCompleted } from './kpiTelemetry';
 
 type ViewMode = 'kanban' | 'list';
 
@@ -86,6 +87,15 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
       : src;
     return sortCasesPriority(filtered);
   }, [localCases, feed.data?.cases, search]);
+  useKpiSearchCompleted('retention.cases', search, cases.length, !feed.loading);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    emitKpiActivity('ui.record_open', {
+      entityType: 'retention_case',
+      entityId: selectedId,
+    });
+  }, [selectedId]);
 
   const allCases = useMemo(() => {
     const src = localCases ?? feed.data?.cases ?? [];

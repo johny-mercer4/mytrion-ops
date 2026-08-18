@@ -3,6 +3,10 @@ import { request } from './transport';
 
 export type KpiActivityName =
   | 'navigation.tab_open'
+  | 'navigation.view_open'
+  | 'ui.record_open'
+  | 'ui.search_completed'
+  | 'report.export_completed'
   | 'crm.lead_open'
   | 'crm.deal_open'
   | 'crm.call_click'
@@ -14,9 +18,27 @@ export interface KpiActivityEvent {
   clientEventId: string;
   eventName: KpiActivityName;
   sessionId?: string;
-  entityType?: 'lead' | 'deal' | 'tab';
+  entityType?:
+    | 'lead'
+    | 'deal'
+    | 'tab'
+    | 'view'
+    | 'client'
+    | 'rejection_report'
+    | 'retention_case'
+    | 'task'
+    | 'inbox_message'
+    | 'call'
+    | 'search'
+    | 'report';
   entityId?: string;
   outcome?: 'success' | 'failed' | 'attempted';
+  /** Privacy-safe counters/classifiers only. Never send query text or record payloads. */
+  metadata?: {
+    resultState?: 'zero' | 'nonzero';
+    format?: 'pdf' | 'xlsx' | 'csv' | 'txt';
+    rowCount?: number;
+  };
   occurredAt?: string;
 }
 

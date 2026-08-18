@@ -58,13 +58,22 @@ const LOG_TYPE_ALIASES: Record<string, string> = {
 };
 
 /**
- * Widget-parity usage log: one row per successful automation run. Fire-and-forget —
- * a logging blip must never mark a successful run as failed.
+ * Widget-parity usage log. New Horizon calls send one started row and one terminal row with the
+ * same run id; legacy callers may omit lifecycle fields and remain a single succeeded row.
+ * Fire-and-forget — a logging blip must never change the automation result shown to the worker.
  *
  * Matches zoho-octane `_logOpsAutomation`: hyphen→underscore type, local triggerDate /
  * triggerTime, agent display name from the session.
  */
-export function logAutomation(automationType: string): void {
+export function logAutomation(
+  automationType: string,
+  lifecycle?: {
+    runId: string;
+    phase: 'started' | 'succeeded' | 'failed';
+    durationMs?: number;
+    errorCode?: string;
+  },
+): void {
   const agentName =
     getSession()?.worker.userName?.trim()
     || getSession()?.worker.email?.trim()
@@ -84,6 +93,24 @@ export function logAutomation(automationType: string): void {
       // Every call from this app is Horizon by definition. The legacy Zoho widget posts to the same
       // endpoint and sends no origin, which is why the server's fallback is 'Mytrion Zoho'.
       originSource: 'Mytrion Horizon',
+      ...(lifecycle
+        ? {
+            runId: lifecycle.runId,
+            phase: lifecycle.phase,
+            ...(lifecycle.durationMs !== undefined ? { durationMs: lifecycle.durationMs } : {}),
+            ...(lifecycle.errorCode ? { errorCode: lifecycle.errorCode } : {}),
+          }
+        : {}),
     },
   }).catch(() => undefined);
+}
+
+/** Stable, non-sensitive failure buckets for lifecycle analytics. */
+export function automationErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (/timeout|timed out/.test(message)) return 'timeout';
+  if (/network|failed to fetch|connection/.test(message)) return 'network';
+  if (/forbidden|not allowed|permission|unauthorized/.test(message)) return 'authorization';
+  if (/required|invalid|validation/.test(message)) return 'validation';
+  return 'automation_failed';
 }

@@ -28,6 +28,7 @@ import {
 } from '../SalesPage';
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
 import { isTelegramWebView } from '@/telegram/webApp';
+import { emitKpiActivity } from '../kpiTelemetry';
 
 type SourceFilter = CallHubSource | 'all';
 type StatusFilter = CallHubStatus | 'all';
@@ -134,6 +135,11 @@ export function CallHubTab() {
     },
   ];
 
+  const openCall = (call: CallHubItem): void => {
+    emitKpiActivity('ui.record_open', { entityType: 'call', entityId: call.id });
+    setSelected(call);
+  };
+
   return (
     <SalesPage className="ss-call-page" busy={cold || load.revalidating}>
       <SalesPageHead
@@ -215,7 +221,7 @@ export function CallHubTab() {
                     key={`${call.source}:${call.id}`}
                     type="button"
                     className="ss-call-row"
-                    onClick={() => setSelected(call)}
+                    onClick={() => openCall(call)}
                     style={{ ['--call-src' as string]: tone }}
                   >
                     <div className="ss-call-row-main">

@@ -83,6 +83,16 @@ const META: Record<string, JobMeta> = {
     title: 'Sales KPI month close',
     description: 'Creates immutable worker-month snapshot revisions after the 48-hour source grace period.',
   },
+  'analytics.mytrion.sales-daily-rollup': {
+    title: 'Sales Mytrion usage rollup',
+    description:
+      'Refreshes the eligible Sales Agent directory and computes local presence/activity usage for yesterday.',
+  },
+  'analytics.mytrion.sales-retention': {
+    title: 'Sales Mytrion usage retention',
+    description:
+      'Deletes bounded batches of rolled-up raw usage after 90 days and usage daily rows after 13 months.',
+  },
 };
 
 export function jobMeta(name: string): JobMeta {

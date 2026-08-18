@@ -14,6 +14,8 @@ import {
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow } from './util.js';
 
+const EXTERNAL_KPI_CALCULATION_VERSION = 1;
+
 export interface KpiMetricValueInput {
   metricKey: string;
   metricVersion?: number;
@@ -28,6 +30,20 @@ export interface ExternalMetricTotal {
   value: number;
   dataStatus: KpiDataStatus;
 }
+
+const ACTIVITY_METRIC_KEYS: Record<string, string> = {
+  'navigation.tab_open': 'tab_open_clicks',
+  'navigation.view_open': 'view_open_clicks',
+  'ui.record_open': 'record_open_clicks',
+  'ui.search_completed': 'searches_completed',
+  'report.export_completed': 'exports_completed',
+  'crm.lead_open': 'lead_open_clicks',
+  'crm.deal_open': 'deal_open_clicks',
+  'crm.call_click': 'call_clicks',
+  'crm.edit_open': 'edit_open_clicks',
+  'crm.edit_save_success': 'edit_save_successes',
+  'crm.edit_save_failed': 'edit_save_failures',
+};
 
 export const kpiRepo = {
   async startIngestion(
@@ -141,6 +157,7 @@ export const kpiRepo = {
         and(
           eq(kpiDailyRollups.tenantId, ctx.tenantId),
           eq(kpiDailyRollups.workerId, workerId),
+          eq(kpiDailyRollups.calculationVersion, EXTERNAL_KPI_CALCULATION_VERSION),
           gte(kpiDailyRollups.reportingDate, from),
           lte(kpiDailyRollups.reportingDate, to),
         ),
@@ -338,17 +355,9 @@ export const kpiRepo = {
         and timezone(${timezone}, "received_at")::date = ${reportingDate}::date
       group by "event_name"
     `);
-    const map: Record<string, string> = {
-      'navigation.tab_open': 'tab_open_clicks',
-      'crm.lead_open': 'lead_open_clicks',
-      'crm.deal_open': 'deal_open_clicks',
-      'crm.call_click': 'call_clicks',
-      'crm.edit_open': 'edit_open_clicks',
-      'crm.edit_save_success': 'edit_save_successes',
-    };
     return Object.fromEntries(
       rows
-        .map((row) => [map[String(row.event_name)], Number(row.count ?? 0)] as const)
+        .map((row) => [ACTIVITY_METRIC_KEYS[String(row.event_name)], Number(row.count ?? 0)] as const)
         .filter((entry): entry is readonly [string, number] => Boolean(entry[0])),
     );
   },
@@ -372,16 +381,8 @@ export const kpiRepo = {
         and timezone(${timezone}, e."received_at")::date = ${reportingDate}::date
       group by e."worker_id", e."event_name"
     `);
-    const keys: Record<string, string> = {
-      'navigation.tab_open': 'tab_open_clicks',
-      'crm.lead_open': 'lead_open_clicks',
-      'crm.deal_open': 'deal_open_clicks',
-      'crm.call_click': 'call_clicks',
-      'crm.edit_open': 'edit_open_clicks',
-      'crm.edit_save_success': 'edit_save_successes',
-    };
     for (const row of rows) {
-      const metricKey = keys[String(row.event_name)];
+      const metricKey = ACTIVITY_METRIC_KEYS[String(row.event_name)];
       if (!metricKey) continue;
       const workerId = String(row.worker_id);
       const values = result.get(workerId) ?? {};
@@ -495,6 +496,7 @@ export const kpiRepo = {
         and(
           eq(kpiDailyRollups.tenantId, ctx.tenantId),
           eq(kpiDailyRollups.workerId, workerId),
+          eq(kpiDailyRollups.calculationVersion, EXTERNAL_KPI_CALCULATION_VERSION),
           gte(kpiDailyRollups.reportingDate, periodStart),
           lt(kpiDailyRollups.reportingDate, to),
         ),
