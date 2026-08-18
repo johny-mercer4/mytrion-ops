@@ -3,7 +3,10 @@
    after-scroll defect (focus/hover, scroll away, come back — children unpainted). Glass tint is
    `--surface` + `--shadow-sm`. Field labels use `--muted` (not `--faint` / border colour) so they
    clear AA on dark glass. */
-.ss-root .ss-verification-page { max-width:1180px;margin:0 auto; }
+/* `width:100%` is load-bearing: `.ss-page` is a flex column whose items shrink-to-fit here, so
+   without it this wrapper collapsed to its content — measured 559px inside a 1132px page, pushed
+   to x=565 while the page head stayed at x=278. A max-width alone does not make a box wide. */
+.ss-root .ss-verification-page { width:100%;max-width:1180px;margin:0 auto; }
 .ss-root .ss-verification-page .ss-skel-grid,
 .ss-root .ss-verification-grid {
   display:grid;
