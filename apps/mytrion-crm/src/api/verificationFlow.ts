@@ -5,8 +5,10 @@
  * (underwriting). They address the same rows, so the DTOs live together: if the shape drifts, it
  * drifts for both at once rather than silently for one.
  */
-import { request, requestMultipart } from './transport';
+import { request, requestBlob, requestMultipart } from './transport';
 import { openSignedFile } from '../lib/openSignedFile';
+import { deliverExport } from '../lib/deliverExport';
+import { isTelegramWebView } from '../telegram/webApp';
 
 export type VerificationApplicantType = 'owner_operator' | 'carrier' | 'company';
 export type VerificationRoute = 'octane_internal' | 'wex';
@@ -352,23 +354,71 @@ export async function getDocumentLink(
   caseId: string,
   documentId: string,
 ): Promise<VerificationDocumentLink> {
-  const base =
-    desk === 'sales'
-      ? `/verification/applications/${encodeURIComponent(caseId)}`
-      : `/verification/flow/cases/${encodeURIComponent(caseId)}`;
   return (await request(
     'GET',
-    `${base}/documents/${encodeURIComponent(documentId)}/download`,
+    `${documentBase(desk, caseId)}/documents/${encodeURIComponent(documentId)}/download`,
   )) as VerificationDocumentLink;
 }
 
-/** Open a stored document in a new tab. Tab-before-await lives in `openSignedFile`. */
+/** Both desks' door onto one document. Shared by the link route and the bytes route. */
+function documentBase(desk: 'sales' | 'verification', caseId: string): string {
+  return desk === 'sales'
+    ? `/verification/applications/${encodeURIComponent(caseId)}`
+    : `/verification/flow/cases/${encodeURIComponent(caseId)}`;
+}
+
+/**
+ * The document's BYTES, from our own origin.
+ *
+ * Not the Dropbox link: that URL is served `Content-Disposition: attachment` with no CORS, which is
+ * why clicking a file used to open a blank tab and then download it. The proxy route sends the real
+ * MIME with `inline`, and a `blob:` URL built here is same-origin to this document — so the browser's
+ * own PDF and image viewers render it.
+ */
+export async function fetchDocumentBytes(
+  desk: 'sales' | 'verification',
+  caseId: string,
+  documentId: string,
+): Promise<Blob> {
+  return requestBlob(
+    `${documentBase(desk, caseId)}/documents/${encodeURIComponent(documentId)}/bytes`,
+    // A 20 MB bank statement over a phone tether needs longer than the 20s default.
+    { timeoutMs: 60_000 },
+  );
+}
+
+/**
+ * PREVIEW a stored document in a new tab.
+ *
+ * Two things have to be true at once, and they pull in opposite directions: the tab must be claimed
+ * while the click is still a user gesture (`openSignedFile`), and the URL can only exist after a
+ * fetch that carries the session bearer — a new tab cannot send an Authorization header, so a plain
+ * navigation to the API would 401. Claiming first and resolving a `blob:` URL second satisfies both.
+ *
+ * Inside the Telegram WebView there is no tab to claim, so the file is delivered through the Horizon
+ * bot instead — the same fallback every other export in the app uses.
+ */
 export async function openDocument(
   desk: 'sales' | 'verification',
   caseId: string,
   documentId: string,
+  fileName = 'document',
 ): Promise<void> {
-  await openSignedFile(async () => (await getDocumentLink(desk, caseId, documentId)).url);
+  await openSignedFile(
+    async () => {
+      const url = URL.createObjectURL(await fetchDocumentBytes(desk, caseId, documentId));
+      // Revoked on a delay, never synchronously: the new tab has not loaded the URL yet when this
+      // returns, and revoking first leaves a blank viewer. Same 5s the shared download path uses.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return url;
+    },
+    {
+      shouldUseFallback: isTelegramWebView,
+      fallback: async () => {
+        await deliverExport(await fetchDocumentBytes(desk, caseId, documentId), fileName);
+      },
+    },
+  );
 }
 
 export async function patchApplication(

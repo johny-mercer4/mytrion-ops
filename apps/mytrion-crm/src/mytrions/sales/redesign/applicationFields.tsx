@@ -12,9 +12,10 @@
  * completeness in the browser. One evaluator, one answer, no chance of the card and the form
  * disagreeing about what is outstanding.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useRovingRadio } from '../../_shared/useRovingRadio';
 import { s } from './dc';
+import { Skel } from './SalesPage';
 import { Icon } from './icons';
 
 /**
@@ -167,9 +168,22 @@ export function SelectField({
 export function ApplicantTypePicker({
   value,
   onChange,
+  pending = false,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: 'owner_operator' | 'carrier') => void;
+  /**
+   * The choice is being written.
+   *
+   * This is the slowest click on the intake form — several statements against a database in Oregon,
+   * and setting a type always changes the missing-field list so the gate must be re-derived and
+   * stored. The form used to set a `busy` flag that the picker could not read and the first-choice
+   * branch never rendered, so an agent clicked a card and got a still, silent page for a second or
+   * more. Now the card they clicked says so.
+   */
+  pending?: boolean;
+  disabled?: boolean;
 }) {
   const options = [
     {
@@ -183,10 +197,22 @@ export function ApplicantTypePicker({
       body: 'An LLC, corporation or partnership. Needs EIN, business address and owners.',
     },
   ];
+  /**
+   * Which card was clicked, so a FIRST choice can report too.
+   *
+   * On the first-choice branch nothing is selected yet, so `pending && active` would light neither
+   * card — the exact case the agent complained about. The click is remembered locally; `value`
+   * takes over the moment the server answers.
+   */
+  const [clicked, setClicked] = useState<string | null>(null);
+  const pick = (v: 'owner_operator' | 'carrier'): void => {
+    setClicked(v);
+    onChange(v);
+  };
   const roving = useRovingRadio(
     options.map((o) => o.value),
     value as 'owner_operator' | 'carrier' | '',
-    onChange,
+    pick,
   );
   return (
     <div
@@ -196,22 +222,36 @@ export function ApplicantTypePicker({
     >
       {options.map((o) => {
         const active = value === o.value;
+        /* The card the agent clicked is the one that reports. Only ONE spinner can appear here, and
+           it is on the card whose choice is being written — not on both, and not on the page. */
+        const working = pending && (value === '' ? clicked === o.value : active);
+        const off = disabled || pending;
         return (
           <button
             key={o.value}
             type="button"
             role="radio"
             aria-checked={active}
+            aria-busy={working || undefined}
+            disabled={off}
             {...roving(o.value)}
-            onClick={() => onChange(o.value)}
+            onClick={() => pick(o.value)}
             style={s(
-              `text-align:left;display:grid;gap:6px;padding:14px;border-radius:var(--radius-md);cursor:pointer;background:var(--surface);border:1px solid ${
+              `text-align:left;display:grid;gap:6px;padding:14px;border-radius:var(--radius-md);cursor:${
+                off ? (working ? 'wait' : 'not-allowed') : 'pointer'
+              };background:var(--surface);border:1px solid ${
                 active ? 'var(--accent)' : 'var(--border)'
-              };box-shadow:${active ? '0 0 0 1px var(--accent)' : 'none'}`,
+              };box-shadow:${active ? '0 0 0 1px var(--accent)' : 'none'};opacity:${
+                off && !active ? '.6' : '1'
+              };transition:opacity .15s,border-color .15s`,
             )}
           >
             <span style={s('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:var(--text-primary)')}>
-              {active ? <Icon name="check" size={15} color="var(--accent)" strokeWidth={2.4} /> : null}
+              {working ? (
+                <Icon name="spinner" size={15} color="var(--accent)" className="ss-spin" />
+              ) : active ? (
+                <Icon name="check" size={15} color="var(--accent)" strokeWidth={2.4} />
+              ) : null}
               {o.title}
             </span>
             <span style={s('font-size:12px;color:var(--text-muted);line-height:1.5')}>{o.body}</span>
@@ -290,6 +330,83 @@ export function GateBanner({
           <li style={s('font-size:12px;color:var(--text-muted)')}>and {missing.length - 6} more…</li>
         ) : null}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The intake form, before it arrives.
+ *
+ * REPLACES the sentence "Loading application…" centred in 28px of padding. That told the agent
+ * nothing about how much was coming and reflowed the whole page when it landed — and on this form it
+ * lands slowly: opening an application costs several statements against a database in Oregon plus a
+ * warehouse lookup.
+ *
+ * Mirrors the real blocks in the real order — the gate banner, the ten-phase progress rail, then the
+ * field sections and the document slots — so nothing jumps when the data replaces it. `compact` is
+ * the applicant-type branch, where only the form BELOW the picker is still to come.
+ *
+ * ONE `aria-busy` region for the whole surface. Everything inside is `aria-hidden`, so a screen
+ * reader hears "Loading application" once rather than reading out forty empty boxes.
+ */
+export function IntakeSkeleton({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      style={s('display:grid;gap:20px')}
+      aria-busy="true"
+      aria-label="Loading application"
+      role="status"
+    >
+      <div aria-hidden="true" style={s('display:grid;gap:20px')}>
+        {compact ? null : (
+          <>
+            {/* Gate banner. */}
+            <Skel w="100%" h="62px" radius="var(--radius-md)" />
+            {/* The ten-phase rail. */}
+            <div style={s('display:grid;gap:10px;padding:16px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--surface)')}>
+              <Skel w="34%" h="12px" />
+              <Skel w="100%" h="6px" radius="999px" />
+              <Skel w="52%" h="11px" />
+            </div>
+          </>
+        )}
+
+        {[0, 1].map((section) => (
+          <div key={section} style={s('display:grid;gap:14px')}>
+            <div style={s('display:grid;gap:6px')}>
+              <Skel w="180px" h="15px" />
+              <Skel w="62%" h="12px" />
+            </div>
+            <div
+              style={s(
+                'display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr))',
+              )}
+            >
+              {[0, 1, 2, 3].map((field) => (
+                <div key={field} style={s('display:flex;flex-direction:column;gap:8px')}>
+                  <Skel w="46%" h="11px" />
+                  <Skel w="100%" h="44px" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* The document slots, at the height they really render. */}
+        <div style={s('display:grid;gap:14px')}>
+          <Skel w="140px" h="15px" />
+          <div style={s('display:grid;gap:8px')}>
+            {[0, 1, 2].map((slot) => (
+              <Skel key={slot} w="100%" h="52px" />
+            ))}
+          </div>
+        </div>
+
+        <div style={s('display:flex;gap:12px')}>
+          <Skel w="168px" h="46px" />
+          <Skel w="196px" h="46px" />
+        </div>
+      </div>
     </div>
   );
 }

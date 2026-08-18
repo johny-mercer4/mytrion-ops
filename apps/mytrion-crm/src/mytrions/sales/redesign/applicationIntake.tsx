@@ -8,13 +8,21 @@
  * The browser NEVER decides completeness. Every save returns the server's verdict and this component
  * renders it — so what the agent is told is missing is exactly what the underwriting gate is using.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { VerificationProgress } from './VerificationProgress';
 import { useSales } from './ctx';
 import { BTN_DISABLED, BTN_PRIMARY, BTN_PRIMARY_BUSY } from './createTicketShared';
-import { ApplicantTypePicker, Field, GateBanner, Section, SelectField } from './applicationFields';
+import {
+  ApplicantTypePicker,
+  Field,
+  GateBanner,
+  IntakeSkeleton,
+  Section,
+  SelectField,
+} from './applicationFields';
+import { DocSlot, DocumentsSection } from './applicationDocs';
 import {
   openDocument,
   addPrincipal,
@@ -159,112 +167,6 @@ function PrefillPanel({
   );
 }
 
-/**
- * One document slot: empty (choose a file) or filled (name it, and let it be replaced).
- *
- * A file input rather than a drop zone: this is one file into a named box, and a drop zone here
- * would be a second, differently-shaped upload control on a form that already has one.
- *
- * Used for the three bank statements AND for the two identity documents. The SOP lists "Driver's
- * License" and "SSN card" as intake ITEMS and `intake.ts` requires the FILES — Phase 2 cross-checks
- * the typed application against them, so last-4 fields alone leave a reviewer nothing to check.
- * They were previously reachable only through the generic Documents picker at the foot of the form,
- * which is the same friction the statements had.
- */
-function DocSlot({
-  label,
-  doc,
-  locked,
-  missing,
-  onPick,
-  onRemove,
-}: {
-  label: string;
-  doc: { id: string; fileName: string | null } | null;
-  locked: boolean;
-  missing: boolean;
-  onPick: (file: File) => void;
-  onRemove: (() => void) | null;
-}) {
-  const inputId = `stmt-${label.replace(/\s+/g, '-').toLowerCase()}`;
-  return (
-    <div
-      style={s(
-        `display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid ${
-          doc ? 'var(--border)' : missing ? 'var(--danger)' : 'var(--border)'
-        };background:var(--alt)`,
-      )}
-    >
-      <span style={s('min-width:92px;font-size:12px;font-weight:800;color:var(--text2)')}>{label}</span>
-      {doc ? (
-        <>
-          <Icon name="check" size={15} strokeWidth={2.4} />
-          <span
-            style={s('flex:1;min-width:0;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}
-          >
-            {doc.fileName ?? 'Uploaded'}
-          </span>
-          {onRemove && !locked ? (
-            <button
-              type="button"
-              onClick={onRemove}
-              style={s('background:none;border:0;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer')}
-            >
-              Replace
-            </button>
-          ) : null}
-        </>
-      ) : (
-        <>
-          <span style={s('flex:1;font-size:12px;color:var(--muted)')}>Not uploaded</span>
-          <label
-            htmlFor={inputId}
-            style={s(
-              `font-size:12px;font-weight:800;cursor:${locked ? 'not-allowed' : 'pointer'};color:${locked ? 'var(--muted)' : 'var(--accent-text)'}`,
-            )}
-          >
-            Choose file
-          </label>
-          <input
-            id={inputId}
-            type="file"
-            disabled={locked}
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onPick(file);
-              e.target.value = '';
-            }}
-          />
-        </>
-      )}
-    </div>
-  );
-}
-
-const DOC_LABELS: Record<VerificationDocType, string> = {
-  bank_statement: 'Bank statement',
-  drivers_license: "Driver's licence",
-  ssn_card: 'SSN card',
-  lease_agreement: 'Lease agreement',
-  corporate_guarantee: 'Corporate guarantee',
-  insurance: 'Insurance',
-  authority: 'Authority document',
-  other: 'Other document',
-};
-
-/** Which document types Sales can attach unprompted. The desk can request any of the others. */
-const UPLOADABLE: VerificationDocType[] = [
-  'bank_statement',
-  'drivers_license',
-  'ssn_card',
-  'insurance',
-  'lease_agreement',
-  'corporate_guarantee',
-  'authority',
-  'other',
-];
-
 function missingSet(detail: ApplicationDetail | null): Set<string> {
   return new Set((detail?.intake.missing ?? []).map((m) => m.field));
 }
@@ -281,8 +183,27 @@ export function ApplicationIntake({
   const { pushToast } = useSales();
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [loading, setLoading] = useState(Boolean(applicationId));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * WHICH action is in flight — a key, not a boolean.
+   *
+   * One `busy` flag drove ten different controls, so picking a single bank statement put Save
+   * application, Submit to Verification, every other document slot and both principal buttons into
+   * their loading state at once. Four spinners for one request reads as a broken screen, and it is
+   * the "one loader per region" rule stated the other way round.
+   *
+   * The keys are the REGIONS the agent sees: `type`, `save`, `submit`, `upload`, `principal`, and the
+   * per-row `slot:<label>` / `doc:<id>` so a slot or a list row reports only itself.
+   */
+  const [pending, setPending] = useState<string | null>(null);
+  /**
+   * The failure, WITH the region that produced it.
+   *
+   * A 415 used to surface only in a banner at the FOOT of a long form — below the Documents section
+   * that caused it, and off screen on anything short of a desktop. The scope decides where it
+   * renders: a slot's refusal appears in that slot, an upload's in the upload panel, and anything
+   * without a region of its own falls through to the form-level note.
+   */
+  const [error, setError] = useState<{ scope: string; message: string } | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [docType, setDocType] = useState<VerificationDocType>('bank_statement');
   const [principalName, setPrincipalName] = useState('');
@@ -294,7 +215,6 @@ export function ApplicationIntake({
    */
   const [prefill, setPrefill] = useState<PrefillResult | null>(null);
   const [applied, setApplied] = useState<Set<string>>(new Set());
-  const fileRef = useRef<HTMLInputElement | null>(null);
 
   /** Seed the editable form from a server payload. Server values win on every refresh. */
   const adopt = useCallback((next: ApplicationDetail) => {
@@ -336,7 +256,14 @@ export function ApplicationIntake({
           setError(null);
         }
       })
-      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : 'Could not load the application.'))
+      .catch(
+        (e: unknown) =>
+          live &&
+          setError({
+            scope: 'load',
+            message: e instanceof Error ? e.message : 'Could not load the application.',
+          }),
+      )
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
@@ -384,51 +311,73 @@ export function ApplicationIntake({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.documents]);
 
-  const fail = (e: unknown, fallback: string): void => {
+  /**
+   * One failure path. The toast is what reaches an agent who has scrolled away from the control; the
+   * scoped `error` is what puts the reason next to the control itself.
+   */
+  const fail = (e: unknown, fallback: string, scope: string): void => {
     const message = e instanceof Error ? e.message : fallback;
-    setError(message);
+    setError({ scope, message });
     pushToast('Could not save', message);
   };
 
-  async function choose(type: VerificationApplicantType): Promise<void> {
-    setBusy(true);
+  /** Run one action under its own key, so exactly one region reports. */
+  const under = async (scope: string, fn: () => Promise<void>, fallback: string): Promise<void> => {
+    setPending(scope);
     try {
-      if (!id) {
-        const created = await createApplication({ applicantType: type });
-        adopt(created);
-        onCreated?.(created.case.id);
-      } else {
-        adopt(await patchApplication(id, { applicantType: type }));
-      }
+      await fn();
       setError(null);
     } catch (e) {
-      fail(e, 'Could not set the applicant type.');
+      fail(e, fallback, scope);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
+  };
+
+  /**
+   * Set the applicant type.
+   *
+   * This click is the slowest on the form and it cannot be made fast: the write is several statements
+   * against a database in Oregon, and setting a type always changes the missing-field list, so the
+   * gate has to be re-derived and stored. What it CAN do is say so. Before this, `busy` was set and
+   * then read by nothing on the branch that renders the picker, so a first-time agent clicked a card
+   * and watched a still, silent page for a second or more — and clicked again.
+   */
+  async function choose(type: VerificationApplicantType): Promise<void> {
+    await under(
+      'type',
+      async () => {
+        if (!id) {
+          const created = await createApplication({ applicantType: type });
+          adopt(created);
+          onCreated?.(created.case.id);
+        } else {
+          adopt(await patchApplication(id, { applicantType: type }));
+        }
+      },
+      'Could not set the applicant type.',
+    );
   }
 
   /** Save the whole form. One round trip per save keeps the server's verdict authoritative. */
   async function save(): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    try {
-      adopt(
-        await patchApplication(id, {
-          ...form,
-          trucksCount: form.trucksCount === '' ? null : Number(form.trucksCount),
-          fuelCardsRequested:
-            form.fuelCardsRequested === '' ? null : Number(form.fuelCardsRequested),
-          requestedLimit: form.requestedLimit === '' ? null : Number(form.requestedLimit),
-        }),
-      );
-      setError(null);
-      pushToast('Saved', 'The application has been updated.');
-    } catch (e) {
-      fail(e, 'Could not save the application.');
-    } finally {
-      setBusy(false);
-    }
+    await under(
+      'save',
+      async () => {
+        adopt(
+          await patchApplication(id, {
+            ...form,
+            trucksCount: form.trucksCount === '' ? null : Number(form.trucksCount),
+            fuelCardsRequested:
+              form.fuelCardsRequested === '' ? null : Number(form.fuelCardsRequested),
+            requestedLimit: form.requestedLimit === '' ? null : Number(form.requestedLimit),
+          }),
+        );
+        pushToast('Saved', 'The application has been updated.');
+      },
+      'Could not save the application.',
+    );
   }
 
   /** One slot, one file, labelled so the slot can find it again on the next load. */
@@ -438,28 +387,40 @@ export function ApplicationIntake({
     label: string,
   ): Promise<void> {
     if (!id) return;
-    setBusy(true);
+    await under(
+      `slot:${label}`,
+      async () => {
+        adopt(await uploadApplicationDocuments(id, [file], { docType: docTypeForSlot, label }));
+      },
+      `Could not upload ${label.toLowerCase()}.`,
+    );
+  }
+
+  /**
+   * PREVIEW a stored document.
+   *
+   * Not routed through `under`: this is a read that opens a tab, and putting the form into a pending
+   * state for it would disable every control while a PDF loads. It reports a failure and nothing else.
+   */
+  async function openStored(documentId: string, fileName: string | null): Promise<void> {
+    if (!id) return;
     try {
-      adopt(await uploadApplicationDocuments(id, [file], { docType: docTypeForSlot, label }));
+      await openDocument('sales', id, documentId, fileName ?? 'document');
       setError(null);
     } catch (e) {
-      fail(e, `Could not upload ${label.toLowerCase()}.`);
-    } finally {
-      setBusy(false);
+      fail(e, 'Could not open that document.', 'open');
     }
   }
 
-  async function removeDocument(documentId: string): Promise<void> {
+  async function removeDocument(documentId: string, scope: string): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    try {
-      adopt(await deleteApplicationDocument(id, documentId));
-      setError(null);
-    } catch (e) {
-      fail(e, 'Could not remove that document.');
-    } finally {
-      setBusy(false);
-    }
+    await under(
+      scope,
+      async () => {
+        adopt(await deleteApplicationDocument(id, documentId));
+      },
+      'Could not remove that document.',
+    );
   }
 
   useEffect(() => {
@@ -474,43 +435,39 @@ export function ApplicationIntake({
     };
   }, [id]);
 
-  async function upload(files: FileList | null): Promise<void> {
-    if (!id || !files || files.length === 0) return;
-    setBusy(true);
-    try {
-      adopt(await uploadApplicationDocuments(id, Array.from(files), { docType }));
-      setError(null);
-    } catch (e) {
-      fail(e, 'Could not upload the document.');
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
+  async function upload(files: File[]): Promise<void> {
+    if (!id || files.length === 0) return;
+    await under(
+      'upload',
+      async () => {
+        adopt(await uploadApplicationDocuments(id, files, { docType }));
+      },
+      'Could not upload the document.',
+    );
   }
 
   async function submit(): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    try {
-      const next = await submitApplication(id);
-      adopt(next);
-      setError(null);
-      pushToast('Submitted', 'Verification can now begin underwriting.');
-      onSubmitted?.(next.case.id);
-    } catch (e) {
-      fail(e, 'Could not submit the application.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div style={s('padding:28px;text-align:center;color:var(--muted);font-size:14px')}>
-        Loading application…
-      </div>
+    await under(
+      'submit',
+      async () => {
+        const next = await submitApplication(id);
+        adopt(next);
+        pushToast('Submitted', 'Verification can now begin underwriting.');
+        onSubmitted?.(next.case.id);
+      },
+      'Could not submit the application.',
     );
   }
+
+  /**
+   * ONE loader for this surface, and it is a skeleton of the form that is coming.
+   *
+   * The old state was the sentence "Loading application…" centred in 28px of padding — no shape, no
+   * indication of how much was arriving, and a full reflow the moment it did. `IntakeSkeleton` mirrors
+   * the real blocks, so the page does not jump when the data lands.
+   */
+  if (loading) return <IntakeSkeleton />;
 
   // Step 1 — no type chosen yet, so there is no flow to render.
   if (!applicantType) {
@@ -518,14 +475,32 @@ export function ApplicationIntake({
       <div style={s('display:grid;gap:18px')}>
         <Section title="Who is applying?" hint="This decides which details the application needs.">
           <div style={s('grid-column:1/-1')}>
-            <ApplicantTypePicker value="" onChange={(v) => void choose(v)} />
+            {/* `pending` is what this branch was missing: the click writes to a database in Oregon and
+                re-derives the gate, and the card used to sit inert for the whole round trip. */}
+            <ApplicantTypePicker
+              value=""
+              pending={pending === 'type'}
+              onChange={(v) => void choose(v)}
+            />
           </div>
         </Section>
-        {error ? <ErrorNote message={error} /> : null}
+        {/* The form the choice is about to reveal, so the wait has a shape rather than being a
+            frozen card. One region, one loader — the picker reports on the card, this shows what is
+            coming. */}
+        {pending === 'type' ? <IntakeSkeleton compact /> : null}
+        {error ? <ErrorNote message={error.message} /> : null}
       </div>
     );
   }
 
+  /**
+   * Any action at all — for the reads that must not accept a SECOND write while one is running.
+   *
+   * Distinct from `pending === '<key>'`, which is what a control uses to say IT is the one working.
+   * Both are needed: sharing the disable is correct (two concurrent writes to one case would race),
+   * sharing the SPINNER is what produced four loaders for one click.
+   */
+  const anyPending = pending !== null;
   const isOwnerOperator = applicantType === 'owner_operator';
   const needsAuthority = applicantType === 'carrier';
   const set = (k: string) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -572,14 +547,19 @@ export function ApplicationIntake({
         <PrefillPanel
           result={prefill}
           applied={applied}
-          locked={locked || busy}
+          locked={locked || anyPending}
           onApply={applySuggestion}
         />
       ) : null}
 
       <Section title="Applicant type">
         <div style={s('grid-column:1/-1')}>
-          <ApplicantTypePicker value={applicantType} onChange={(v) => void choose(v)} />
+          <ApplicantTypePicker
+            value={applicantType}
+            pending={pending === 'type'}
+            disabled={locked}
+            onChange={(v) => void choose(v)}
+          />
         </div>
       </Section>
 
@@ -605,21 +585,25 @@ export function ApplicationIntake({
               against the other, so an application reaching the desk with only the last 4 gives the
               reviewer nothing to check against. */}
           <div style={s('grid-column:1/-1;display:grid;gap:8px')}>
-            {IDENTITY_SLOTS.map((slot) => (
-              <DocSlot
-                key={slot.docType}
-                label={slot.label}
-                doc={identityDocs[slot.docType] ?? null}
-                locked={locked || busy}
-                missing={missing.has(slot.missingKey)}
-                onPick={(file) => uploadSlotDoc(file, slot.docType, slot.label)}
-                onRemove={
-                  identityDocs[slot.docType]
-                    ? () => removeDocument(identityDocs[slot.docType]!.id)
-                    : null
-                }
-              />
-            ))}
+            {IDENTITY_SLOTS.map((slot) => {
+              const held = identityDocs[slot.docType] ?? null;
+              const scope = `slot:${slot.label}`;
+              return (
+                <DocSlot
+                  key={slot.docType}
+                  label={slot.label}
+                  doc={held}
+                  locked={locked || (anyPending && pending !== scope)}
+                  missing={missing.has(slot.missingKey)}
+                  uploading={pending === scope}
+                  removing={held ? pending === `doc:${held.id}` : false}
+                  error={error?.scope === scope ? error.message : null}
+                  onPick={(file) => void uploadSlotDoc(file, slot.docType, slot.label)}
+                  onOpen={held ? () => void openStored(held.id, held.fileName) : null}
+                  onRemove={held ? () => void removeDocument(held.id, `doc:${held.id}`) : null}
+                />
+              );
+            })}
           </div>
         </Section>
       ) : (
@@ -656,30 +640,31 @@ export function ApplicationIntake({
           detail={detail}
           missing={missing.has('principals')}
           locked={locked}
+          adding={pending === 'principal'}
+          busy={anyPending}
+          error={error?.scope === 'principal' ? error.message : null}
           value={principalName}
           onValue={setPrincipalName}
           onAdd={async () => {
             if (!id || principalName.trim().length === 0) return;
-            setBusy(true);
-            try {
-              adopt(await addPrincipal(id, { fullName: principalName.trim() }));
-              setPrincipalName('');
-            } catch (e) {
-              fail(e, 'Could not add the principal.');
-            } finally {
-              setBusy(false);
-            }
+            await under(
+              'principal',
+              async () => {
+                adopt(await addPrincipal(id, { fullName: principalName.trim() }));
+                setPrincipalName('');
+              },
+              'Could not add the principal.',
+            );
           }}
           onRemove={async (principalId) => {
             if (!id) return;
-            setBusy(true);
-            try {
-              adopt(await removePrincipal(id, principalId));
-            } catch (e) {
-              fail(e, 'Could not remove the principal.');
-            } finally {
-              setBusy(false);
-            }
+            await under(
+              `principal:${principalId}`,
+              async () => {
+                adopt(await removePrincipal(id, principalId));
+              },
+              'Could not remove the principal.',
+            );
           }}
         />
       ) : null}
@@ -723,65 +708,96 @@ export function ApplicationIntake({
         />
         {(form.bankingSource ?? 'statements') === 'statements' ? (
           <div style={s('grid-column:1/-1;display:grid;gap:8px')}>
-            {STATEMENT_LABELS.map((label, i) => (
-              <DocSlot
-                key={label}
-                label={label}
-                doc={statementSlots[i] ?? null}
-                locked={locked || busy}
-                missing={missing.has('bankStatements')}
-                onPick={(file) => uploadSlotDoc(file, 'bank_statement', label)}
-                onRemove={statementSlots[i] ? () => removeDocument(statementSlots[i]!.id) : null}
-              />
-            ))}
+            {STATEMENT_LABELS.map((label, i) => {
+              const held = statementSlots[i] ?? null;
+              const scope = `slot:${label}`;
+              return (
+                <DocSlot
+                  key={label}
+                  label={label}
+                  doc={held}
+                  locked={locked || (anyPending && pending !== scope)}
+                  missing={missing.has('bankStatements')}
+                  uploading={pending === scope}
+                  removing={held ? pending === `doc:${held.id}` : false}
+                  error={error?.scope === scope ? error.message : null}
+                  onPick={(file) => void uploadSlotDoc(file, 'bank_statement', label)}
+                  onOpen={held ? () => void openStored(held.id, held.fileName) : null}
+                  onRemove={held ? () => void removeDocument(held.id, `doc:${held.id}`) : null}
+                />
+              );
+            })}
           </div>
         ) : null}
       </Section>
 
       <DocumentsSection
-        onOpen={async (documentId) => {
-          if (!id) return;
-          try {
-            await openDocument('sales', id, documentId);
-            setError(null);
-          } catch (e) {
-            fail(e, 'Could not open that document.');
-          }
-        }}
         detail={detail}
         docType={docType}
         onDocType={setDocType}
-        locked={locked}
-        fileRef={fileRef}
-        onUpload={upload}
-        onDelete={async (documentId) => {
-          if (!id) return;
-          setBusy(true);
-          try {
-            adopt(await deleteApplicationDocument(id, documentId));
-          } catch (e) {
-            fail(e, 'Could not remove the document.');
-          } finally {
-            setBusy(false);
-          }
-        }}
+        locked={locked || (anyPending && pending !== 'upload')}
+        uploading={pending === 'upload'}
+        removingId={pending?.startsWith('doc:') ? pending.slice('doc:'.length) : null}
+        error={
+          error && (error.scope === 'upload' || error.scope === 'open' || error.scope.startsWith('doc:'))
+            ? error.message
+            : null
+        }
+        onUpload={(files) => void upload(files)}
+        onDelete={(documentId) => void removeDocument(documentId, `doc:${documentId}`)}
+        onOpen={(documentId, fileName) => void openStored(documentId, fileName)}
       />
 
-      {error ? <ErrorNote message={error} /> : null}
+      {/* The catch-all. Anything with a region of its own has already reported there — this is for a
+          failed save, submit or applicant-type change, which have no other home. */}
+      {error && !error.scope.startsWith('slot:') && !error.scope.startsWith('doc:') && error.scope !== 'upload' && error.scope !== 'open' ? (
+        <ErrorNote message={error.message} />
+      ) : null}
 
       {!locked ? (
         <div style={s('display:flex;flex-wrap:wrap;gap:12px;align-items:center')}>
-          <button type="button" onClick={() => void save()} disabled={busy} style={s(busy ? BTN_PRIMARY_BUSY : BTN_PRIMARY)}>
-            {busy ? 'Saving…' : 'Save application'}
+          {/* EACH button reports only its own request. `disabled` is shared — two writes to one case
+              would race — but `Saving…` belongs to Save alone. */}
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={anyPending}
+            aria-busy={pending === 'save' || undefined}
+            style={s(pending === 'save' ? BTN_PRIMARY_BUSY : anyPending ? BTN_DISABLED : BTN_PRIMARY)}
+          >
+            {pending === 'save' ? (
+              <>
+                <Icon name="spinner" size={15} className="ss-spin" />
+                Saving…
+              </>
+            ) : (
+              'Save application'
+            )}
           </button>
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={busy || !complete || submitted}
+            disabled={anyPending || !complete || submitted}
+            aria-busy={pending === 'submit' || undefined}
             title={complete ? undefined : 'Fill everything listed above first.'}
-            style={s(busy || !complete || submitted ? BTN_DISABLED : BTN_PRIMARY)}
+            style={s(
+              pending === 'submit'
+                ? BTN_PRIMARY_BUSY
+                : anyPending || !complete || submitted
+                  ? BTN_DISABLED
+                  : BTN_PRIMARY,
+            )}
           >
-            {submitted ? 'Already submitted' : 'Submit to Verification'}
+            {pending === 'submit' ? (
+              <>
+                <Icon name="spinner" size={15} className="ss-spin" />
+                Submitting…
+              </>
+            ) : submitted ? (
+              'Already submitted'
+            ) : (
+              'Submit to Verification'
+            )}
           </button>
         </div>
       ) : null}
@@ -807,6 +823,9 @@ function PrincipalsSection({
   detail,
   missing,
   locked,
+  adding,
+  busy,
+  error,
   value,
   onValue,
   onAdd,
@@ -815,6 +834,11 @@ function PrincipalsSection({
   detail: ApplicationDetail | null;
   missing: boolean;
   locked: boolean;
+  /** THIS section's add, so Add says "Adding…" and nothing else on the form does. */
+  adding: boolean;
+  /** Something else on the form is writing — disable, but do not claim to be working. */
+  busy: boolean;
+  error: string | null;
   value: string;
   onValue: (v: string) => void;
   onAdd: () => void | Promise<void>;
@@ -846,7 +870,10 @@ function PrincipalsSection({
                   <button
                     type="button"
                     onClick={() => void onRemove(p.id)}
-                    style={s('border:none;background:transparent;color:var(--danger);font-size:13px;font-weight:700;cursor:pointer')}
+                    disabled={busy}
+                    className="ss-slot-act"
+                    data-tone="danger"
+                    aria-label={`Remove ${p.fullName}`}
                   >
                     Remove
                   </button>
@@ -869,129 +896,35 @@ function PrincipalsSection({
             <button
               type="button"
               onClick={() => void onAdd()}
-              disabled={value.trim().length === 0}
-              style={s(value.trim().length === 0 ? BTN_DISABLED : BTN_PRIMARY)}
+              disabled={value.trim().length === 0 || busy}
+              aria-busy={adding || undefined}
+              style={s(
+                adding
+                  ? BTN_PRIMARY_BUSY
+                  : value.trim().length === 0 || busy
+                    ? BTN_DISABLED
+                    : BTN_PRIMARY,
+              )}
             >
-              Add
+              {adding ? (
+                <>
+                  <Icon name="spinner" size={15} className="ss-spin" />
+                  Adding…
+                </>
+              ) : (
+                'Add'
+              )}
             </button>
           </div>
         ) : null}
-      </div>
-    </Section>
-  );
-}
-
-function DocumentsSection({
-  onOpen,
-  detail,
-  docType,
-  onDocType,
-  locked,
-  fileRef,
-  onUpload,
-  onDelete,
-}: {
-  detail: ApplicationDetail | null;
-  docType: VerificationDocType;
-  onDocType: (v: VerificationDocType) => void;
-  locked: boolean;
-  fileRef: React.MutableRefObject<HTMLInputElement | null>;
-  onUpload: (files: FileList | null) => void | Promise<void>;
-  onDelete: (id: string) => void | Promise<void>;
-  onOpen: (id: string) => void | Promise<void>;
-}) {
-  const documents = detail?.documents ?? [];
-  const requested = documents.filter((d) => d.status === 'requested');
-  const received = documents.filter((d) => d.status === 'received');
-
-  return (
-    <Section title="Documents" hint="Stored in the Verification Dropbox folder.">
-      <div style={s('grid-column:1/-1;display:grid;gap:12px')}>
-        {requested.length > 0 ? (
-          <div
-            style={s(
-              'display:grid;gap:6px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-warning-bg,rgba(251,191,36,.1));border:1px solid var(--intent-warning-bd,rgba(251,191,36,.3))',
-            )}
+        {error ? (
+          <span
+            role="alert"
+            style={s('display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--danger)')}
           >
-            <span style={s('font-size:13px;font-weight:800;color:var(--text)')}>
-              Verification has asked for {requested.length} document{requested.length === 1 ? '' : 's'}
-            </span>
-            <ul style={s('margin:0;padding-left:18px;display:grid;gap:3px')}>
-              {requested.map((d) => (
-                <li key={d.id} style={s('font-size:12px;color:var(--text2)')}>
-                  {d.label || DOC_LABELS[d.docType]}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {received.length > 0 ? (
-          <ul style={s('margin:0;padding:0;list-style:none;display:grid;gap:8px')}>
-            {received.map((d) => (
-              <li
-                key={d.id}
-                style={s(
-                  'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
-                )}
-              >
-                {/* The filename opens the file. An attachment you cannot open is not an
-                    attachment — both desks resolve the same document the same way. */}
-                <button
-                  type="button"
-                  onClick={() => void onOpen(d.id)}
-                  title={`Open ${d.fileName ?? DOC_LABELS[d.docType]}`}
-                  style={s(
-                    'display:flex;align-items:center;gap:9px;min-width:0;flex:1;border:none;background:transparent;padding:0;text-align:left;cursor:pointer',
-                  )}
-                >
-                  <Icon name="doc" size={16} color="var(--muted)" />
-                  <span style={s('font-size:13px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
-                    {d.fileName ?? DOC_LABELS[d.docType]}
-                  </span>
-                  <span style={s('font-size:11px;color:var(--faint);flex-shrink:0')}>
-                    {DOC_LABELS[d.docType]}
-                  </span>
-                </button>
-                {!locked ? (
-                  <button
-                    type="button"
-                    onClick={() => void onDelete(d.id)}
-                    style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:13px;font-weight:700;cursor:pointer')}
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-
-        {!locked ? (
-          <div style={s('display:flex;gap:10px;flex-wrap:wrap;align-items:center')}>
-            <select
-              aria-label="Document type"
-              value={docType}
-              onChange={(e) => onDocType(e.currentTarget.value as VerificationDocType)}
-              style={s(
-                'height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px',
-              )}
-            >
-              {UPLOADABLE.map((t) => (
-                <option key={t} value={t}>
-                  {DOC_LABELS[t]}
-                </option>
-              ))}
-            </select>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              aria-label="Choose documents to upload"
-              onChange={(e) => void onUpload(e.currentTarget.files)}
-              style={s('font-size:13px;color:var(--text2)')}
-            />
-          </div>
+            <Icon name="warn" size={13} strokeWidth={2.3} />
+            {error}
+          </span>
         ) : null}
       </div>
     </Section>

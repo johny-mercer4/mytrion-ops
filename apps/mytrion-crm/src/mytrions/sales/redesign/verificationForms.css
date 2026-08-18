@@ -93,3 +93,55 @@
   .ss-root .ss-vf-req-fields,
   .ss-root .ss-vf-req-extra { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── Intake document slots ─────────────────────────────────────────────────────
+   The named boxes (three bank statements, licence, SSN card) and the loose Documents
+   panel. `applicationDocs.tsx` styles its own rows with `s()` like the rest of the
+   intake; only these three need real CSS — a hover state, an overhanging hit area and
+   a hidden input that must stay focusable. */
+
+/* Replace / Remove / Choose file. Text-sized controls with a 44px TOUCH target that
+   overhangs rather than grows: five slots in a column cannot each be 44px tall without
+   turning the Banking section into a page of its own. */
+.ss-root .ss-slot-act {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.ss-root .ss-slot-act::before {
+  content: '';
+  position: absolute;
+  inset: -12px -4px;
+}
+.ss-root .ss-slot-act:hover { color: var(--text); background: var(--alt); }
+.ss-root .ss-slot-act[data-tone='accent'] { color: var(--accent-text); }
+.ss-root .ss-slot-act[data-tone='danger']:hover { color: var(--danger); }
+.ss-root .ss-slot-act[data-lg='true'] { font-size: 13px; }
+.ss-root .ss-slot-act:disabled { color: var(--faint); cursor: default; background: none; }
+.ss-root .ss-slot-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The input is the control; a label is its surface.
+   `position:absolute` WITHOUT an anchored parent is what caused "the fall" on the
+   Verification desk — the input resolved against the app shell, and focusing it scrolled
+   the whole page. Here the offsets are pinned to this element's own box instead of left
+   to the static position, so it cannot escape whatever it is nested in. Not
+   `display:none`: that would take it out of the focus order and the label with it. */
+.ss-root .ss-file-hidden {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

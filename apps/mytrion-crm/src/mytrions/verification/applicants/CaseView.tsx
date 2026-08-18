@@ -65,6 +65,27 @@ import {
 import './applicants.css';
 import './applicantsCase.css';
 
+/**
+ * Every distinct thing the reviewer can set in motion on this screen.
+ *
+ * The keys are REGIONS as the reviewer sees them, not endpoints: the three decision-bar buttons are
+ * three keys because they are three buttons, while the credit and banking panes are separate because
+ * they save separately. `load` is here so a failed open renders through the same one error slot.
+ */
+type ActionKey =
+  | 'load'
+  | 'intake'
+  | 'screening'
+  | 'credit'
+  | 'banking'
+  | 'risk'
+  | 'decision'
+  | 'attach'
+  | 'request'
+  | 'pass'
+  | 'manager'
+  | 'decline';
+
 /** Phase state → chip treatment. Each intent carries a glyph, so tone is never colour alone. */
 const STATE_CHIP: Record<string, { intent: BadgeIntent; icon: IconName }> = {
   passed: { intent: 'success', icon: 'check_circle' },
@@ -111,8 +132,21 @@ function moneyOrNull(value: unknown): string | null {
 export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => void }) {
   const [detail, setDetail] = useState<VerificationDeskDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * WHICH action is in flight, not merely THAT one is.
+   *
+   * A single boolean put every control on the case into its loading state at once: attaching one
+   * file spun Pass phase, Send to manager, Decline, Save corrections and the request button
+   * together — five spinners for one request, which reads as a hung screen rather than a busy
+   * button. `pending` names the action, so exactly one region reports.
+   */
+  const [pending, setPending] = useState<ActionKey | null>(null);
+  /**
+   * The failure, WITH the action that produced it. A 415 from the aside's Attach control belongs
+   * beside that control; a refused decision belongs on the decision bar. One error, rendered where
+   * the click was.
+   */
+  const [error, setError] = useState<{ scope: ActionKey; message: string } | null>(null);
   const [activeCode, setActiveCode] = useState<string | null>(null);
 
   // Same cache key the queue warms, so the NSF threshold is already in hand on arrival.
@@ -133,7 +167,14 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     setLoading(true);
     getDeskCase(caseId)
       .then((d) => live && adopt(d))
-      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : 'Could not load the case.'))
+      .catch(
+        (e: unknown) =>
+          live &&
+          setError({
+            scope: 'load',
+            message: e instanceof Error ? e.message : 'Could not load the case.',
+          }),
+      )
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
@@ -141,14 +182,14 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   }, [caseId, adopt]);
 
   const run = useCallback(
-    async (fn: () => Promise<VerificationDeskDetail>): Promise<void> => {
-      setBusy(true);
+    async (scope: ActionKey, fn: () => Promise<VerificationDeskDetail>): Promise<void> => {
+      setPending(scope);
       try {
         adopt(await fn());
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'That action could not be completed.');
+        setError({ scope, message: e instanceof Error ? e.message : 'That action could not be completed.' });
       } finally {
-        setBusy(false);
+        setPending(null);
       }
     },
     [adopt],
@@ -174,7 +215,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
       <div className="va-case">
         <div className="va-banner" data-tone="danger" role="alert">
           <span className="va-banner-title">Could not open this application</span>
-          <p className="va-banner-body">{error ?? 'The case could not be found.'}</p>
+          <p className="va-banner-body">{error?.message ?? 'The case could not be found.'}</p>
         </div>
         <Button variant="secondary" icon="chevron_left" onClick={onBack}>
           All cases
@@ -186,7 +227,15 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   const c = detail.case as VerificationDeskDetail['case'] & Record<string, unknown>;
   const locked = !c.verificationProcess;
   const closed = Boolean(c.closedAt);
-  const canAct = !locked && !closed && !busy;
+  /**
+   * Whether the case is DECIDABLE — a property of the case, not of the network.
+   *
+   * `busy` used to be folded in here, which is how one in-flight upload disabled every other
+   * control on the page. Each control now disables itself while ITS action runs (`pending`), and
+   * `canAct` answers only "is this case open and green".
+   */
+  const canAct = !locked && !closed;
+  const idle = pending === null;
   const name = caseName(c);
   const missing = c.intakeMissing?.length ?? 0;
   /**
@@ -218,8 +267,15 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     { k: 'Requested limit', v: moneyOrNull(c.requestedLimit) },
   ];
 
+  const DECIDE_KEY: Record<string, ActionKey> = {
+    pass: 'pass',
+    manager_review: 'manager',
+    decline: 'decline',
+  };
   const onDecide = (outcome: VerificationPhaseOutcome, note?: string): void => {
-    void run(() => decidePhase(caseId, active.code, { outcome, ...(note ? { note } : {}) }));
+    void run(DECIDE_KEY[outcome] ?? 'pass', () =>
+      decidePhase(caseId, active.code, { outcome, ...(note ? { note } : {}) }),
+    );
   };
 
   return (
@@ -335,14 +391,17 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
         </div>
       ) : null}
 
-      {error ? (
+      {/* Errors from the aside render INSIDE the aside, beside the control that failed — a 415 on
+          an attach belongs at the attach button, not in a banner three sections above it. Everything
+          else has no region of its own and reports here. */}
+      {error && error.scope !== 'attach' && error.scope !== 'request' ? (
         <div className="va-banner" data-tone="danger" role="alert">
           <span className="va-banner-glyph" aria-hidden="true">
             <Icon name="error" size="sm" />
           </span>
           <span className="va-banner-text">
             <span className="va-banner-title">That action could not be completed</span>
-            <span className="va-banner-body">{error}</span>
+            <span className="va-banner-body">{error.message}</span>
           </span>
         </div>
       ) : null}
@@ -379,7 +438,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 detail={detail}
                 phase={active}
                 caseId={caseId}
-                busy={busy}
+                pending={pending}
                 canAct={canAct}
                 nsfThreshold={nsfThreshold}
                 wexCardCutoff={wexCardCutoff}
@@ -392,17 +451,24 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             detail={detail}
             caseId={caseId}
             phase={active}
-            canAct={canAct}
-            busy={busy}
+            canAct={canAct && idle}
+            requesting={pending === 'request'}
+            uploading={pending === 'attach'}
+            /* The aside's own failure, so a refused attach reports at the attach control. */
+            error={
+              error && (error.scope === 'attach' || error.scope === 'request') ? error.message : null
+            }
             onRequestDocs={(items, note) =>
-              void run(() =>
+              void run('request', () =>
                 requestDocuments(caseId, { phaseCode: active.code, items, ...(note ? { note } : {}) }),
               )
             }
-            onUpload={(file, docType) => void run(() => uploadDeskDocuments(caseId, [file], { docType }))}
+            onUpload={(file, docType) =>
+              void run('attach', () => uploadDeskDocuments(caseId, [file], { docType }))
+            }
             /* Locked is when the desk MOST needs to attach — a locked case is one waiting on
                documents. Only a decided case refuses. */
-            canAttach={!closed && !busy}
+            canAttach={!closed && idle}
           />
         </div>
 
@@ -419,8 +485,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             <Button
               variant="primary"
               icon="check"
-              loading={busy}
-              disabled={!canAct || !active.applies}
+              loading={pending === 'pass'}
+              disabled={!canAct || !idle || !active.applies}
               onClick={() => onDecide('pass')}
             >
               Pass phase
@@ -428,8 +494,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             <Button
               variant="secondary"
               icon="gavel"
-              loading={busy}
-              disabled={!canAct}
+              loading={pending === 'manager'}
+              disabled={!canAct || !idle}
               onClick={() => onDecide('manager_review')}
             >
               Send to manager
@@ -437,8 +503,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             <Button
               variant="danger"
               icon="block"
-              loading={busy}
-              disabled={!canAct}
+              loading={pending === 'decline'}
+              disabled={!canAct || !idle}
               onClick={() => onDecide('decline')}
             >
               Decline
@@ -549,7 +615,7 @@ function PhaseBody({
   detail,
   phase,
   caseId,
-  busy,
+  pending,
   canAct,
   nsfThreshold,
   wexCardCutoff,
@@ -558,12 +624,17 @@ function PhaseBody({
   detail: VerificationDeskDetail;
   phase: VerificationRailPhase;
   caseId: string;
-  busy: boolean;
+  /** Which action is in flight, so each pane reports only its OWN save. */
+  pending: ActionKey | null;
   canAct: boolean;
   nsfThreshold: number | null;
   wexCardCutoff: number | null;
-  onRun: (fn: () => Promise<VerificationDeskDetail>) => Promise<void>;
+  onRun: (scope: ActionKey, fn: () => Promise<VerificationDeskDetail>) => Promise<void>;
 }) {
+  /* A pane is disabled while ANY action runs — two concurrent saves against one case would race —
+     but only the pane whose action is running says it is busy. That distinction is the whole fix:
+     `disabled` is shared, `busy` is not. */
+  const idle = pending === null;
   switch (phase.code) {
     case 'p1_intake':
       return (
@@ -572,17 +643,19 @@ function PhaseBody({
           wexCardCutoff={wexCardCutoff}
           // Corrections stay open right up until the case is decided — see deskService.patchIntake.
           closed={Boolean(detail.case.closedAt)}
-          busy={busy}
-          onSave={(body) => onRun(() => patchDeskIntake(caseId, body))}
+          busy={pending === 'intake'}
+          onSave={(body) => onRun('intake', () => patchDeskIntake(caseId, body))}
         />
       );
     case 'p3_screening':
       return (
         <ScreeningPane
           detail={detail}
-          busy={busy || !canAct}
-          onRun={() => void onRun(() => runScreening(caseId))}
-          onVerdict={(hitId, verdict) => void onRun(() => setScreeningVerdict(caseId, hitId, { verdict }))}
+          busy={pending === 'screening' || !canAct || !idle}
+          onRun={() => void onRun('screening', () => runScreening(caseId))}
+          onVerdict={(hitId, verdict) =>
+            void onRun('screening', () => setScreeningVerdict(caseId, hitId, { verdict }))
+          }
         />
       );
     case 'p6_credit_banking':
@@ -591,15 +664,15 @@ function PhaseBody({
           <ReviewSummary detail={detail} nsfThreshold={nsfThreshold} />
           <CreditPane
             detail={detail}
-            busy={busy}
-            disabled={!canAct}
-            onSave={(b) => void onRun(() => saveCreditReview(caseId, b))}
+            busy={pending === 'credit'}
+            disabled={!canAct || !idle}
+            onSave={(b) => void onRun('credit', () => saveCreditReview(caseId, b))}
           />
           <BankingPane
             detail={detail}
-            busy={busy}
-            disabled={!canAct}
-            onSave={(b) => void onRun(() => saveBankingReview(caseId, b))}
+            busy={pending === 'banking'}
+            disabled={!canAct || !idle}
+            onSave={(b) => void onRun('banking', () => saveBankingReview(caseId, b))}
           />
         </div>
       );
@@ -609,18 +682,18 @@ function PhaseBody({
       return (
         <RiskPane
           detail={detail}
-          busy={busy}
-          disabled={!canAct}
-          onSave={(b) => void onRun(() => saveRiskAssessment(caseId, b))}
+          busy={pending === 'risk'}
+          disabled={!canAct || !idle}
+          onSave={(b) => void onRun('risk', () => saveRiskAssessment(caseId, b))}
         />
       );
     case 'p10_decision':
       return (
         <DecisionPane
           detail={detail}
-          busy={busy}
-          disabled={!canAct}
-          onDecide={(b) => void onRun(() => submitFinalDecision(caseId, b))}
+          busy={pending === 'decision'}
+          disabled={!canAct || !idle}
+          onDecide={(b) => void onRun('decision', () => submitFinalDecision(caseId, b))}
         />
       );
     default:

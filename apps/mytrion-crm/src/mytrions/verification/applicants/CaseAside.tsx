@@ -18,6 +18,7 @@ import {
   type VerificationDocType,
   type VerificationRailPhase,
 } from '@/api/verificationFlow';
+import { DOC_ACCEPT, DOC_ACCEPT_HINT } from '../../_shared/verificationDocUpload';
 import { PHASE_SHORT, STATUS_LABEL } from './applicantsModel';
 
 /** The SOP's per-phase checks. Judgement calls the desk makes against the file, in its own words. */
@@ -116,7 +117,9 @@ export function CaseAside({
   caseId,
   phase,
   canAct,
-  busy,
+  requesting,
+  uploading,
+  error,
   onRequestDocs,
   onUpload,
   canAttach,
@@ -125,8 +128,17 @@ export function CaseAside({
   caseId: string;
   phase: VerificationRailPhase;
   canAct: boolean;
-  /** A request is in flight — reported on the control, not folded into `canAct`. */
-  busy: boolean;
+  /**
+   * TWO flags, not one `busy`.
+   *
+   * They are two different controls a foot apart, and one shared boolean made attaching a file spin
+   * the request button as well — plus the three decision buttons below, which is the triple-loader
+   * this pair exists to end. Each control reports only its own request.
+   */
+  requesting: boolean;
+  uploading: boolean;
+  /** A refused attach or request, rendered HERE rather than in a banner above the phase spine. */
+  error: string | null;
   onRequestDocs: (items: Array<{ docType: VerificationDocType }>, note?: string) => void;
   /** The desk attaching a file itself — see the Attach control below. */
   onUpload: (file: File, docType: VerificationDocType) => void;
@@ -212,9 +224,9 @@ export function CaseAside({
                   // A `requested` row carries no bytes — the download route 409s on it, so the
                   // affordance is withheld rather than offered and then refused.
                   aria-disabled={pending ? 'true' : undefined}
-                  aria-label={pending ? `${name} — requested, not yet received` : `Open ${name}`}
+                  aria-label={pending ? `${name} — requested, not yet received` : `Preview ${name}`}
                   onClick={() => {
-                    if (!pending) void openDocument('verification', caseId, doc.id);
+                    if (!pending) void openDocument('verification', caseId, doc.id, name);
                   }}
                 >
                   <span className="va-doc-glyph" aria-hidden="true">
@@ -224,9 +236,11 @@ export function CaseAside({
                     <span className="va-doc-name">{name}</span>
                     <span className="va-doc-meta">{meta}</span>
                   </span>
+                  {/* `visibility`, not `download`: the route now serves these bytes inline, so the
+                      click opens a viewer. The old glyph promised a file on disk. */}
                   {pending ? null : (
                     <span className="va-doc-open" aria-hidden="true">
-                      <Icon name="download" size="sm" />
+                      <Icon name="visibility" size="sm" />
                     </span>
                   )}
                 </button>
@@ -249,7 +263,7 @@ export function CaseAside({
                 variant="primary"
                 size="sm"
                 icon="send"
-                loading={busy}
+                loading={requesting}
                 disabled={!canAct}
                 onClick={() => {
                   onRequestDocs([{ docType }]);
@@ -271,12 +285,20 @@ export function CaseAside({
                 until this existed the only way to file it was to ask Sales to upload what the
                 reviewer was looking at. The same service, gate re-evaluation and audit trail as the
                 Sales upload; only the door differs. */}
-            <label className="va-doc-attach" data-disabled={!canAttach}>
-              <Icon name="attach_file" size="sm" />
-              Attach a file
+            {/* The control reports its OWN upload. `aria-busy` rather than a second spinner: the
+                label is the affordance and the region already has one loading signal. */}
+            <label
+              className="va-doc-attach"
+              data-disabled={!canAttach || uploading}
+              data-busy={uploading || undefined}
+              aria-busy={uploading || undefined}
+            >
+              <Icon name={uploading ? 'cloud_upload' : 'attach_file'} size="sm" />
+              {uploading ? 'Uploading…' : 'Attach a file'}
               <input
                 type="file"
-                disabled={!canAttach}
+                accept={DOC_ACCEPT}
+                disabled={!canAttach || uploading}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) onUpload(file, attachType);
@@ -302,8 +324,19 @@ export function CaseAside({
             >
               Request a document
             </Button>
+            <p className="va-aside-note">{DOC_ACCEPT_HINT}</p>
           </div>
         )}
+
+        {/* The refusal, where the click was. An unsupported file type comes back as a 415 naming the
+            file and what is accepted; it used to reach a banner above the phase spine, which on a
+            tall case is off screen from the control that caused it. */}
+        {error ? (
+          <p className="va-aside-error" role="alert">
+            <Icon name="error" size="sm" />
+            <span>{error}</span>
+          </p>
+        ) : null}
       </section>
 
       <section className="va-aside-block" data-divided="true">
