@@ -10,10 +10,7 @@
  * home overlay) → per-user override (replace / deny) → env-admin pin. Admin Profile/Role Defaults
  * are the control plane; the legacy floor only covers Zoho profiles not yet configured in Admin.
  *
- * Per-Mytrion modes (read|full): env-admin / allDept → all full; else user explicit mode wins;
- * else role mode; else the Mytrion's default (full for most; READ for HR — see READ_DEFAULT_MYTRIONS,
- * so a bare HR grant is directory-only and write is the explicit "HR Manager" grant). Mode does not
- * affect entry.
+ * Per-Mytrion modes (read|full): admin → full; else user > role > per-Mytrion default (mytrionModeDefaults: HR reads).
  *
  * Safety / no-lockout: only the ENV BREAK-GLASS list (ADMIN_USERS / BYPASS_USERS — named users in
  * server config, not editable from the app) is pinned to all-access and exempt from denies. An
@@ -43,6 +40,7 @@ import {
   type MytrionAccessModes,
   type MytrionId,
 } from '../../lib/mytrions.js';
+import { defaultMode } from './mytrionModeDefaults.js';
 import { mytrionProfileDefaultsRepo, type MytrionProfileDefaultDto } from '../../repos/mytrionProfileDefaultsRepo.js';
 import { mytrionRoleDefaultsRepo, type MytrionRoleDefaultDto } from '../../repos/mytrionRoleDefaultsRepo.js';
 import { workerMytrionAccessRepo, type WorkerMytrionAccessDto } from '../../repos/workerMytrionAccessRepo.js';
@@ -82,23 +80,6 @@ export function canWriteMytrion(
   if (access.allDepartmentAccess) return true;
   if (!access.accessibleMytrions.includes(id)) return false;
   return access.mytrionAccessModes[id] !== 'read';
-}
-
-/**
- * Mytrions whose mode defaults to READ when no layer (user / role / set) sets one — instead of the
- * historical FULL.
- *
- * HR is here on purpose, and alone. A bare HR grant is the people DIRECTORY: look-only. Creating
- * employees or departments and moving the org chart is an explicit "HR Manager" capability, granted
- * per user as `hr: full` from Admin → User Management. Every other Mytrion keeps the fail-open default
- * where a plain grant implies write, so this narrows HR and only HR — a new HR hire is read-only until
- * an admin promotes them, rather than a manager until someone remembers to downgrade them.
- */
-const READ_DEFAULT_MYTRIONS: ReadonlySet<MytrionId> = new Set<MytrionId>(['hr']);
-
-/** The mode a Mytrion falls back to when no layer decided one. */
-function defaultMode(id: MytrionId): MytrionAccessMode {
-  return READ_DEFAULT_MYTRIONS.has(id) ? 'read' : 'full';
 }
 
 function resolveModes(
