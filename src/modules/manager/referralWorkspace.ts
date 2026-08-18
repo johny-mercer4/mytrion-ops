@@ -11,13 +11,25 @@ import type {
   ReferralBonusType,
 } from '../../db/schema/index.js';
 import {
+  fetchReferralParentCarriers,
   fetchReferralVolumeSets,
   type ReferralCarrierVolume,
 } from '../../integrations/dwhReferralVolume.js';
+import { ValidationError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { referralBonusRepo } from '../../repos/referralBonusRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { computeReferralBonus, isClaimedStatus } from './referralBonusMath.js';
+import {
+  clipReferralMonthWindow,
+  enumerateReferralMonths,
+  lastDayOfMonth,
+  monthStartOf,
+  REFERRAL_PERIOD_MAX_DAYS,
+  REFERRAL_PERIOD_MAX_MONTHS,
+  referralDaySpan,
+  referralMonthSpan,
+} from './referralPeriodRange.js';
 import { REFERRAL_BONUS_SPEC_BY_TYPE, type ReferralBonusSpec } from './referralBonusTypes.js';
 import {
   fetchReferralCalculationRecords,
@@ -25,11 +37,22 @@ import {
   type ReferralRecordsResult,
 } from './referralRecords.js';
 import {
+  appendSwipeParentCarrierTargets,
   resolveReferralTargets,
   type ReferralChildSource,
   type ReferralDealSource,
   type ReferralParentSource,
+  type ReferralTargetRole,
 } from './referralResolution.js';
+
+export interface ReferralMonthPreview {
+  periodMonth: string;
+  periodGallons: number;
+  periodSwipes: number;
+  cumulativeGallons: number;
+  amountUsd: string;
+  payableAmountUsd: string;
+}
 
 export interface ReferralCalculationPreview {
   parentId: string;
@@ -56,6 +79,9 @@ export interface ReferralCalculationPreview {
   progressPct: number;
   state: 'tracking' | 'earned' | 'paid';
   ledgerStatus: ReferralBonusStatus | null;
+  months: ReferralMonthPreview[];
+  /** Child deal vs the parent's own fleet. Set by resolution, not by name matching. */
+  role: ReferralTargetRole;
 }
 
 export interface ReferralWorkspaceSummary {
@@ -74,6 +100,8 @@ export interface ReferralWorkspaceSummary {
 
 export interface ReferralWorkspaceResult {
   periodMonth: string;
+  periodFrom: string;
+  periodTo: string;
   generatedAt: string;
   parents: ReferralRecordsResult;
   children: ReferralRecordsResult;
@@ -101,7 +129,7 @@ const carrierId = (value: unknown): number | null => {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 };
 
-function parentSource(row: CrmRow): ReferralParentSource {
+export function parentSource(row: CrmRow): ReferralParentSource {
   return {
     id: str(row.id),
     referrerId: str(row.ReferrerId),
@@ -111,7 +139,7 @@ function parentSource(row: CrmRow): ReferralParentSource {
   };
 }
 
-function childSource(row: CrmRow): ReferralChildSource {
+export function childSource(row: CrmRow): ReferralChildSource {
   return {
     id: str(row.id),
     referrerId: strOrNull(row.Referrer_ID),
@@ -123,7 +151,7 @@ function childSource(row: CrmRow): ReferralChildSource {
   };
 }
 
-function dealSource(row: CrmRow): ReferralDealSource {
+export function dealSource(row: CrmRow): ReferralDealSource {
   return {
     id: str(row.id),
     name: strOrNull(row.Deal_Name),
@@ -140,6 +168,7 @@ function specKey(spec: ReferralBonusSpec): string {
 async function loadVolumeBySpec(
   targets: ReturnType<typeof resolveReferralTargets>['targets'],
   periodMonth: string,
+  window: { from: string; to: string },
 ): Promise<Map<string, Map<number, ReferralCarrierVolume>>> {
   const carrierIds = [...new Set(targets.map((target) => target.carrierId))];
   const types = new Set(targets.map((target) => target.bonusType));
@@ -153,25 +182,50 @@ async function loadVolumeBySpec(
     carrierIds,
     periodMonth,
     [...specs.entries()].map(([key, spec]) => ({ key, fuelCodes: spec.fuelCodes })),
+    window,
   );
 }
 
-/** Build the complete card + modal payload for one calendar month. Read-only. */
-async function computeReferralWorkspace(
+function emptyVolume(carrierId: number): ReferralCarrierVolume {
+  return { carrierId, gallons: 0, swipes: 0, cumulativeGallons: 0 };
+}
+
+export interface ReferralPreviewCalculation {
+  previews: ReferralCalculationPreview[];
+  unresolvedChildIds: string[];
+  skippedNoCalculationChildIds: string[];
+}
+
+/**
+ * Live previews for a parent/child/deal set. Shared by the CRM workspace and the single-referrer
+ * mobile read so money rules cannot drift. One MART fetch per overlapping month for that set.
+ */
+export async function calculateReferralPreviews(
   ctx: TenantContext,
-  periodMonth: string,
-  forceSources: boolean,
-): Promise<ReferralWorkspaceResult> {
-  const [records, priorClaims] = await Promise.all([
-    fetchReferralCalculationRecords({ force: forceSources }),
-    referralBonusRepo.listOneTimeClaims(ctx, periodMonth),
+  parentSources: readonly ReferralParentSource[],
+  childSources: readonly ReferralChildSource[],
+  dealSources: readonly ReferralDealSource[],
+  periodFrom: string,
+  periodTo: string,
+): Promise<ReferralPreviewCalculation> {
+  const months = enumerateReferralMonths(periodFrom, periodTo);
+  const resolved = resolveReferralTargets(parentSources, childSources, dealSources);
+  const [parentCarriers, priorClaims] = await Promise.all([
+    fetchReferralParentCarriers(
+      resolved.targets
+        .filter((target) => target.bonusType === 'swipes_legacy')
+        .map((target) => target.parent.name)
+        .filter((name): name is string => Boolean(name)),
+    ),
+    referralBonusRepo.listOneTimeClaims(ctx, periodTo),
   ]);
-  const { parents, children, associations } = records;
-  const parentSources = parents.rows.map(parentSource);
-  const childSources = children.rows.map(childSource);
-  const dealSources = associations.deals.rows.map(dealSource);
-  const resolution = resolveReferralTargets(parentSources, childSources, dealSources);
-  const volumeBySpec = await loadVolumeBySpec(resolution.targets, periodMonth);
+  const targets = appendSwipeParentCarrierTargets(resolved.targets, parentCarriers);
+  const volumeByMonth: Array<Map<string, Map<number, ReferralCarrierVolume>>> = [];
+  for (const month of months) {
+    volumeByMonth.push(
+      await loadVolumeBySpec(targets, month, clipReferralMonthWindow(month, periodFrom, periodTo)),
+    );
+  }
 
   const claimByCarrierType = new Map(
     priorClaims
@@ -183,25 +237,53 @@ async function computeReferralWorkspace(
       .filter((claim) => isClaimedStatus(claim.status))
       .map((claim) => [`${claim.childReferralId}:${claim.bonusType}`, claim]),
   );
-  const previews: ReferralCalculationPreview[] = resolution.targets.map((target) => {
+  const previews: ReferralCalculationPreview[] = targets.map((target) => {
     const spec = REFERRAL_BONUS_SPEC_BY_TYPE[target.bonusType];
-    const volume = volumeBySpec.get(specKey(spec))?.get(target.carrierId) ?? {
-      carrierId: target.carrierId,
-      gallons: 0,
-      swipes: 0,
-      cumulativeGallons: 0,
-    };
     const claim =
       claimByCarrierType.get(`${target.carrierId}:${target.bonusType}`) ??
       claimByChildType.get(`${target.child.id}:${target.bonusType}`);
     const claimed = target.alreadyPaidInZoho || claim !== undefined;
-    const calculation = computeReferralBonus(spec, volume, claimed);
+    const monthRows = months.map((month, index) => {
+      const volume =
+        volumeByMonth[index]?.get(specKey(spec))?.get(target.carrierId) ??
+        emptyVolume(target.carrierId);
+      return { month, volume, calculation: computeReferralBonus(spec, volume, claimed) };
+    });
+    const last = monthRows[monthRows.length - 1] ?? {
+      month: periodTo,
+      volume: emptyVolume(target.carrierId),
+      calculation: computeReferralBonus(spec, emptyVolume(target.carrierId), claimed),
+    };
+    const periodGallons = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.volume.gallons, 0)
+      : last.volume.gallons;
+    // volume.swipes is already first-use inside that month's clipped window. Summing the
+    // selected months is the range payable — a card's first fuel lands in exactly one month.
+    const periodSwipes = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.volume.swipes, 0)
+      : last.volume.swipes;
+    const amount = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.calculation.amount, 0)
+      : last.calculation.amount;
+    const payableAmount = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.calculation.payableAmount, 0)
+      : last.calculation.payableAmount;
+    const progressPct = spec.recurring
+      ? amount > 0
+        ? 100
+        : 0
+      : last.calculation.progressPct;
+    const calcState = spec.recurring
+      ? amount > 0
+        ? 'earned'
+        : 'tracking'
+      : last.calculation.state;
     const state =
       target.alreadyPaidInZoho || claim?.status === 'paid'
         ? 'paid'
         : claim
           ? 'earned'
-          : calculation.state;
+          : calcState;
     return {
       parentId: target.parent.id,
       childId: target.child.id,
@@ -219,16 +301,76 @@ async function computeReferralWorkspace(
       recurring: spec.recurring,
       rateUsd: spec.rateUsd,
       thresholdGallons: spec.thresholdGallons,
-      periodGallons: volume.gallons,
-      periodSwipes: volume.swipes,
-      cumulativeGallons: volume.cumulativeGallons,
-      amountUsd: calculation.amount.toFixed(2),
-      payableAmountUsd: calculation.payableAmount.toFixed(2),
-      progressPct: calculation.progressPct,
+      periodGallons,
+      periodSwipes,
+      cumulativeGallons: last.volume.cumulativeGallons,
+      amountUsd: amount.toFixed(2),
+      payableAmountUsd: payableAmount.toFixed(2),
+      progressPct,
       state,
       ledgerStatus: claim?.status ?? null,
+      role: target.role,
+      months: monthRows.map((row) => ({
+        periodMonth: row.month,
+        periodGallons: row.volume.gallons,
+        periodSwipes: row.volume.swipes,
+        cumulativeGallons: row.volume.cumulativeGallons,
+        amountUsd: spec.recurring
+          ? row.calculation.amount.toFixed(2)
+          : row.month === last.month
+            ? last.calculation.amount.toFixed(2)
+            : '0.00',
+        payableAmountUsd: spec.recurring
+          ? row.calculation.payableAmount.toFixed(2)
+          : row.month === last.month
+            ? last.calculation.payableAmount.toFixed(2)
+            : '0.00',
+      })),
     };
   });
+
+  return {
+    previews,
+    unresolvedChildIds: resolved.unresolvedChildIds,
+    skippedNoCalculationChildIds: resolved.skippedNoCalculationChildIds,
+  };
+}
+
+export function assertReferralPeriod(periodFrom: string, periodTo: string): void {
+  const monthSpan = referralMonthSpan(periodFrom, periodTo);
+  const daySpan = referralDaySpan(periodFrom, periodTo);
+  if (monthSpan <= 0 || daySpan <= 0) {
+    throw new ValidationError('period_from must be on or before period_to');
+  }
+  if (monthSpan > REFERRAL_PERIOD_MAX_MONTHS || daySpan > REFERRAL_PERIOD_MAX_DAYS) {
+    throw new ValidationError(
+      `Referral range cannot exceed ${REFERRAL_PERIOD_MAX_MONTHS} months or ${REFERRAL_PERIOD_MAX_DAYS} days`,
+    );
+  }
+}
+
+/** Build the complete card + modal payload for an inclusive calendar-day range. Read-only. */
+async function computeReferralWorkspace(
+  ctx: TenantContext,
+  periodFrom: string,
+  periodTo: string,
+  forceSources: boolean,
+): Promise<ReferralWorkspaceResult> {
+  assertReferralPeriod(periodFrom, periodTo);
+  const records = await fetchReferralCalculationRecords({ force: forceSources });
+  const { parents, children, associations } = records;
+  const parentSources = parents.rows.map(parentSource);
+  const childSources = children.rows.map(childSource);
+  const dealSources = associations.deals.rows.map(dealSource);
+  const { previews, unresolvedChildIds, skippedNoCalculationChildIds } =
+    await calculateReferralPreviews(
+      ctx,
+      parentSources,
+      childSources,
+      dealSources,
+      periodFrom,
+      periodTo,
+    );
 
   const configuredParents = parentSources.filter(
     (parent) => parent.calculation && parent.calculation !== '-None-',
@@ -245,14 +387,16 @@ async function computeReferralWorkspace(
   );
 
   return {
-    periodMonth,
+    periodMonth: monthStartOf(periodTo),
+    periodFrom,
+    periodTo,
     generatedAt: new Date().toISOString(),
     parents,
     children,
     associations,
     previews,
-    unresolvedChildIds: resolution.unresolvedChildIds,
-    skippedNoCalculationChildIds: resolution.skippedNoCalculationChildIds,
+    unresolvedChildIds,
+    skippedNoCalculationChildIds,
     summary: {
       parents: parents.total,
       configuredParents,
@@ -281,8 +425,8 @@ const REFERRAL_WORKSPACE_CACHE_MAX = 12;
 const workspaceCache = new Map<string, ReferralWorkspaceCacheEntry>();
 const workspaceInFlight = new Map<string, Promise<ReferralWorkspaceResult>>();
 
-function workspaceKey(ctx: TenantContext, periodMonth: string): string {
-  return `${ctx.tenantId}:${periodMonth}`;
+function workspaceKey(ctx: TenantContext, periodFrom: string, periodTo: string): string {
+  return `${ctx.tenantId}:${periodFrom}:${periodTo}`;
 }
 
 function writeWorkspaceCache(key: string, value: ReferralWorkspaceResult): void {
@@ -310,16 +454,18 @@ function writeWorkspaceCache(key: string, value: ReferralWorkspaceResult): void 
 export async function fetchReferralWorkspace(
   ctx: TenantContext,
   periodMonth: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; periodTo?: string } = {},
 ): Promise<ReferralWorkspaceResult> {
-  const key = workspaceKey(ctx, periodMonth);
+  const periodFrom = periodMonth;
+  const periodTo = options.periodTo ?? lastDayOfMonth(periodMonth);
+  const key = workspaceKey(ctx, periodFrom, periodTo);
   const cached = workspaceCache.get(key);
   if (!options.force && cached && cached.expiresAt > Date.now()) return cached.value;
 
   const running = workspaceInFlight.get(key);
   if (running) return running;
 
-  const computation = computeReferralWorkspace(ctx, periodMonth, options.force === true)
+  const computation = computeReferralWorkspace(ctx, periodFrom, periodTo, options.force === true)
     .then((value) => {
       writeWorkspaceCache(key, value);
       return value;
@@ -330,7 +476,8 @@ export async function fetchReferralWorkspace(
           {
             err: error instanceof Error ? error.message : String(error),
             tenantId: ctx.tenantId,
-            periodMonth,
+            periodFrom,
+            periodTo,
           },
           'referral workspace refresh failed — serving recent snapshot',
         );
@@ -341,6 +488,17 @@ export async function fetchReferralWorkspace(
     .finally(() => workspaceInFlight.delete(key));
   workspaceInFlight.set(key, computation);
   return computation;
+}
+
+/** Fresh workspace snapshot for this tenant + range, or null when the cache has expired. */
+export function peekReferralWorkspace(
+  ctx: TenantContext,
+  periodFrom: string,
+  periodTo: string,
+): ReferralWorkspaceResult | null {
+  const cached = workspaceCache.get(workspaceKey(ctx, periodFrom, periodTo));
+  if (!cached || cached.expiresAt <= Date.now()) return null;
+  return cached.value;
 }
 
 /** Test/shutdown helper — the cache contains no durable state. */

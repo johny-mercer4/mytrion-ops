@@ -35,6 +35,15 @@ import {
   fetchReferralRecords,
   isReferralModuleKey,
 } from '../../modules/manager/referralRecords.js';
+import {
+  isIsoDate,
+  lastDayOfMonth,
+  REFERRAL_PERIOD_MAX_DAYS,
+  REFERRAL_PERIOD_MAX_MONTHS,
+  referralDaySpan,
+  referralMonthSpan,
+} from '../../modules/manager/referralPeriodRange.js';
+import { fetchReferralLiveByReferrer } from '../../modules/manager/referralLive.js';
 import { fetchReferralWorkspace } from '../../modules/manager/referralWorkspace.js';
 
 /** Marketing tab access gate — internal audience + admin/all-dept/bypass/`marketing` department. */
@@ -79,21 +88,84 @@ const loyaltyOverrideBody = z
 export async function marketingRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
+  const monthStartToken = z.string().regex(/^\d{4}-\d{2}-01$/);
+  const isoDateToken = z.string().refine(isIsoDate, 'period dates must be real YYYY-MM-DD days');
+  const refineReferralRange = (
+    periodFrom: string | undefined,
+    periodTo: string | undefined,
+    refineCtx: z.RefinementCtx,
+    together: boolean,
+  ): void => {
+    if (together && (periodFrom == null) !== (periodTo == null)) {
+      refineCtx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'period_from and period_to are required together',
+      });
+    }
+    if (periodFrom && periodTo && periodFrom > periodTo) {
+      refineCtx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'period_from must be on or before period_to',
+      });
+    }
+    if (
+      periodFrom &&
+      periodTo &&
+      isIsoDate(periodFrom) &&
+      isIsoDate(periodTo) &&
+      (referralMonthSpan(periodFrom, periodTo) > REFERRAL_PERIOD_MAX_MONTHS ||
+        referralDaySpan(periodFrom, periodTo) > REFERRAL_PERIOD_MAX_DAYS)
+    ) {
+      refineCtx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Referral range cannot exceed ${REFERRAL_PERIOD_MAX_MONTHS} months or ${REFERRAL_PERIOD_MAX_DAYS} days`,
+      });
+    }
+  };
+
   // Complete card + modal read model. Static route must be registered before `:module`.
   app.get('/marketing/referrals/workspace', guard, async (request) => {
     const ctx = requireMarketingAccess(request);
     const query = z
       .object({
-        period_month: z
-          .string()
-          .regex(/^\d{4}-\d{2}-01$/)
-          .optional(),
+        period_month: monthStartToken.optional(),
+        period_from: isoDateToken.optional(),
+        period_to: isoDateToken.optional(),
         refresh: z.enum(['1']).optional(),
       })
+      .superRefine((value, refineCtx) => {
+        refineReferralRange(value.period_from, value.period_to, refineCtx, true);
+      })
       .parse(request.query);
-    return fetchReferralWorkspace(ctx, query.period_month ?? monthStart(new Date()), {
+    const today = new Date();
+    const periodFrom = query.period_from ?? query.period_month ?? monthStart(today);
+    const periodTo =
+      query.period_to ??
+      (query.period_month
+        ? lastDayOfMonth(query.period_month)
+        : `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`);
+    return fetchReferralWorkspace(ctx, periodFrom, {
       force: query.refresh === '1',
+      periodTo,
     });
+  });
+
+  // Mobile / keyed read: one parent referrer + its children for a calendar-day range.
+  // Static path must stay ahead of `:module`. Auth is the same session-or-API_KEY gate; mobile
+  // documents `x-api-key`. Does not change the CRM workspace contract above.
+  app.get('/marketing/referrals/live', guard, async (request) => {
+    const ctx = requireMarketingAccess(request);
+    const query = z
+      .object({
+        referrer_id: z.string().trim().min(1).max(40),
+        period_from: isoDateToken,
+        period_to: isoDateToken,
+      })
+      .superRefine((value, refineCtx) => {
+        refineReferralRange(value.period_from, value.period_to, refineCtx, false);
+      })
+      .parse(request.query);
+    return fetchReferralLiveByReferrer(ctx, query.referrer_id, query.period_from, query.period_to);
   });
 
   // Referrals card — full-field records of a referral module via COQL. `:module` is a safe token

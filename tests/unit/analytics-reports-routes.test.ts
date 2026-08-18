@@ -15,7 +15,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
   // The route 503s when the DWH is unconfigured; these tests are about the gate, not the source.
-  process.env.DWH_DATABASE_URL ??= 'postgres://user:pass@localhost:5432/dwh';
+  process.env.DWH_DATABASE_URL = 'postgres://user:pass@localhost:5432/dwh';
 });
 
 vi.mock('../../src/modules/analytics/reports/service.js', async (importOriginal) => {

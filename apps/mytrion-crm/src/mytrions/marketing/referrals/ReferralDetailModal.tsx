@@ -18,6 +18,7 @@ import {
 import type { CrmRow, ReferralCalculationPreview, ReferralField } from '../../../api/referrals';
 import { useModalFocus } from '../../_shared/useModalFocus';
 import { displayValue, str, type ReferralCardModel } from './referralModel';
+import { monthLabel, periodRangeLabel } from './referralPeriod';
 import './referralModal.css';
 // After referralModal.css: these are cross-file finishes that must win at equal specificity.
 import './referralPolish.css';
@@ -69,17 +70,19 @@ function DetailGrid({ fields, row }: { fields: ReferralField[]; row: CrmRow }) {
 
 function formula(preview: ReferralCalculationPreview): string {
   if (preview.bonusType === 'gallons_legacy') {
-    return `${number(preview.periodGallons)} eligible gallons × $0.01`;
+    return `${number(preview.periodGallons)} In Station gallons × $0.01`;
   }
   if (preview.bonusType === 'swipes_legacy') {
-    return `${number(preview.periodSwipes)} unique cards × $50`;
+    return `${number(preview.periodSwipes)} new swipes × $50`;
   }
   return `${number(preview.cumulativeGallons)} of ${number(preview.thresholdGallons ?? 0)} cumulative gallons`;
 }
 
 function calculationRule(calculation: string): string {
-  if (calculation === 'Gallons (Legacy)') return '$0.01 per eligible gallon, paid monthly';
-  if (calculation === 'Swipes (Legacy)') return '$50 per unique card, paid monthly';
+  if (calculation === 'Gallons (Legacy)') return '$0.01 per In Station gallon, paid monthly';
+  if (calculation === 'Swipes (Legacy)') {
+    return '$50 per first-use swipe, paid monthly';
+  }
   if (calculation === 'Gallons (Parent)') return '$50 to the parent at 500 cumulative gallons';
   if (calculation === 'Gallons (Child)') return '$50 to the child at 1,000 cumulative gallons';
   return 'Complete the Calculation field and related Deal to calculate this referral';
@@ -126,7 +129,7 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
     <div className="mg-rf-breakdowns">
       {previews.map((preview) => (
         <article
-          key={`${preview.childId}:${preview.dealId}:${preview.bonusType}`}
+          key={`${preview.childId}:${preview.dealId}:${preview.carrierId}:${preview.bonusType}`}
           className="mg-rf-breakdown"
         >
           <header>
@@ -138,9 +141,16 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
               )}
             </span>
             <div>
-              <strong>
-                {preview.dealName || preview.childName || `Carrier ${preview.carrierId}`}
-              </strong>
+              <div className="mg-rf-breakdown-heading">
+                <strong>
+                  {preview.dealName || preview.childName || `Carrier ${preview.carrierId}`}
+                </strong>
+                <span
+                  className={`mg-rf-role ${preview.role === 'parent_itself' ? 'is-parent' : 'is-child'}`}
+                >
+                  {preview.role === 'parent_itself' ? 'Parent Itself' : 'Child'}
+                </span>
+              </div>
               <span>
                 Carrier #{preview.carrierId} · {preview.recurring ? 'Monthly' : 'One-time'} ·{' '}
                 {preview.fuelCodes.join(' / ')}
@@ -153,6 +163,21 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
             <span>{formula(preview)}</span>
             <strong>{money(preview.amountUsd)}</strong>
           </div>
+          {preview.months && preview.months.length > 1 ? (
+            <ol className="mg-rf-month-rows">
+              {preview.months.map((row) => (
+                <li key={row.periodMonth}>
+                  <span>{monthLabel(row.periodMonth)}</span>
+                  <span>
+                    {preview.bonusType === 'swipes_legacy'
+                      ? `${number(row.periodSwipes)} swipes`
+                      : `${number(row.periodGallons)} gal`}
+                  </span>
+                  <strong>{money(row.amountUsd)}</strong>
+                </li>
+              ))}
+            </ol>
+          ) : null}
           {!preview.recurring ? (
             <div className="mg-rf-progress">
               <div>
@@ -170,7 +195,7 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
               <dd>{number(preview.periodGallons)}</dd>
             </div>
             <div>
-              <dt>Unique cards</dt>
+              <dt>New swipes</dt>
               <dd>{number(preview.periodSwipes)}</dd>
             </div>
             <div>
@@ -266,6 +291,8 @@ export function ReferralDetailModal({
   childFields,
   dealFields,
   periodMonth,
+  periodFrom,
+  periodTo,
   onClose,
 }: {
   card: ReferralCardModel;
@@ -273,6 +300,8 @@ export function ReferralDetailModal({
   childFields: ReferralField[];
   dealFields: ReferralField[];
   periodMonth: string;
+  periodFrom?: string;
+  periodTo?: string;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('overview');
@@ -285,11 +314,7 @@ export function ReferralDetailModal({
   );
   const periodCards = card.previews.reduce((sum, preview) => sum + preview.periodSwipes, 0);
   const carriers = new Set(card.previews.map((preview) => preview.carrierId)).size;
-  const month = new Date(`${periodMonth}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  const month = periodRangeLabel(periodFrom ?? periodMonth, periodTo ?? periodMonth);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -395,7 +420,7 @@ export function ReferralDetailModal({
                   </div>
                   <div>
                     <CreditCard size={16} />
-                    <span>Unique cards</span>
+                    <span>New swipes</span>
                     <strong>{number(periodCards)}</strong>
                   </div>
                   <div>

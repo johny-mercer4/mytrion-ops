@@ -114,17 +114,24 @@ function ownerOperatorRequirements(c: IntakeCandidate): MissingItem[] {
   return missing;
 }
 
-/** Flow B — carrier. `company` is Flow B minus MC/DOT (that absence is what routes it to Manager Review). */
-function carrierRequirements(c: IntakeCandidate, requireAuthority: boolean): MissingItem[] {
+/**
+ * Flow B — Carrier (Company).
+ *
+ * MC and USDOT are COLLECTED but do not block completeness, and that is the SOP rather than a
+ * relaxation of it. The diagram has one decision — "Application complete?" — with a third branch
+ * beside its yes/no: "LLC / corporation without MC/DOT -> Manager Review". Missing authority is a
+ * ROUTE, not an omission. Treating it as an omission made the branch unreachable: the case could
+ * never be submitted, so it could never be routed.
+ *
+ * `requiresManagerReviewAtIntake` in `stateMachine.ts` is the other half of this, and the two must
+ * stay in step — if authority ever becomes required here again, that rule dies quietly.
+ */
+function carrierRequirements(c: IntakeCandidate): MissingItem[] {
   const missing: MissingItem[] = [];
   if (!has(c.companyName)) {
     missing.push({ field: 'companyName', label: 'Full legal company name', section: 'business' });
   }
   if (!has(c.ein)) missing.push({ field: 'ein', label: 'EIN', section: 'business' });
-  if (requireAuthority) {
-    if (!has(c.mc)) missing.push({ field: 'mc', label: 'MC number', section: 'business' });
-    if (!has(c.dot)) missing.push({ field: 'dot', label: 'USDOT number', section: 'business' });
-  }
   if (!has(c.businessAddress)) {
     missing.push({ field: 'businessAddress', label: 'Business address', section: 'business' });
   }
@@ -212,7 +219,7 @@ export function evaluateIntakeCompleteness(
     missing.push(...ownerOperatorRequirements(candidate));
     missing.push(...identityDocumentRequirements(documents));
   } else {
-    missing.push(...carrierRequirements(candidate, candidate.applicantType === 'carrier'));
+    missing.push(...carrierRequirements(candidate));
     if (principals.length === 0) {
       missing.push({
         field: 'principals',

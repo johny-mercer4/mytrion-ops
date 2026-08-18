@@ -24,6 +24,7 @@ import {
   fmtScore,
   fmtDate,
 } from './watchFormat';
+import { deriveScore, DIRECTION_NOTE, scaleSentence } from './scoreMath';
 import { getWatchCarrier, watchNum, type WatchModel } from '@/api/mytrionWatch';
 import './watchDetail.css';
 
@@ -203,6 +204,14 @@ function ScoreScale({
  * the whole model: the evidence adds up, the baseline shifts it, the logistic curve turns it into a
  * probability, and the scaling turns that into the number on the card.
  */
+/**
+ * How the score was reached — with the arithmetic, not just the labels.
+ *
+ * The previous cut listed five figures and no working, so the panel asked to be trusted rather than
+ * checked. Each row now carries the sum that produced it (`−2.100 + 0.550`), the direction it pushed
+ * the score, and the scaling line with the model's real constants in it. A reviewer defending a limit
+ * can read the number off the screen and verify it.
+ */
 function Arithmetic({
   sum,
   logit,
@@ -216,37 +225,37 @@ function Arithmetic({
   creditScore: number | null;
   model: WatchModel | null;
 }) {
-  const intercept = watchNum(model?.intercept);
-  const signed = (v: number | null) => (v === null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(3)}`);
+  const steps =
+    sum === null || logit === null || pd === null || creditScore === null
+      ? null
+      : deriveScore({ sumContribution: sum, logit, pdScore: pd, creditScore }, model);
+
+  if (!steps) {
+    return (
+      <p className="mw-math-note">
+        {model ? 'This snapshot is missing a figure the derivation needs.' : `Model weights unavailable for this snapshot.`}
+      </p>
+    );
+  }
 
   return (
-    <ol className="mw-math">
-      <li className="mw-math-row">
-        <span className="mw-math-k">Evidence from the eight measures</span>
-        <span className="mw-math-v">{signed(sum)}</span>
-      </li>
-      <li className="mw-math-row">
-        <span className="mw-math-k">Model baseline</span>
-        <span className="mw-math-v">{signed(intercept)}</span>
-      </li>
-      <li className="mw-math-row" data-total="true">
-        <span className="mw-math-k">Log-odds of default</span>
-        <span className="mw-math-v">{signed(logit)}</span>
-      </li>
-      <li className="mw-math-row">
-        <span className="mw-math-k">Chance of default</span>
-        <span className="mw-math-v">{fmtPd(pd)}</span>
-      </li>
-      <li className="mw-math-row" data-total="true">
-        <span className="mw-math-k">Score</span>
-        <span className="mw-math-v">{fmtScore(creditScore)}</span>
-      </li>
-      <li className="mw-math-note">
-        {model
-          ? `Scaled so ${Math.round(Number(model.baseScore))} is a 1-in-${Math.round(Number(model.baseOdds))} chance of default, and every ${Math.round(Number(model.pdo))} points either way doubles or halves it. Model ${model.modelVersion}.`
-          : 'Model weights unavailable for this snapshot.'}
-      </li>
-    </ol>
+    <>
+      <ol className="mw-math">
+        {steps.map((step: (typeof steps)[number]) => (
+          <li className="mw-math-row" key={step.label} data-kind={step.kind} data-dir={step.direction}>
+            <span className="mw-math-k">
+              {step.label}
+              {step.working ? <span className="mw-math-work num">{step.working}</span> : null}
+            </span>
+            <span className="mw-math-v num">{step.value}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mw-math-note">{DIRECTION_NOTE}</p>
+      <p className="mw-math-note">
+        {scaleSentence(model)} Model <span className="num">{model?.modelVersion}</span>.
+      </p>
+    </>
   );
 }
 

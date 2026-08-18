@@ -11,6 +11,24 @@ vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
 });
 
+const { resolveActAsMock, findBrokerMock } = vi.hoisted(() => ({
+  resolveActAsMock: vi.fn(),
+  findBrokerMock: vi.fn(),
+}));
+
+/** The warehouse is read through one function; stubbing it keeps the route under test. */
+vi.mock('../../src/integrations/dwhBrokerSnapshot.js', async (importOriginal) => {
+  const mod =
+    await importOriginal<typeof import('../../src/integrations/dwhBrokerSnapshot.js')>();
+  return { ...mod, findBrokerSnapshot: findBrokerMock };
+});
+
+/** The x-act-as-* headers are never trusted; the target's identity comes from this directory. */
+vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/auth/actAsDirectory.js')>();
+  return { ...mod, resolveActAsTarget: resolveActAsMock };
+});
+
 vi.mock('../../src/modules/verificationFlow/applicationService.js', async () => {
   const actual = await vi.importActual<
     typeof import('../../src/modules/verificationFlow/applicationService.js')
@@ -86,6 +104,13 @@ afterAll(async () => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  resolveActAsMock.mockImplementation(async (id: string) =>
+    id === '777'
+      ? { zohoUserId: '777', name: 'Robert Toms', email: null, profile: 'Sales Rep', role: 'Agent' }
+      : id === '888'
+        ? { zohoUserId: '888', name: 'Dana Vale', email: null, profile: 'Recruiter', role: 'Agent' }
+        : null,
+  );
   createMock.mockResolvedValue(detail);
   getMock.mockResolvedValue(detail);
   patchMock.mockResolvedValue(detail);
@@ -154,6 +179,145 @@ describe('auth boundary', () => {
       const res = await app.inject({ method: method as 'POST', url, headers: token, payload: {} });
       expect(res.statusCode, `${method} ${url}`).toBe(403);
     }
+  });
+});
+
+/**
+ * The list is OWNER-SCOPED, so it is the one route here where identity has to survive View-as.
+ *
+ * Without it the list ran as the admin doing the viewing — who owns no applications — so checking
+ * an agent's Verification tab showed "No applications yet" while their cases sat in the desk queue
+ * with their name on them. There is no other way for anyone to see what an agent sees.
+ */
+/**
+ * Prefill is a SUGGESTION endpoint over half a million carrier records, so the shape that matters
+ * is where the lookup keys come from: the case, never the request.
+ */
+describe('prefill from the warehouse', () => {
+  const MATCH = {
+    matchedOn: 'phone' as const,
+    dotNumber: '3757749',
+    ownerFullName: 'MARIA OKONKWO',
+    physicalAddress: '1200 W LOOP S, HOUSTON, TX',
+    phoneNumber: '6145550110',
+    email: 'ops@bluehaul.test',
+    powerUnits: 4,
+    truckSize: null,
+    operatingStatus: 'ACTIVE',
+    authorityAddedOn: '2021-03-04',
+  };
+
+  it('looks up on the CASE’s own keys and ignores anything the caller passes', async () => {
+    findBrokerMock.mockResolvedValue(MATCH);
+    const res = await app.inject({
+      method: 'GET',
+      // A caller trying to use this as a free lookup over the warehouse.
+      url: '/v1/verification/applications/vc_1/prefill?phone=2125550000&dot=9999999&email=someone@else.test',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+    const keys = findBrokerMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(keys.dot ?? null).toBe(detail.case.dot ?? null);
+    expect(keys.email ?? null).toBe(detail.case.email ?? null);
+    expect(JSON.stringify(keys)).not.toContain('2125550000');
+    expect(JSON.stringify(keys)).not.toContain('9999999');
+    expect(JSON.stringify(keys)).not.toContain('someone@else.test');
+  });
+
+  it('returns the match and the fields it could fill', async () => {
+    findBrokerMock.mockResolvedValue(MATCH);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/prefill',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    const body = res.json() as { match: unknown; suggestions: Array<{ field: string }> };
+    expect(body.match).toMatchObject({ matchedOn: 'phone' });
+    expect(body.suggestions.length).toBeGreaterThan(0);
+  });
+
+  it('is an ordinary empty answer when nothing matches — three in four cases do not', async () => {
+    findBrokerMock.mockResolvedValue(null);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/prefill',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ match: null, suggestions: [] });
+  });
+
+  it('reports a warehouse failure as 502, not a 500', async () => {
+    findBrokerMock.mockRejectedValue(new Error('dbt rebuild lock'));
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/prefill',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: { code: 'DWH_ERROR' } });
+  });
+
+  it('REFUSES a verification-only worker — this is a Sales door', async () => {
+    findBrokerMock.mockResolvedValue(MATCH);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications/vc_1/prefill',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(findBrokerMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('View-as (owner-scoped list)', () => {
+  it('scopes the list to the target agent, not the admin doing the viewing', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications',
+      headers: { ...bearer(await adminToken()), 'x-act-as-zoho-user-id': '777' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(listMock).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'zoho:777', impersonatorUserId: 'admin-1' }),
+      expect.any(Object),
+    );
+  });
+
+  it('leaves a plain session alone — no header, no identity change', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(listMock).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'zoho:42' }),
+      expect.any(Object),
+    );
+    expect(listMock.mock.calls[0]?.[0]).not.toHaveProperty('impersonatorUserId');
+  });
+
+  it('applies the impersonation BEFORE the Sales gate, so the target needs Sales access', async () => {
+    // The ordering IS the security property: a target with no Sales access must not be readable
+    // through this door just because an admin asked. `888` is a Recruiter.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications',
+      headers: { ...bearer(await adminToken()), 'x-act-as-zoho-user-id': '888' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown target rather than falling back to the admin', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/applications',
+      headers: { ...bearer(await adminToken()), 'x-act-as-zoho-user-id': 'nobody' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(listMock).not.toHaveBeenCalled();
   });
 });
 

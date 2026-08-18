@@ -4,6 +4,8 @@ import { buildReferralCards, cardMatchesFilter } from './referralModel';
 
 const workspace: ReferralWorkspace = {
   periodMonth: '2026-06-01',
+  periodFrom: '2026-06-01',
+  periodTo: '2026-06-01',
   generatedAt: '2026-07-01T00:00:00.000Z',
   parents: {
     module: 'Parent_Referrers',

@@ -60,7 +60,7 @@ describe('referral export rows', () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
-      period: '2026-07',
+      period: '2026-07-01',
       parentReferrerId: 'REF-1',
       carrierId: 123,
       eligibleGallons: 1234,
@@ -73,6 +73,35 @@ describe('referral export rows', () => {
       setupStatus: 'Needs calculation',
       carrierId: null,
       state: 'setup required',
+    });
+  });
+
+  it('exports swipe rows as first-use new swipes, not unique cards this month', () => {
+    const swipeCard: ReferralCardModel = {
+      ...readyCard,
+      calculation: 'Swipes (Legacy)',
+      previews: [
+        {
+          ...readyCard.previews[0]!,
+          calculation: 'Swipes (Legacy)',
+          bonusType: 'swipes_legacy',
+          label: 'Swipes (Legacy)',
+          rateUsd: 50,
+          periodGallons: 0,
+          periodSwipes: 1,
+          amountUsd: '50.00',
+          payableAmountUsd: '50.00',
+        },
+      ],
+    };
+
+    const [row] = buildReferralExportRows([swipeCard], '2026-04-01', '2026-05-01');
+    expect(row).toMatchObject({
+      rule: '$50 per first-use swipe',
+      activityMetric: 'New swipes (first-use cards)',
+      activityValue: 1,
+      uniqueCards: 1,
+      payableUsd: 50,
     });
   });
 });

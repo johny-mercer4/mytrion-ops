@@ -1,0 +1,517 @@
+/* =====================================================
+   Verification Mytrion — Existing clients (`.vc-*`), scoped under [data-mytrion='verification'].
+
+   Same panel shell, table-cell language and footer as the New applicants queue (`applicants.css`) —
+   they are two rosters one click apart in the same desk, and the second must not arrive looking like
+   a different product. The card and the dialog are this file's own.
+
+   THE RAIL TONE IS PER ROW. `--vc-rail` is set inline from the carrier's billing rail (BANK / DIRECT
+   / MERCHANT_CARD / ZELLE) and read by the identity chip and the card's edge. It is a WAYFINDING hue
+   only — the label beside it always names the rail, so the colour is never the fact.
+
+   TOKEN RULES — as in `applicants.css`: every font-size a --text-* step, no literal radius or colour,
+   --space-* on the 4px rhythm, border + --hz-glass-inset at rest, drop shadow only on hover.
+
+   Bare pixels are box geometry, called out at the rule: a 28px rail chip, a 34px card chip, a 2px
+   row edge.
+
+   RESPONSIVE — 900 is the density line (the bar stacks); 640 is the structure line (head controls go
+   full-width, cards go one-up, DataTable becomes its own card list).
+   ===================================================== */
+
+[data-mytrion='verification'] .vc-page {
+  --vc-r-sm: var(--radius-sm);
+  --vc-r-md: var(--radius-md);
+  --vc-r-pill: var(--radius-full);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3_5);
+}
+
+/* ── Head, bar and filters ────────────────────────────────────────────────── */
+[data-mytrion='verification'] .vc-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='verification'] .vc-search {
+  width: 250px;
+}
+
+[data-mytrion='verification'] .vc-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+[data-mytrion='verification'] .vc-bar-scopes {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+[data-mytrion='verification'] .vc-bar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding-bottom: var(--space-1);
+}
+[data-mytrion='verification'] .vc-updated {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+[data-mytrion='verification'] .vc-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2_5);
+  padding: var(--space-3);
+  border-radius: var(--vc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='verification'] .vc-filters > *:not(.vc-filters-gap) {
+  width: 158px;
+  min-width: 0;
+}
+[data-mytrion='verification'] .vc-filters-gap {
+  flex: 1;
+}
+
+/* ── Panel, table cells and footer ────────────────────────────────────────── */
+[data-mytrion='verification'] .vc-panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--vc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+  overflow: hidden;
+}
+
+[data-mytrion='verification'] .vc-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  min-width: 0;
+  overflow: hidden;
+}
+/* 28px rail chip, tinted from the carrier's own billing rail. */
+[data-mytrion='verification'] .vc-rail-chip {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--vc-r-sm);
+  background: color-mix(in srgb, var(--vc-rail, var(--accent)) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vc-rail, var(--accent)) 30%, transparent);
+  color: var(--vc-rail, var(--accent));
+}
+[data-mytrion='verification'] .vc-rail-chip-lg {
+  width: 34px;
+  height: 34px;
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='verification'] .vc-ident-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+[data-mytrion='verification'] .vc-ident-name {
+  font-size: var(--text-base);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='verification'] .vc-ident-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .vc-ident-sub .num {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-mytrion='verification'] .vc-cycle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='verification'] .vc-cycle-tag {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='verification'] .vc-cycle-full {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-mytrion='verification'] .vc-limit {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+[data-mytrion='verification'] [data-empty='true'] {
+  color: var(--text-disabled);
+}
+/* The score's band. The figure itself is always rendered, so tone only sharpens it. */
+[data-mytrion='verification'] :is(.vc-score, .vc-card-fig-v, .vc-head-v) {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+[data-mytrion='verification'] :is(.vc-score, .vc-card-fig-v, .vc-head-v)[data-tone='good'] {
+  color: var(--success);
+}
+[data-mytrion='verification'] :is(.vc-score, .vc-card-fig-v, .vc-head-v)[data-tone='warn'] {
+  color: var(--warning);
+}
+[data-mytrion='verification'] :is(.vc-score, .vc-card-fig-v, .vc-head-v)[data-tone='none'] {
+  font-weight: var(--fw-regular);
+  color: var(--text-disabled);
+}
+
+/* The row's tone edge, pinned to its first cell — same language as the applicants queue. */
+[data-mytrion='verification'] :is(.vc-row-debtor, .vc-row-inactive) > :first-child {
+  box-shadow: inset 2px 0 0 0 var(--vc-edge, transparent);
+}
+[data-mytrion='verification'] .vc-row-debtor {
+  --vc-edge: var(--danger);
+}
+[data-mytrion='verification'] .vc-row-inactive {
+  --vc-edge: var(--border-strong);
+}
+
+[data-mytrion='verification'] .vc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2_5) var(--space-4);
+  background: var(--surface-data-alt);
+  border-top: 1px solid var(--border-subtle);
+}
+/* Card view has no panel around it, so the footer becomes its own bordered strip. */
+[data-mytrion='verification'] .vc-foot[data-bare='true'] {
+  border: 1px solid var(--border);
+  border-radius: var(--vc-r-md);
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='verification'] .vc-foot-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .vc-foot-count strong {
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+[data-mytrion='verification'] .vc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: var(--space-3);
+}
+[data-mytrion='verification'] .vc-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--vc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    translate var(--hz-dur-lift) var(--hz-ease);
+}
+[data-mytrion='verification'] .vc-card:hover {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--vc-rail, var(--accent)) 45%, var(--border));
+  translate: 0 -2px;
+}
+[data-mytrion='verification'] .vc-card[data-edge='debtor']:hover {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+[data-mytrion='verification'] .vc-card-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+}
+[data-mytrion='verification'] .vc-card[data-edge='debtor'] .vc-card-edge {
+  background: var(--danger);
+}
+[data-mytrion='verification'] .vc-card[data-edge='inactive'] .vc-card-edge {
+  background: var(--border-strong);
+}
+
+[data-mytrion='verification'] .vc-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2_5);
+  min-width: 0;
+}
+[data-mytrion='verification'] .vc-card-titles {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+[data-mytrion='verification'] .vc-card-name {
+  font-family: var(--font-head);
+  font-size: var(--text-base);
+  line-height: 1.25;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='verification'] .vc-card-sub {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='verification'] .vc-card-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+}
+[data-mytrion='verification'] .vc-card-figs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--vc-r-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-data-alt);
+}
+[data-mytrion='verification'] .vc-card-fig {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='verification'] .vc-card-fig-v {
+  font-size: var(--text-md);
+  line-height: 1.2;
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='verification'] .vc-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .vc-card-foot strong {
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+/* ── Detail dialog ────────────────────────────────────────────────────────── */
+[data-mytrion='verification'] .vc-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+[data-mytrion='verification'] .vc-modal-flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* The rail as a pill rather than a Badge: it is an identity, not a status, and it carries a hue the
+   intent scale has no slot for. */
+[data-mytrion='verification'] .vc-rail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  padding: var(--space-0_5) var(--space-2_5);
+  border-radius: var(--vc-r-pill);
+  background: color-mix(in srgb, var(--vc-rail, var(--accent)) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vc-rail, var(--accent)) 30%, transparent);
+  color: var(--vc-rail, var(--accent));
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+[data-mytrion='verification'] .vc-headline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19ch, 1fr));
+  gap: var(--space-3);
+}
+[data-mytrion='verification'] .vc-head-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3_5);
+  border-radius: var(--vc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+[data-mytrion='verification'] .vc-head-v {
+  font-size: var(--text-xl);
+  line-height: 1.05;
+  font-weight: var(--fw-bold);
+}
+[data-mytrion='verification'] .vc-head-hint {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vc-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+[data-mytrion='verification'] .vc-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+[data-mytrion='verification'] .vc-section-title {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .vc-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20ch, 1fr));
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .vc-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--vc-r-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-data-alt);
+}
+[data-mytrion='verification'] .vc-fact[data-tone='danger'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+}
+[data-mytrion='verification'] .vc-fact[data-tone='accent'] {
+  border-color: var(--intent-info-bd);
+  background: var(--intent-info-bg);
+}
+[data-mytrion='verification'] .vc-fact-v {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+[data-mytrion='verification'] .vc-fact[data-tone='danger'] .vc-fact-v {
+  color: var(--danger);
+}
+[data-mytrion='verification'] .vc-fact[data-tone='accent'] .vc-fact-v {
+  color: var(--accent);
+}
+
+[data-mytrion='verification'] .vc-contact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(30ch, 1fr));
+  gap: 0 var(--space-5);
+}
+[data-mytrion='verification'] .vc-contact-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2_5);
+  align-items: start;
+  padding: var(--space-2_5) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+[data-mytrion='verification'] .vc-contact-glyph {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .vc-contact-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+[data-mytrion='verification'] .vc-contact-v {
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+[data-mytrion='verification'] .vc-contact-v[data-danger='true'] {
+  font-weight: var(--fw-semibold);
+  color: var(--danger);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+/* 900 — the density line. The scope tabs and the view switcher stop sharing a row. */
+@media (width < 900px) {
+  [data-mytrion='verification'] .vc-bar-right {
+    width: 100%;
+    justify-content: space-between;
+    padding-bottom: 0;
+  }
+}
+
+/* 640 — the structure line. Head controls take the row, cards go one-up. */
+@media (width < 640px) {
+  [data-mytrion='verification'] .vc-head-actions {
+    width: 100%;
+  }
+  [data-mytrion='verification'] .vc-search {
+    width: 100%;
+  }
+  [data-mytrion='verification'] .vc-filters > *:not(.vc-filters-gap) {
+    width: 100%;
+  }
+  [data-mytrion='verification'] .vc-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

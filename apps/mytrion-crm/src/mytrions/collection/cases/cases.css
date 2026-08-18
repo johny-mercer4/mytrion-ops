@@ -1,0 +1,436 @@
+/* =====================================================
+   Collection cases — list, board, detail. Scoped under [data-mytrion='collection'].
+
+   Same desk language as Verification's `.va-*` queue: panel = 1px --border on --surface-data
+   with the Horizon inset; identity = 34px mono tile; type and space from the token scale.
+   `--cc-tone` is never rebound to --accent. Status uses the tint / intent scale.
+   ===================================================== */
+
+[data-mytrion='collection'] :is(.cc-list, .cc-case) {
+  --cc-r-sm: var(--radius-sm);
+  --cc-r-md: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  /* Same column rhythm as Collection Home (`.co-page`) and ModuleShell (`.ms-page`):
+     `--co-pad` is the page gutter; `--co-gap` is the section interval. Cases/Array omitted
+     both, so title, KPIs and the table sat flush on `--hz-page` and read as part of the shell. */
+  gap: var(--co-gap);
+  width: 100%;
+  max-width: var(--co-measure);
+  padding: var(--co-pad);
+  box-sizing: border-box;
+}
+
+[data-mytrion='collection'] .cc-list[data-stale='true'],
+[data-mytrion='collection'] .cc-board[data-stale='true'] {
+  opacity: 0.72;
+}
+
+[data-mytrion='collection'] .cc-head-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-search {
+  width: 250px;
+}
+
+[data-mytrion='collection'] .cc-panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--cc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+  overflow: hidden;
+}
+
+[data-mytrion='collection'] .cc-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  min-width: 0;
+  overflow: hidden;
+}
+[data-mytrion='collection'] .cc-mono {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--cc-r-sm);
+  background: var(--field);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-num);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+}
+[data-mytrion='collection'] .cc-ident-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+[data-mytrion='collection'] .cc-ident-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-ident-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='collection'] .cc-ident-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='collection'] .cc-status-cell {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+[data-mytrion='collection'] .cc-status-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='collection'] .num[data-tone='warn'] {
+  color: var(--warning);
+  font-weight: var(--fw-semibold);
+}
+[data-mytrion='collection'] .num[data-tone='bad'] {
+  color: var(--danger);
+  font-weight: var(--fw-bold);
+}
+
+[data-mytrion='collection'] .cc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3_5) var(--space-4);
+  background: var(--surface-data-alt);
+  border-top: 1px solid var(--border-subtle);
+}
+[data-mytrion='collection'] .cc-foot-count {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-foot-count strong {
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+/* ── Board ──────────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-board {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  overscroll-behavior-x: contain;
+}
+[data-mytrion='collection'] .cc-col {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: min(72svh, 760px);
+  overflow: hidden;
+  border-radius: var(--cc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='collection'] .cc-col-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+[data-mytrion='collection'] .cc-col-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+[data-mytrion='collection'] .cc-col-count {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .cc-col-hint,
+[data-mytrion='collection'] .cc-col-empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-col-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+[data-mytrion='collection'] .cc-col-empty {
+  padding: var(--space-6) var(--space-2);
+  text-align: center;
+}
+[data-mytrion='collection'] .cc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2_5);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--cc-r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background 0.2s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+[data-mytrion='collection'] .cc-card:hover {
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+[data-mytrion='collection'] .cc-card-facts {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+[data-mytrion='collection'] .cc-card-debt {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* ── Detail ─────────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-case-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+[data-mytrion='collection'] .cc-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-crumb,
+[data-mytrion='collection'] .cc-crumb-current {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-crumb-current {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+[data-mytrion='collection'] .cc-crumb-sep {
+  color: var(--text-disabled);
+}
+[data-mytrion='collection'] .cc-crumbs-gap {
+  flex: 1;
+}
+[data-mytrion='collection'] .cc-case-id {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+[data-mytrion='collection'] .cc-case-identity {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-case-who {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-case-titles {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+[data-mytrion='collection'] .cc-case-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-case-name {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-case-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+[data-mytrion='collection'] .cc-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-fact-v {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-fact-v[data-empty='true'] {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
+[data-mytrion='collection'] .cc-spine {
+  display: flex;
+  gap: var(--space-1_5);
+  margin: 0;
+  padding: var(--space-2) 0 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+[data-mytrion='collection'] .cc-spine-step {
+  flex: none;
+  opacity: 0.55;
+}
+[data-mytrion='collection'] .cc-spine-step[data-active='true'] {
+  opacity: 1;
+}
+
+[data-mytrion='collection'] .cc-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--cc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+[data-mytrion='collection'] .cc-banner[data-tone='danger'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+}
+[data-mytrion='collection'] .cc-banner[data-tone='success'] {
+  border-color: var(--intent-success-bd);
+  background: var(--intent-success-bg);
+}
+[data-mytrion='collection'] .cc-banner-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-banner-body {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .cc-banner .ds-btn,
+[data-mytrion='collection'] .cc-banner button {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
+[data-mytrion='collection'] .cc-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+[data-mytrion='collection'] .cc-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--cc-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+  overflow-x: auto;
+}
+[data-mytrion='collection'] .cc-pane-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: 0;
+}
+[data-mytrion='collection'] .cc-dl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-dl-row dt {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-dl-row dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+@media (width < 900px) {
+  [data-mytrion='collection'] .cc-panes,
+  [data-mytrion='collection'] .cc-dl {
+    grid-template-columns: 1fr;
+  }
+}
+@media (width < 640px) {
+  [data-mytrion='collection'] .cc-head-actions,
+  [data-mytrion='collection'] .cc-search {
+    width: 100%;
+  }
+  [data-mytrion='collection'] .cc-col {
+    flex-basis: 220px;
+  }
+}
+
+@media (hover: none) {
+  [data-mytrion='collection'] .cc-card:hover {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+}

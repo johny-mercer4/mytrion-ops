@@ -13,7 +13,7 @@ import { s } from './dc';
 import { Icon } from './icons';
 import { VerificationProgress } from './VerificationProgress';
 import { useSales } from './ctx';
-import { BTN_DISABLED, BTN_PRIMARY, BTN_PRIMARY_BUSY, LABEL } from './createTicketShared';
+import { BTN_DISABLED, BTN_PRIMARY, BTN_PRIMARY_BUSY } from './createTicketShared';
 import { ApplicantTypePicker, Field, GateBanner, Section, SelectField } from './applicationFields';
 import {
   openDocument,
@@ -21,16 +21,226 @@ import {
   createApplication,
   deleteApplicationDocument,
   getApplication,
+  getApplicationPrefill,
   patchApplication,
   removePrincipal,
   submitApplication,
   uploadApplicationDocuments,
   type ApplicationDetail,
+  type PrefillResult,
+  type PrefillSuggestion,
   type VerificationApplicantType,
   type VerificationDocType,
 } from '@/api/verificationFlow';
 
 const REQUIRED_STATEMENTS = 3;
+
+/**
+ * The SOP asks for "the last three bank statements", so the form asks for them one at a time.
+ *
+ * The label is how a slot finds its own file again after a reload — the server stores it on the
+ * document and the completeness check counts `bank_statement` documents regardless of label, so
+ * this is a UI affordance rather than a new contract.
+ */
+const STATEMENT_LABELS: readonly string[] = ['Statement 1', 'Statement 2', 'Statement 3'];
+
+/**
+ * Flow A's two identity documents. `missingKey` is the key the server's missing list uses, so a
+ * slot flags itself red from the same verdict the banner reads.
+ */
+const IDENTITY_SLOTS: ReadonlyArray<{
+  docType: VerificationDocType;
+  label: string;
+  missingKey: string;
+}> = [
+  { docType: 'drivers_license', label: "Driver's licence", missingKey: 'driversLicenseDoc' },
+  { docType: 'ssn_card', label: 'SSN card', missingKey: 'ssnCardDoc' },
+];
+
+const MATCHED_ON_LABEL: Record<'phone' | 'dot' | 'email', string> = {
+  phone: 'phone number',
+  dot: 'USDOT number',
+  email: 'email address',
+};
+
+/**
+ * What the warehouse already knows about this applicant.
+ *
+ * Every value is OFFERED, never applied — the source matches about a quarter of cases and is
+ * FMCSA data that can be months stale, so the agent who has spoken to the applicant decides.
+ * Only fields the case has left empty appear here; nothing can paint over typing.
+ *
+ * The match key is named because it is what makes the row trustworthy or not: a DOT match is the
+ * applicant, a phone match is probably them, and the agent can see which they got.
+ */
+function PrefillPanel({
+  result,
+  applied,
+  locked,
+  onApply,
+}: {
+  result: PrefillResult;
+  applied: Set<string>;
+  locked: boolean;
+  onApply: (s: PrefillSuggestion) => void;
+}) {
+  const match = result.match;
+  if (!match) return null;
+  const outstanding = result.suggestions.filter((sg) => !applied.has(sg.field));
+  return (
+    <section
+      style={s(
+        'display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--alt)',
+      )}
+    >
+      <div style={s('display:flex;align-items:center;gap:8px;flex-wrap:wrap')}>
+        <Icon name="verification" size={15} strokeWidth={2.2} />
+        <span style={s('font-size:13px;font-weight:800;color:var(--text)')}>
+          Found in carrier records
+        </span>
+        <span style={s('font-size:11px;color:var(--muted)')}>
+          matched on {MATCHED_ON_LABEL[match.matchedOn]}
+          {match.operatingStatus ? ` · authority ${match.operatingStatus.toLowerCase()}` : ''}
+          {match.authorityAddedOn ? ` since ${match.authorityAddedOn.slice(0, 4)}` : ''}
+        </span>
+        {outstanding.length > 1 && !locked ? (
+          <button
+            type="button"
+            onClick={() => outstanding.forEach(onApply)}
+            style={s(
+              'margin-left:auto;background:none;border:0;color:var(--accent-text);font-size:12px;font-weight:800;cursor:pointer',
+            )}
+          >
+            Use all {outstanding.length}
+          </button>
+        ) : null}
+      </div>
+      <div style={s('display:grid;gap:6px')}>
+        {result.suggestions.map((sg) => {
+          const done = applied.has(sg.field);
+          return (
+            <div
+              key={sg.field}
+              style={s(
+                'display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border2)',
+              )}
+            >
+              <span style={s('min-width:132px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em')}>
+                {sg.label}
+              </span>
+              <span
+                style={s('flex:1;min-width:0;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}
+                title={sg.value}
+              >
+                {sg.value}
+              </span>
+              {done ? (
+                <span style={s('font-size:11px;font-weight:800;color:var(--ok)')}>Added</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={locked}
+                  onClick={() => onApply(sg)}
+                  style={s(
+                    `background:none;border:0;font-size:12px;font-weight:800;cursor:${locked ? 'not-allowed' : 'pointer'};color:${locked ? 'var(--muted)' : 'var(--accent-text)'}`,
+                  )}
+                >
+                  Use
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <span style={s('font-size:11px;color:var(--muted)')}>
+        From carrier registration records — check it against the applicant before saving.
+      </span>
+    </section>
+  );
+}
+
+/**
+ * One document slot: empty (choose a file) or filled (name it, and let it be replaced).
+ *
+ * A file input rather than a drop zone: this is one file into a named box, and a drop zone here
+ * would be a second, differently-shaped upload control on a form that already has one.
+ *
+ * Used for the three bank statements AND for the two identity documents. The SOP lists "Driver's
+ * License" and "SSN card" as intake ITEMS and `intake.ts` requires the FILES — Phase 2 cross-checks
+ * the typed application against them, so last-4 fields alone leave a reviewer nothing to check.
+ * They were previously reachable only through the generic Documents picker at the foot of the form,
+ * which is the same friction the statements had.
+ */
+function DocSlot({
+  label,
+  doc,
+  locked,
+  missing,
+  onPick,
+  onRemove,
+}: {
+  label: string;
+  doc: { id: string; fileName: string | null } | null;
+  locked: boolean;
+  missing: boolean;
+  onPick: (file: File) => void;
+  onRemove: (() => void) | null;
+}) {
+  const inputId = `stmt-${label.replace(/\s+/g, '-').toLowerCase()}`;
+  return (
+    <div
+      style={s(
+        `display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid ${
+          doc ? 'var(--border)' : missing ? 'var(--danger)' : 'var(--border)'
+        };background:var(--alt)`,
+      )}
+    >
+      <span style={s('min-width:92px;font-size:12px;font-weight:800;color:var(--text2)')}>{label}</span>
+      {doc ? (
+        <>
+          <Icon name="check" size={15} strokeWidth={2.4} />
+          <span
+            style={s('flex:1;min-width:0;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}
+          >
+            {doc.fileName ?? 'Uploaded'}
+          </span>
+          {onRemove && !locked ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              style={s('background:none;border:0;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer')}
+            >
+              Replace
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <span style={s('flex:1;font-size:12px;color:var(--muted)')}>Not uploaded</span>
+          <label
+            htmlFor={inputId}
+            style={s(
+              `font-size:12px;font-weight:800;cursor:${locked ? 'not-allowed' : 'pointer'};color:${locked ? 'var(--muted)' : 'var(--accent-text)'}`,
+            )}
+          >
+            Choose file
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            disabled={locked}
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onPick(file);
+              e.target.value = '';
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
 
 const DOC_LABELS: Record<VerificationDocType, string> = {
   bank_statement: 'Bank statement',
@@ -76,6 +286,14 @@ export function ApplicationIntake({
   const [form, setForm] = useState<Record<string, string>>({});
   const [docType, setDocType] = useState<VerificationDocType>('bank_statement');
   const [principalName, setPrincipalName] = useState('');
+  /**
+   * Warehouse suggestions. Loaded once per application, lazily and off the critical path — the
+   * lookup scans half a million carrier rows on a phone match (no index can serve a normalised
+   * comparison), which measures ~600ms. The form is usable the whole time; the panel appears when
+   * it appears, and stays absent for the three cases in four that do not match.
+   */
+  const [prefill, setPrefill] = useState<PrefillResult | null>(null);
+  const [applied, setApplied] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   /** Seed the editable form from a server payload. Server values win on every refresh. */
@@ -132,9 +350,39 @@ export function ApplicationIntake({
   const submitted = Boolean(detail?.case.verificationProcess);
   const locked = submitted && detail?.case.statusCode !== 'pending_docs';
 
-  const statements = (detail?.documents ?? []).filter(
+  /**
+   * The three statements, as three SLOTS rather than one counter.
+   *
+   * "2 of 3 uploaded" tells an agent they are short but not WHICH month is missing, so the fix was
+   * to re-upload everything and hope. Each slot owns one document, matched by the label it was
+   * uploaded with; anything uploaded before this existed (or through the generic Documents
+   * section) has no slot label, so it fills the earliest free slot rather than disappearing.
+   */
+  const statementDocs = (detail?.documents ?? []).filter(
     (d) => d.docType === 'bank_statement' && d.status === 'received',
-  ).length;
+  );
+  /** Newest received document per identity type — replacing one supersedes the old. */
+  const identityDocs = useMemo(() => {
+    const out: Partial<Record<string, { id: string; fileName: string | null }>> = {};
+    for (const d of detail?.documents ?? []) {
+      if (d.status !== 'received') continue;
+      if (d.docType !== 'drivers_license' && d.docType !== 'ssn_card') continue;
+      out[d.docType] ??= { id: d.id, fileName: d.fileName };
+    }
+    return out;
+  }, [detail?.documents]);
+
+  const statementSlots = useMemo(() => {
+    const labelled = new Map<string, (typeof statementDocs)[number]>();
+    const loose: typeof statementDocs = [];
+    for (const doc of statementDocs) {
+      const slot = STATEMENT_LABELS.indexOf(doc.label ?? '');
+      if (slot >= 0 && !labelled.has(doc.label ?? '')) labelled.set(doc.label ?? '', doc);
+      else loose.push(doc);
+    }
+    return STATEMENT_LABELS.map((label) => labelled.get(label) ?? loose.shift() ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.documents]);
 
   const fail = (e: unknown, fallback: string): void => {
     const message = e instanceof Error ? e.message : fallback;
@@ -182,6 +430,49 @@ export function ApplicationIntake({
       setBusy(false);
     }
   }
+
+  /** One slot, one file, labelled so the slot can find it again on the next load. */
+  async function uploadSlotDoc(
+    file: File,
+    docTypeForSlot: VerificationDocType,
+    label: string,
+  ): Promise<void> {
+    if (!id) return;
+    setBusy(true);
+    try {
+      adopt(await uploadApplicationDocuments(id, [file], { docType: docTypeForSlot, label }));
+      setError(null);
+    } catch (e) {
+      fail(e, `Could not upload ${label.toLowerCase()}.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeDocument(documentId: string): Promise<void> {
+    if (!id) return;
+    setBusy(true);
+    try {
+      adopt(await deleteApplicationDocument(id, documentId));
+      setError(null);
+    } catch (e) {
+      fail(e, 'Could not remove that document.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    getApplicationPrefill(id)
+      .then((r) => live && setPrefill(r))
+      // A warehouse outage must not surface on a form that does not depend on it.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [id]);
 
   async function upload(files: FileList | null): Promise<void> {
     if (!id || !files || files.length === 0) return;
@@ -239,6 +530,17 @@ export function ApplicationIntake({
   const needsAuthority = applicantType === 'carrier';
   const set = (k: string) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  /**
+   * Applying a suggestion fills the FORM, never the case. It lands in the same unsaved state as
+   * anything the agent typed, so it goes through the same Save — a quarter-reliable source must
+   * not be able to write to a record on its own.
+   */
+  const applySuggestion = (sugg: PrefillSuggestion): void => {
+    if (sugg.field === 'principalName') setPrincipalName(sugg.value);
+    else setForm((f) => ({ ...f, [sugg.field]: sugg.value }));
+    setApplied((a) => new Set(a).add(sugg.field));
+  };
+
   return (
     <div style={s('display:grid;gap:20px')}>
       <GateBanner
@@ -266,6 +568,15 @@ export function ApplicationIntake({
           an agent should never have to ask another department for a status. */}
       {detail ? <VerificationProgress detail={detail} /> : null}
 
+      {prefill?.match && prefill.suggestions.length > 0 ? (
+        <PrefillPanel
+          result={prefill}
+          applied={applied}
+          locked={locked || busy}
+          onApply={applySuggestion}
+        />
+      ) : null}
+
       <Section title="Applicant type">
         <div style={s('grid-column:1/-1')}>
           <ApplicantTypePicker value={applicantType} onChange={(v) => void choose(v)} />
@@ -290,14 +601,42 @@ export function ApplicationIntake({
           />
           <Field label="Licence (last 4)" name="dlLast4" value={form.dlLast4 ?? ''} onChange={set('dlLast4')} missing={missing.has('dlLast4')} maxLength={8} />
           <Field label="Licence state" name="dlState" value={form.dlState ?? ''} onChange={set('dlState')} maxLength={4} />
+          {/* The documents themselves, beside the numbers taken off them. Phase 2 cross-checks one
+              against the other, so an application reaching the desk with only the last 4 gives the
+              reviewer nothing to check against. */}
+          <div style={s('grid-column:1/-1;display:grid;gap:8px')}>
+            {IDENTITY_SLOTS.map((slot) => (
+              <DocSlot
+                key={slot.docType}
+                label={slot.label}
+                doc={identityDocs[slot.docType] ?? null}
+                locked={locked || busy}
+                missing={missing.has(slot.missingKey)}
+                onPick={(file) => uploadSlotDoc(file, slot.docType, slot.label)}
+                onRemove={
+                  identityDocs[slot.docType]
+                    ? () => removeDocument(identityDocs[slot.docType]!.id)
+                    : null
+                }
+              />
+            ))}
+          </div>
         </Section>
       ) : (
         <Section
           title="Business"
+          /* Three states, not two. An UNSET type is now the common arrival — the poller stopped
+             guessing — and the old else-branch told those agents their application was headed for
+             Manager Review before they had chosen anything. */
+          /* MC/USDOT are COLLECTED, not required: the SOP routes an LLC or corporation with no
+             authority to Manager Review instead of blocking it, so saying "required" here would
+             promise a block that does not happen. */
           hint={
             needsAuthority
-              ? 'MC and USDOT are required for a carrier.'
-              : 'No MC/DOT for this applicant type — the application will go to Manager Review on submit.'
+              ? 'Add MC and USDOT if the company holds authority. Without either, the application goes to Manager Review on submit.'
+              : applicantType
+                ? 'No MC/DOT for this applicant type — the application will go to Manager Review on submit.'
+                : 'Choose an applicant type above — it decides which details are required.'
           }
         >
           <Field label="Full legal company name" name="companyName" value={form.companyName ?? ''} onChange={set('companyName')} missing={missing.has('companyName')} />
@@ -382,16 +721,21 @@ export function ApplicationIntake({
             { value: 'plaid', label: 'Plaid bank connection' },
           ]}
         />
-        <div style={s('display:flex;flex-direction:column;justify-content:flex-end')}>
-          <span style={s(LABEL)}>Statements received</span>
-          <span
-            style={s(
-              `font-size:14px;font-weight:800;color:${statements >= REQUIRED_STATEMENTS ? 'var(--ok)' : 'var(--danger)'}`,
-            )}
-          >
-            {statements} of {REQUIRED_STATEMENTS}
-          </span>
-        </div>
+        {(form.bankingSource ?? 'statements') === 'statements' ? (
+          <div style={s('grid-column:1/-1;display:grid;gap:8px')}>
+            {STATEMENT_LABELS.map((label, i) => (
+              <DocSlot
+                key={label}
+                label={label}
+                doc={statementSlots[i] ?? null}
+                locked={locked || busy}
+                missing={missing.has('bankStatements')}
+                onPick={(file) => uploadSlotDoc(file, 'bank_statement', label)}
+                onRemove={statementSlots[i] ? () => removeDocument(statementSlots[i]!.id) : null}
+              />
+            ))}
+          </div>
+        ) : null}
       </Section>
 
       <DocumentsSection

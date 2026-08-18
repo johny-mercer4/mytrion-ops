@@ -8,7 +8,7 @@
  * (already-loaded, already-filtered) array client-side — see `tabs/VerificationClients.tsx`.
  */
 import { useMemo } from 'react';
-import { listInboxMessages, type InboxMessage } from '../../api/inbox';
+import { listInboxMessages, type InboxMessagePage } from '../../api/inbox';
 import {
   getVerificationCase,
   listVerificationCases,
@@ -150,13 +150,23 @@ export function useCarrierAttachments(
   );
 }
 
-export function useVerificationInbox(): CachedLoad<InboxMessage[]> {
+/**
+ * The verification inbox — the caller's own messages, tagged `verification`.
+ *
+ * Returns the whole PAGE rather than just the rows: the scope tabs and the unread count are derived
+ * from these messages, and `pagination.hasMore` is how the surface knows it is showing a window.
+ * `tag` is the server-side scope; owner scoping is the route's own (`resolveZohoUserId`).
+ */
+export function useVerificationInbox(limit = 100): CachedLoad<InboxMessagePage> {
   return useCachedLoad(
     KEY_INBOX,
-    async () => (await listInboxMessages({ tag: 'verification', limit: 50 })).messages,
+    () => listInboxMessages({ tag: VERIFICATION_INBOX_TAG, limit }),
     { staleMs: STALE_INBOX },
   );
 }
+
+/** The tag `modules/verification/caseNotify.ts` stamps on every verification notification. */
+export const VERIFICATION_INBOX_TAG = 'verification';
 
 /** Mutually exclusive activity windows. `all` is unfiltered. */
 export type VerificationActivity = 'all' | '30' | '60' | '90';

@@ -19,6 +19,17 @@ describe('verificationCaseUi', () => {
     expect(caseIdFromInboxSource('https://app.example/verification/cases/abc-def-12')).toBe(
       'abc-def-12',
     );
+    // The three other shapes `caseNotify` / `verificationFlow.notify` actually write. Matching only
+    // /verification/cases left "Open case" dead on the message the desk receives most.
+    expect(caseIdFromInboxSource('/verification/applicants/vc_t0bbv0dt0bq4syc')).toBe(
+      'vc_t0bbv0dt0bq4syc',
+    );
+    expect(caseIdFromInboxSource('/verification/flow/cases/vc_t0bbv0dt0bq4syc')).toBe(
+      'vc_t0bbv0dt0bq4syc',
+    );
+    expect(caseIdFromInboxSource('/sales/verification/vc_t0bbv0dt0bq4syc')).toBe(
+      'vc_t0bbv0dt0bq4syc',
+    );
     expect(caseIdFromInboxSource('/inbox')).toBeNull();
     expect(isClosedCaseStatus('approved')).toBe(true);
     expect(isClosedCaseStatus('new')).toBe(false);

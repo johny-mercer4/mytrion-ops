@@ -68,11 +68,43 @@ export function resolveUnderwritingRoute(
 }
 
 /**
- * An LLC/corporation with no MC/DOT authority cannot clear Phase 4 and has no Highway presence, so
- * the SOP sends it to a human at intake rather than down a path with two holes in it.
+ * An MC or USDOT that is actually a number.
+ *
+ * The same guard the ingest applies at the Zoho boundary (`authorityNumber` in `zohoDealMap`),
+ * repeated here because Sales types into these fields too: a rep who writes "none" or "pending" in
+ * the MC box has told us there is no authority, and reading that as authority is what sent ten
+ * cases down the carrier path with two phases they could never clear.
  */
-export function requiresManagerReviewAtIntake(applicantType: VerificationApplicantType | null): boolean {
-  return applicantType === 'company';
+function hasAuthority(value: string | null | undefined): boolean {
+  const digits = (value ?? '').replace(/\D/g, '');
+  return digits !== '' && Number(digits) !== 0;
+}
+
+/**
+ * The SOP's "LLC / corporation without MC/DOT -> Manager Review", as a fact about the CASE.
+ *
+ * It used to be `applicantType === 'company'` — a third applicant type the Zoho poller assigned on
+ * its own from a regex over the company name. That value is no longer produced, so the rule would
+ * have fired for nothing; and it was wrong in both directions anyway, because it asked which radio
+ * button was clicked instead of whether an authority number is on file. A row typed `company` that
+ * DID have an MC still went to a human, and a row typed `carrier` with an empty MC never could.
+ *
+ * Now it reads what the SOP reads: is the applicant a company, and is there no authority. An
+ * owner-operator is never sent here — Flow A has no MC/DOT to begin with, and Phase 4 and Phase 8
+ * are already marked not-applicable for it.
+ *
+ * `company` stays in the type test because rows created before the change still carry it.
+ */
+export function requiresManagerReviewAtIntake(
+  applicant: {
+    applicantType: VerificationApplicantType | null;
+    mc: string | null;
+    dot: string | null;
+  },
+): boolean {
+  const isCompany = applicant.applicantType === 'carrier' || applicant.applicantType === 'company';
+  if (!isCompany) return false;
+  return !hasAuthority(applicant.mc) && !hasAuthority(applicant.dot);
 }
 
 /** Map a phase outcome onto the phase row's own status. */

@@ -32,6 +32,9 @@ export interface ReferralDealSource {
   childLookupId: string | null;
 }
 
+/** How this target relates to the parent referrer — never inferred from company-name strings. */
+export type ReferralTargetRole = 'child' | 'parent_itself';
+
 export interface ResolvedReferralTarget {
   parent: ReferralParentSource;
   child: ReferralChildSource;
@@ -40,6 +43,8 @@ export interface ResolvedReferralTarget {
   calculation: string;
   bonusType: ReferralBonusType;
   alreadyPaidInZoho: boolean;
+  /** Child deal carrier vs the parent's own fleet (swipe-legacy rollup only). */
+  role: ReferralTargetRole;
 }
 
 export interface ReferralResolutionResult {
@@ -144,10 +149,47 @@ export function resolveReferralTargets(
               : bonusType === 'gallons_child'
                 ? child.paid
                 : false,
+          role: 'child',
         });
       }
     }
   }
 
   return { targets, skippedNoCalculationChildIds, unresolvedChildIds };
+}
+
+/**
+ * Swipe (Legacy) also measures the parent company's own fleet when dim_company has exactly one
+ * carrier for that name. Gallons stay on related Deal carriers only — YILKI's 24,916 is the three
+ * child deals, not YILKI LLC's own carrier. Billing's Al Aziz 8 is first-use on AL AZIZ EXPRESS INC
+ * (5789458) plus Logixpress (5804841).
+ */
+export function appendSwipeParentCarrierTargets(
+  targets: readonly ResolvedReferralTarget[],
+  parentCarrierByName: ReadonlyMap<string, number>,
+): ResolvedReferralTarget[] {
+  if (parentCarrierByName.size === 0) return [...targets];
+  const claimed = new Set(
+    targets.map((target) => `${target.parent.id}:${target.carrierId}:${target.bonusType}`),
+  );
+  const extra: ResolvedReferralTarget[] = [];
+  for (const target of targets) {
+    if (target.bonusType !== 'swipes_legacy' || !target.parent.name) continue;
+    const parentCarrierId = parentCarrierByName.get(target.parent.name);
+    if (parentCarrierId === undefined) continue;
+    const key = `${target.parent.id}:${parentCarrierId}:swipes_legacy`;
+    if (claimed.has(key)) continue;
+    claimed.add(key);
+    extra.push({
+      ...target,
+      carrierId: parentCarrierId,
+      role: 'parent_itself',
+      deal: {
+        ...target.deal,
+        name: target.parent.name,
+        carrierId: parentCarrierId,
+      },
+    });
+  }
+  return extra.length === 0 ? [...targets] : [...targets, ...extra];
 }

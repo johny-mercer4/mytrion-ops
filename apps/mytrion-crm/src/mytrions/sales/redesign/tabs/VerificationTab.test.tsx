@@ -23,6 +23,10 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../dcCache', () => ({ useCachedLoad: () => state.current }));
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
+/** The signed-in agent, so a card can tell "mine" from "reached me via the Deal". */
+vi.mock('@/api/session', () => ({
+  getSession: () => ({ worker: { zohoUserId: 'agent-self' } }),
+}));
 vi.mock('@/context/UserContextProvider', () => ({
   useUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
   useRealUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
@@ -43,6 +47,9 @@ function row(over: Partial<VerificationCaseRow> = {}): VerificationCaseRow {
     email: 'ops@kaiser.test',
     phone: '6145550110',
     applicantType: 'carrier',
+    ein: null,
+    mc: null,
+    dot: null,
     underwritingRoute: 'octane_internal',
     verificationProcess: false,
     phaseCode: 'p1_intake',
@@ -56,6 +63,9 @@ function row(over: Partial<VerificationCaseRow> = {}): VerificationCaseRow {
     intakeMissing: ['ein', 'businessAddress', 'bankStatements'],
     submittedAt: null,
     ownerName: 'Test Agent',
+    ownerZohoUserId: 'agent-self',
+    zohoOwnerId: 'agent-self',
+    zohoOwnerName: 'Test Agent',
     closedAt: null,
     createdAt: '2026-08-14T10:00:00.000Z',
     updatedAt: '2026-08-14T10:00:00.000Z',
@@ -101,13 +111,13 @@ describe('the red state', () => {
   it('names how many items are outstanding rather than only colouring the card', () => {
     ready([row()]);
     render(<VerificationTab />);
-    expect(screen.getByText('3 items still needed')).toBeInTheDocument();
+    expect(screen.getByText('3 items still needed from you')).toBeInTheDocument();
   });
 
   it('uses the singular for exactly one outstanding item', () => {
     ready([row({ intakeMissing: ['ein'] })]);
     render(<VerificationTab />);
-    expect(screen.getByText('1 item still needed')).toBeInTheDocument();
+    expect(screen.getByText('1 item still needed from you')).toBeInTheDocument();
   });
 
   it('reports the server list verbatim — completeness is never re-derived here', () => {
@@ -115,13 +125,51 @@ describe('the red state', () => {
     // the card must trust the server, because the server is what the gate actually uses.
     ready([row({ intakeMissing: ['a', 'b', 'c'] })]);
     render(<VerificationTab />);
-    expect(screen.getByText('3 items still needed')).toBeInTheDocument();
+    expect(screen.getByText('3 items still needed from you')).toBeInTheDocument();
   });
 
   it('falls back to a plain statement when the missing list is empty but unsubmitted', () => {
     ready([row({ intakeMissing: [] })]);
     render(<VerificationTab />);
     expect(screen.getByText('Not submitted yet')).toBeInTheDocument();
+  });
+});
+
+/**
+ * A case reaches an agent three ways — they submitted it, they were ASSIGNED it, or they own the Zoho
+ * Deal — so a card in this list can belong to another Sales agent. The name is what tells the agent
+ * whether they are the one who has to fill it in, and it must be the DEAL's owner: the assignee is
+ * the Verification desk's own credit agent on any case whose Deal arrived unowned.
+ */
+describe('whose case it is', () => {
+  it("names the other agent's Deal, not the row's assignee", () => {
+    ready([
+      row({
+        zohoOwnerId: 'other-agent',
+        zohoOwnerName: 'Robert Toms',
+        ownerZohoUserId: 'verification-desk',
+        ownerName: 'Sarvar Asqarov',
+      }),
+    ]);
+    render(<VerificationTab />);
+    expect(screen.getByText('Sales owner')).toBeInTheDocument();
+    expect(screen.getByText('Robert Toms')).toBeInTheDocument();
+    // The credit agent must never be presented as the Sales owner.
+    expect(screen.queryByText('Sarvar Asqarov')).not.toBeInTheDocument();
+  });
+
+  it('stays quiet on your own Deals rather than naming you on every card', () => {
+    ready([row()]);
+    render(<VerificationTab />);
+    expect(screen.queryByText('Sales owner')).not.toBeInTheDocument();
+    expect(screen.queryByText('Test Agent')).not.toBeInTheDocument();
+  });
+
+  it('says nothing when Zoho has nobody on the Deal — there is no Sales owner to name', () => {
+    ready([row({ zohoOwnerId: null, zohoOwnerName: null, ownerName: 'Sarvar Asqarov' })]);
+    render(<VerificationTab />);
+    expect(screen.queryByText('Sales owner')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sarvar Asqarov')).not.toBeInTheDocument();
   });
 });
 
@@ -139,8 +187,11 @@ describe('the green state', () => {
       }),
     ]);
     render(<VerificationTab />);
-    // The chip already says "In review"; the body line earns its place by saying something else.
-    expect(screen.getByText('Phase 6 of 10 · Credit & banking')).toBeInTheDocument();
+    // The chip already says "In review"; the stage line earns its place by saying WHERE it is.
+    expect(screen.getByText(/Stage/)).toBeInTheDocument();
+    expect(screen.getByText(/of 10 · Credit & banking/)).toBeInTheDocument();
+    // And the ask line says there is nothing for Sales to do, rather than leaving them guessing.
+    expect(screen.getByText(/nothing needed from you/i)).toBeInTheDocument();
   });
 
   it('calls out a document request as the agent’s action', () => {
@@ -161,13 +212,61 @@ describe('the green state', () => {
       row({
         verificationProcess: true,
         statusCode: 'approved',
+        // The list endpoint stitches the label from the status; a fixture that leaves the two
+        // disagreeing is not a shape the server can produce.
+        statusLabel: 'Approved',
         boardColumn: 'approved',
         approvedLimitAmount: '4560.00',
         closedAt: '2026-08-15T09:00:00.000Z',
       }),
     ]);
     render(<VerificationTab />);
-    expect(screen.getByText('$4560.00')).toBeInTheDocument();
+    // The DECISION is the headline for a closed case — the limit rides on it, not in a chip the
+    // agent has to hunt for.
+    expect(screen.getByText(/Approved — \$4560\.00/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Sales sees three things and no more: where the case is, what Verification wants from them, and
+ * the decision. Anything else on this card is the desk's business.
+ */
+describe('what the roster tells Sales', () => {
+  it('draws the stage as ten segments, the way the Verification queue does', () => {
+    const { container } = render(<VerificationTab />);
+    ready([row({ verificationProcess: true, phaseCode: 'p3_screening', intakeMissing: [] })]);
+    container.remove();
+    const view = render(<VerificationTab />);
+    expect(view.container.querySelectorAll('.ss-vf-seg')).toHaveLength(10);
+    expect(view.container.querySelectorAll('.ss-vf-seg[data-on="true"]')).toHaveLength(3);
+  });
+
+  it('names the applicant type in the two words both desks use', () => {
+    ready([row({ applicantType: 'owner_operator' })]);
+    render(<VerificationTab />);
+    expect(screen.getByText('Owner-Operator / Individual')).toBeInTheDocument();
+  });
+
+  it('still names a legacy `company` row rather than showing a dash', () => {
+    // The Zoho poller used to assign a third type on its own. Those rows are still in the table.
+    ready([row({ applicantType: 'company' })]);
+    render(<VerificationTab />);
+    expect(screen.getByText('Carrier (Company)')).toBeInTheDocument();
+  });
+
+  it('never shows the underwriting detail — no findings, no phase verdicts', () => {
+    ready([row({ verificationProcess: true, phaseCode: 'p7_hard_stops', intakeMissing: [] })]);
+    render(<VerificationTab />);
+    expect(screen.queryByText(/hard stop/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/finding/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the loading state as roster cards, not the generic grid', () => {
+    // The shared `variant="grid"` skeleton drew a different card in a different column width, so
+    // the page re-laid-out when the data landed.
+    const view = render(<VerificationTab />);
+    expect(view.container.querySelector('[aria-label="Loading your applications"]')).toBeTruthy();
+    expect(view.container.querySelectorAll('.ss-verification-card').length).toBeGreaterThan(0);
   });
 });
 
