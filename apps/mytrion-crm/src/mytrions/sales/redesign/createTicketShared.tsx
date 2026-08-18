@@ -107,12 +107,20 @@ export function BackBtn({ onClick }: { onClick: () => void }) {
  * (case-sensitive), and the tints mirror the colours Desk shows the queue: green / amber / red.
  * 'None' is Desk's `-None-` member and the default — a ticket gets a priority only when the agent
  * picks one. `busy` disables the control while a change is in flight.
+ *
+ * High is --danger-vivid, not --danger. --danger is var(--error), which exists to be READABLE as
+ * text; in the dark theme that is a pale salmon less saturated than --orange, so High and Medium
+ * arrived as two shades of one pastel (sales feedback: "High looks too similar to Medium"). The
+ * vivid token is the saturated end of the same hue, for exactly this ranked-badge job.
+ *
+ * Exported because the recent-tickets strip renders the same four values and had copied this map;
+ * two copies of a colour table drift the moment one of them is corrected.
  */
-const PRIORITY_TONES: Record<PriorityValue, string> = {
+export const PRIORITY_TONES: Record<PriorityValue, string> = {
   [NO_PRIORITY]: 'var(--muted)',
   Low: 'var(--ok)',
   Medium: 'var(--orange)',
-  High: 'var(--danger)',
+  High: 'var(--danger-vivid)',
 };
 
 export function PrioritySelect({
