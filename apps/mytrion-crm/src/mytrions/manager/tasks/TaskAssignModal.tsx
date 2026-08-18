@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Send, X } from 'lucide-react';
+import { Select } from '@/ds';
 import type { TaskTypeDto, WorkerTaskPriority } from '../../../api/salesKpi';
 import type { ManagerAssigneeDto } from '../../../api/managerTasks';
 import { PRIORITIES, deadlineToIso } from './taskModel';
@@ -123,17 +124,18 @@ export function TaskAssignModal({
               </label>
 
               <div className="mg-tk-field-row">
-                <label className="mg-tk-field">
-                  <span>Assign to</span>
-                  <select value={assignee} onChange={(event) => setAssignee(event.target.value)}>
-                    {workers.length === 0 ? <option value="">No eligible agents</option> : null}
-                    {workers.map((worker) => (
-                      <option key={worker.zohoUserId} value={worker.zohoUserId}>
-                        {worker.displayName ?? worker.email ?? worker.zohoUserId}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="mg-tk-field">
+                  <Select
+                    label="Assign to"
+                    emptyLabel="No eligible agents"
+                    options={workers.map((worker) => ({
+                      value: worker.zohoUserId,
+                      label: worker.displayName ?? worker.email ?? worker.zohoUserId,
+                    }))}
+                    value={assignee || null}
+                    onChange={(value) => setAssignee(value ?? '')}
+                  />
+                </div>
                 <label className="mg-tk-field">
                   <span>Type</span>
                   <select value={type} onChange={(event) => setType(event.target.value)}>

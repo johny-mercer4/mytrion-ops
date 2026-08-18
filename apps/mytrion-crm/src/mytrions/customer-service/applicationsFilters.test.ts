@@ -20,17 +20,21 @@ describe('activeFilterCount', () => {
     expect(activeFilterCount({ ...emptyFilters(), dateFrom: '2026-01-01', dateTo: '2026-02-01' })).toBe(1);
   });
 
-  it('counts company + stage + a WEX selection as three', () => {
-    const f = { ...emptyFilters(), company: 'acme', stage: 'Application', wex: new Set(['Decisioned']) };
-    expect(activeFilterCount(f)).toBe(3);
+  it('counts stage + a WEX selection as two', () => {
+    const f = { ...emptyFilters(), stage: 'Application', wex: new Set(['Decisioned']) };
+    expect(activeFilterCount(f)).toBe(2);
+  });
+
+  it("counts an active Love's filter", () => {
+    expect(activeFilterCount({ ...emptyFilters(), loves: 'Pending' })).toBe(1);
   });
 });
 
 describe('filtersToParams', () => {
   it('carries every filter field through plus the sort key/dir', () => {
-    const f = { ...emptyFilters(), company: 'acme', stage: 'Application' };
+    const f = { ...emptyFilters(), stage: 'Application' };
     const params = filtersToParams(f, 'appId', 'asc');
-    expect(params).toMatchObject({ sortKey: 'appId', sortDir: 'asc', company: 'acme', stage: 'Application' });
+    expect(params).toMatchObject({ sortKey: 'appId', sortDir: 'asc', stage: 'Application' });
   });
 
   it('sorts the wex Set into an array — insertion order must not change the output', () => {
@@ -38,6 +42,11 @@ describe('filtersToParams', () => {
     const b = filtersToParams({ ...emptyFilters(), wex: new Set(['A', 'B']) }, 'date', 'desc');
     expect(a.wex).toEqual(['A', 'B']);
     expect(b.wex).toEqual(['A', 'B']);
+  });
+
+  it("carries the Love's filter through unchanged", () => {
+    const params = filtersToParams({ ...emptyFilters(), loves: 'Pending' }, 'date', 'desc');
+    expect(params.loves).toBe('Pending');
   });
 });
 

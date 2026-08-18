@@ -88,6 +88,19 @@ describe('search predicate', () => {
     expect(sql).toContain('"name"');
   });
 
+  it('normalizes phone digits so any formatting matches, not just an exact stored format', () => {
+    void maintenanceCaseRepo.listPage({ search: '(702) 989-4445' });
+    const where = rendered('where')[0];
+    expect(where?.sql).toContain(`regexp_replace("maintenance_cases"."phone", '[^0-9]', '', 'g')`);
+    expect(where?.params).toContain('%7029894445%');
+  });
+
+  it('matches phone on a bare digit substring too, e.g. the last 4 digits', () => {
+    void maintenanceCaseRepo.listPage({ search: '4445' });
+    const where = rendered('where')[0];
+    expect(where?.params).toContain('%4445%');
+  });
+
   it('treats a digits-only query as an identifier: exact + prefix carrier match', () => {
     void maintenanceCaseRepo.listPage({ search: '578' });
     const where = rendered('where')[0];

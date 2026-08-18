@@ -37,6 +37,8 @@ export interface UserContext {
   viewAsTargets?: Array<{ zohoUserId: string; name: string | null }>;
   /** Leads a team (direct reports or a led department). Opens HR → Attendance, and only that. */
   leadsTeam?: boolean;
+  /** May hard-delete a manually-entered Chase transaction (Billing Mytrion Transactions tab). */
+  canDeleteChaseTransactions?: boolean;
 }
 
 /** Mirrors the old MOCK_USER so `vite dev` works standalone (admin, sees everything). */
@@ -67,6 +69,7 @@ export function contextFromWorker(worker: SessionWorker): UserContext {
   if (worker.mytrionTabGrants) ctx.mytrionTabGrants = worker.mytrionTabGrants;
   if (worker.viewAsTargets) ctx.viewAsTargets = worker.viewAsTargets;
   if (worker.leadsTeam !== undefined) ctx.leadsTeam = worker.leadsTeam;
+  if (worker.canDeleteChaseTransactions !== undefined) ctx.canDeleteChaseTransactions = worker.canDeleteChaseTransactions;
   return ctx;
 }
 

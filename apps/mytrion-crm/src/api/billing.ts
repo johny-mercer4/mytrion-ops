@@ -260,6 +260,17 @@ export function unmapTransaction(id: string, clearCrm: 'true' | 'false' = 'true'
   return billingWrite(txPath(id, 'unmap'), { clearCrm });
 }
 
+/**
+ * Hard-delete a manually-entered Chase transaction. Admin-only, or an explicitly granted user
+ * (session.worker.canDeleteChaseTransactions) — the server re-checks the real grant regardless of
+ * what this client believes. Row must already be unmapped; the server 400s otherwise.
+ */
+export function deleteTransaction(id: string): Promise<BillingWriteResult> {
+  return request('DELETE', `/billing/transactions/${encodeURIComponent(id)}`, {
+    headers: BILLING_HEADERS,
+  }) as Promise<BillingWriteResult>;
+}
+
 /** Match a return to its original payment (reverses CMP, keeps mapping, flags returned). */
 export function matchReturn(returnId: string, transactionRecordId: string): Promise<BillingWriteResult> {
   return billingWrite(`/billing/returns/${encodeURIComponent(returnId)}/match`, { transactionRecordId });

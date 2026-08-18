@@ -1,5 +1,6 @@
 import type { AdminDeal, OwnerTimelineChange } from '../../api/adminDeals';
 import type { AgentUser } from '../../api/agents';
+import { Select } from '@/ds';
 import { adminToast } from './toast';
 import { copyText, dash, relativeTime } from './dealsHelpers';
 import s from './admin.module.css';
@@ -134,28 +135,22 @@ export function DealTransferDrawer({
             aria-label="Filter agents"
           />
 
-          <label
-            className={s.fieldLabel}
-            htmlFor="admin-deal-agent"
-            style={{ marginTop: 'var(--space-3)' }}
-          >
-            Transfer to
-          </label>
-          <select
-            id="admin-deal-agent"
-            className={s.input}
-            value={toAgentId}
-            onChange={(e) => onToAgentChange(e.target.value)}
-          >
-            <option value="">Select agent…</option>
-            {filteredAgents.map((a) => (
-              <option key={a.zohoUserId} value={a.zohoUserId}>
-                {a.name ?? a.zohoUserId}
-                {priorOwner?.zohoUserId === a.zohoUserId ? ' · prior' : ''}
-                {a.profile ? ` · ${a.profile}` : ''}
-              </option>
-            ))}
-          </select>
+          <div style={{ marginTop: 'var(--space-3)' }}>
+            <Select
+              label="Transfer to"
+              placeholder="Select agent…"
+              clearable
+              options={filteredAgents.map((a) => ({
+                value: a.zohoUserId,
+                label: a.name ?? a.zohoUserId,
+                hint: [priorOwner?.zohoUserId === a.zohoUserId ? 'prior' : null, a.profile]
+                  .filter(Boolean)
+                  .join(' · '),
+              }))}
+              value={toAgentId || null}
+              onChange={(v) => onToAgentChange(v ?? '')}
+            />
+          </div>
 
           {priorOwner?.zohoUserId ? (
             <button

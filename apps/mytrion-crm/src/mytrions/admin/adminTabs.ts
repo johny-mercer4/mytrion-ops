@@ -25,6 +25,7 @@ export const ADMIN_TABS = [
   { key: 'access', label: 'User Management', group: 'Access' },
   { key: 'octane-telegram-users', label: 'Octane Telegram Users', group: 'Access' },
   { key: 'permission-sets', label: 'Permission Sets', group: 'Access' },
+  { key: 'delete-access', label: 'Delete Access', group: 'Access' },
   /**
    * Declared as ONE destination, not two. `carriers-registered` and `carriers-invites` are children
    * of this row in the shell; an admin granting "Carrier User Management" means the screen, not one

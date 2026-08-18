@@ -47,6 +47,7 @@ export * from './worker_profiles.js';
 export * from './payment_transactions.js';
 export * from './payment_carrier_memory.js';
 export * from './payment_returns.js';
+export * from './payment_delete_grants.js';
 export * from './mytrion_calls.js';
 export * from './mytrion_inbox_messages.js';
 export * from './mytrion_referral_bonuses.js';

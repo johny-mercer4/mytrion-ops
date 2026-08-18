@@ -41,6 +41,9 @@ export interface Application {
   chn: 0 | 1;
   verified: boolean;
   carrierId: string;
+  /** Approved/'Not Approved'/'' — drained from the linked Deal (applicationsList.ts's applyDeal), same
+   *  source the bulk Love's-clearance push writes to. */
+  lovesVerification: string;
   /** FedEx tracking for card shipments — bulk-fetched per page (Deal-level, not on this record
    *  at all; see getCardTrackingBulk). Undefined until that fetch resolves. */
   trackingNumber?: string;

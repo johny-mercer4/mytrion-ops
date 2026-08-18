@@ -142,6 +142,7 @@ function buildFilters(f: MaintenanceFilters): SQL[] {
     }
     const unitKey = normalizeUnit(q);
     if (unitKey) terms.push(sql`${UNIT_NORM} = ${unitKey}`);
+    if (q.replace(/[^0-9]/g, '')) terms.push(sql`regexp_replace(${maintenanceCases.phone}, '[^0-9]', '', 'g') LIKE ${`%${q.replace(/[^0-9]/g, '')}%`}`); // phone: digit-substring match
 
     const search = or(...terms);
     if (search) conds.push(search);
@@ -442,7 +443,6 @@ export const maintenanceCaseRepo = {
     }
     return { written, skipped, chunks };
   },
-
 
   /**
    * Individual maintenance cases for one carrier in a window — the itemized lines behind the

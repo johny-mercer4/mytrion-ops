@@ -2283,6 +2283,19 @@
   overscroll-behavior: contain;
 }
 
+/* A person row's leading avatar + name/email stack, as one shrinkable unit so the action button
+   on the right never gets pushed off a narrow panel. */
+.psPersonCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  min-width: 0;
+}
+.psYouTag {
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+}
+
 /* ── Permission sets — save bar ────────────────────────────────────────────── */
 /*
  * Appears only when the draft differs from what is stored. A permanently-visible Save on a screen
@@ -2445,6 +2458,15 @@
 .psSkelBtn {
   height: 28px;
   width: 74px;
+}
+/* Avatar-shaped first paint for a person row — same shimmer as .psSkelRow, different geometry, so
+   the loading state has the same silhouette as the row it is about to become. Declared after
+   .psSkelRow so its border-radius wins the cascade against .psSkelRow's own. */
+.psSkelAvatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
 }
 @media (prefers-reduced-motion: reduce) {
   .psSkelRow {

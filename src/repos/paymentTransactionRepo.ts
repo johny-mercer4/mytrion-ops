@@ -5,15 +5,13 @@ import {
   type NewPaymentTransaction,
   type PaymentTransaction,
 } from '../db/schema/index.js';
+import { deleteIfUnmapped } from './paymentTransactionDeleteRepo.js';
+import { sumForPrepayByDay } from './paymentTransactionPrepayDailyRepo.js';
 
 /**
  * paymentTransactionRepo — read/write access to the unified payments store (replaces the four Zoho
- * payment modules). Reads back the whole ledger for the billing panel (which filters/groups
- * client-side); writes are the PG-owned mapping columns (the actual payment is applied/reversed in
- * CMP, external). Ingest uses `upsertMany`, which NEVER overwrites the mapping columns.
- *
- * Not tenant-scoped (global operational table, money-code precedent). NUMERIC round-trips as a
- * string in Drizzle — the `money()` helper formats writes at fixed scale.
+ * payment modules). Writes are PG-owned mapping columns only (payment applied/reversed in CMP,
+ * external); `upsertMany` never overwrites them. Not tenant-scoped. NUMERIC round-trips as a string.
  */
 
 /** NUMERIC → fixed-scale string (or undefined to leave unset). */
@@ -294,6 +292,7 @@ export const paymentTransactionRepo = {
     return rows[0];
   },
 
+  deleteIfUnmapped,
   /** Look up a row by its natural key (source, source_record_id) — e.g. to detect a duplicate
    *  manual add before upserting (the upsert would silently update, hiding the duplicate). */
   async findBySourceRecord(source: string, sourceRecordId: string): Promise<PaymentTransaction | undefined> {
@@ -536,6 +535,7 @@ export const paymentTransactionRepo = {
     return rows.map((r) => ({ carrierId: String(r.carrierId), source: r.source, total: Number(r.total) || 0 }));
   },
 
+  sumForPrepayByDay,
   /**
    * Money RECEIVED per carrier in a window — the Debit of the Billing Ledger's Un Top-Upped Payments
    * sub-ledger (TZ §5.2).
