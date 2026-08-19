@@ -911,6 +911,13 @@
       "when": 1786997506835,
       "tag": "0128_familiar_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1787150590537,
+      "tag": "0130_striped_lester",
+      "breakpoints": true
     }
   ]
 }

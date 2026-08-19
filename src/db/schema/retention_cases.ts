@@ -113,6 +113,8 @@ export const retentionCases = pgTable(
     /** Zoho CRM Deal id when known (no local deals table). */
     zohoDealId: text('zoho_deal_id'),
     companyName: text('company_name'),
+    /** Denormalized Zoho Contact full name (deal_full_name from DWH dim_company, sync). */
+    clientName: text('client_name'),
     applicationId: text('application_id'),
     /** Denormalized deal-owner display name (sync). */
     agentName: text('agent_name'),

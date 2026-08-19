@@ -1,5 +1,7 @@
 /** Shared meta grid + timeline for the retention case modal. */
-import type { RetentionCaseEventRow } from '@/api/touchpointTypes';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import type { EntityNoteRow, RetentionCaseEventRow } from '@/api/touchpointTypes';
 import { s } from './dc';
 import { Icon } from './icons';
 import {
@@ -16,6 +18,7 @@ import { isSalesLocked, isSalesPooled, salesLockBadge, stageTimer } from './rete
 export function RetentionCaseHeader(props: {
   loading: boolean;
   companyName: string;
+  clientName?: string | null;
   carrierId: string;
   phoneDisplay: string;
   phoneLoading?: boolean;
@@ -42,6 +45,11 @@ export function RetentionCaseHeader(props: {
             >
               {props.companyName}
             </div>
+            {props.clientName && (
+              <div style={s('font-size:13px;color:var(--text2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                {props.clientName}
+              </div>
+            )}
             <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px')}>
               <span style={s("font-size:13px;color:var(--text2);font-family:var(--font-mono)")}>
                 {props.carrierId}
@@ -320,6 +328,122 @@ export function RetentionEventTrail({ events }: { events: RetentionCaseEventRow[
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+export function RetentionNotesPanel({
+  notes,
+  loading,
+  busy,
+  onAdd,
+  onDelete,
+}: {
+  notes: EntityNoteRow[];
+  loading: boolean;
+  busy: boolean;
+  onAdd: (content: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent): Promise<void> => {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text || submitting) return;
+    setSubmitting(true);
+    try {
+      await onAdd(text);
+      setDraft('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string): Promise<void> => {
+    if (busy) return;
+    await onDelete(id);
+  };
+
+  return (
+    <div
+      style={s(
+        'border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);overflow:hidden',
+      )}
+    >
+      <div
+        style={s(
+          'padding:10px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)',
+        )}
+      >
+        Notes
+      </div>
+
+      {loading ? (
+        <div style={s('padding:12px;display:flex;flex-direction:column;gap:8px')}>
+          <div className="ss-skel" style={s('height:40px;border-radius:var(--radius-md)')} />
+          <div className="ss-skel" style={s('height:40px;border-radius:var(--radius-md)')} />
+        </div>
+      ) : notes.length === 0 ? (
+        <div style={s('padding:12px 14px;font-size:13px;color:var(--muted)')}>No notes yet.</div>
+      ) : (
+        <div style={s('display:flex;flex-direction:column;gap:0')}>
+          {notes.map((note, i) => (
+            <div
+              key={note.id}
+              style={s(
+                `padding:10px 12px;${i < notes.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}`,
+              )}
+            >
+              <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
+                <div style={s('font-size:13px;color:var(--text);line-height:1.5;flex:1;white-space:pre-wrap;word-break:break-word')}>
+                  {note.content}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(note.id)}
+                  disabled={busy}
+                  aria-label="Delete note"
+                  style={s(
+                    'flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--muted);padding:2px 4px;border-radius:4px;font-size:13px;line-height:1',
+                  )}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={s('font-size:11px;color:var(--muted);margin-top:4px')}>
+                {note.authorName ?? 'Agent'} · {new Date(note.createdAt).toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        style={s('display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border)')}
+      >
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a note…"
+          rows={2}
+          disabled={submitting || busy}
+          style={s(
+            'flex:1;resize:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:13px;background:var(--bg);color:var(--text);font-family:inherit;line-height:1.4',
+          )}
+        />
+        <button
+          type="submit"
+          disabled={submitting || busy || !draft.trim()}
+          style={s(
+            'align-self:flex-end;padding:7px 14px;border-radius:var(--radius-sm);border:none;background:var(--accent);color:var(--accent-text);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;opacity:1',
+          )}
+        >
+          {submitting ? '…' : 'Add'}
+        </button>
+      </form>
     </div>
   );
 }

@@ -81,6 +81,8 @@ export function daysSince(date: Date, now: Date = new Date()): number {
 export interface RetentionCandidate {
   carrierId: string;
   companyName: string | null;
+  /** Zoho Contact full name linked to the deal (deal_full_name from dim_company). */
+  clientName?: string | null;
   applicationId: string | null;
   agentName: string | null;
   agentZohoUserId: string | null;
@@ -107,6 +109,7 @@ export interface RetentionCandidate {
 interface CandidateRow {
   carrier_id: number;
   company_name: string | null;
+  deal_full_name: string | null;
   application_id: number | null;
   agent: string | null;
   agent_zoho_user_id: number | null;
@@ -160,6 +163,7 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
   return {
     carrierId: String(row.carrier_id),
     companyName: row.company_name,
+    clientName: row.deal_full_name?.trim() || null,
     applicationId: row.application_id != null ? String(row.application_id) : null,
     agentName: row.agent,
     agentZohoUserId: row.agent_zoho_user_id != null ? String(row.agent_zoho_user_id) : null,
@@ -223,7 +227,7 @@ export async function scanRetentionCandidates(
      ),
      company as (
        select distinct on (carrier_id)
-              carrier_id, company_name, application_id, agent, agent_zoho_user_id,
+              carrier_id, company_name, deal_full_name, application_id, agent, agent_zoho_user_id,
               deal_phone, contact_phone, nationality,
               deal_stage, total_active_cards, last_transaction_date, first_swipe_date
          from octane.dim_company
@@ -254,6 +258,7 @@ export async function scanRetentionCandidates(
      )
      select c.carrier_id,
             c.company_name,
+            c.deal_full_name,
             c.application_id,
             c.agent,
             c.agent_zoho_user_id,

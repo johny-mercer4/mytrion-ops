@@ -114,6 +114,7 @@ import { callHubRoutes } from './routes/v1/callHub.routes.js';
 import { managerEfsRoutes } from './routes/v1/managerEfs.routes.js';
 import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
 import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
+import { entityNotesRoutes } from './routes/v1/entityNotes.routes.js';
 
 // Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
 // serializer doesn't dump headers, but if request-header logging is ever enabled these must not leak).
@@ -517,6 +518,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(managerTasksRoutes);
       await v1.register(managerEfsRoutes);
       await v1.register(kpiAdminRoutes);
+      await v1.register(entityNotesRoutes);
     },
     { prefix: API_PREFIX },
   );

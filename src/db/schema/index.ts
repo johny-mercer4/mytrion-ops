@@ -35,6 +35,7 @@ export * from './agent_memories.js';
 export * from './agent_blackboards.js';
 export * from './agent_skills.js';
 export * from './retention_cases.js';
+export * from './entity_notes.js';
 export * from './retention_claim_requests.js';
 export * from './retention_ownership_transfers.js';
 export * from './retention_rr_cursors.js';

@@ -80,6 +80,7 @@ export default defineConfig({
     './src/db/schema/recruit_candidates.ts',
     './src/db/schema/recruit_settings.ts',
     './src/db/schema/maintenance_cases.ts',
+    './src/db/schema/entity_notes.ts',
     // NOTE: ledger_* is deliberately ABSENT here, same as maintenance_case_attachments /
     // maintenance_case_history / verification_sales_responses / carrier_attachments. The snapshot in meta/ is stale
     // relative to several teams' schema files, so `db:generate` emits their pending drift
