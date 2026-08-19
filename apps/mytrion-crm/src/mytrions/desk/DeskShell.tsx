@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Plus, Settings, Ticket, TriangleAlert } from 'lucide-react';
+import { BarChart3, Plus, Settings, Ticket, TriangleAlert } from 'lucide-react';
 import { TicketConsole } from '@/features/comms/TicketConsole';
 import { getCommsCatalog, type DepartmentOptionDto, type TicketDto } from '@/api/comms';
 import { isAdmin } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
+import { DeskAnalytics } from './DeskAnalytics';
 import { DeskCompose, type DeskComposeResult } from './DeskCompose';
 import { DeskEscalationActions } from './DeskEscalationActions';
 import { DeskTicketActions } from './DeskTicketActions';
@@ -93,6 +94,16 @@ export function DeskShell() {
           keywords: ['escalate', 'raise', 'ladder'],
           primary: true,
         },
+        {
+          key: 'analytics',
+          label: 'Analytics',
+          icon: <BarChart3 size={19} />,
+          tone: 'var(--tone-violet)',
+          active: view === 'analytics',
+          onClick: () => open('analytics'),
+          keywords: ['sla', 'dashboard', 'reports', 'metrics', 'stats'],
+          primary: true,
+        },
       ],
     },
   ];
@@ -118,8 +129,8 @@ export function DeskShell() {
         footerNav={footerNav}
         enableNavSearch
         // The console owns its own scroll (list + thread panes) so the composer never leaves the
-        // viewport; Settings is a normal page, so it hands scrolling back to the shell.
-        contentScroll={view === 'settings' ? 'shell' : 'content'}
+        // viewport; Settings and Analytics are normal pages, so they hand scrolling back to the shell.
+        contentScroll={view === 'settings' || view === 'analytics' ? 'shell' : 'content'}
       >
         {view === 'tickets' ? (
           <TicketConsole
@@ -143,6 +154,7 @@ export function DeskShell() {
             chatActions={chatActions}
           />
         ) : null}
+        {view === 'analytics' ? <DeskAnalytics departments={departments} /> : null}
         {view === 'settings' && admin ? (
           <>
             <EscalationRouting />

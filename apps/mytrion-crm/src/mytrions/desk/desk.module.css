@@ -478,3 +478,206 @@
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* ── Analytics & SLA dashboard ────────────────────────────────────────────── */
+
+.aHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.aControls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.aControl {
+  display: inline-flex;
+  min-width: 10rem;
+}
+
+.analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Refresh keeps the numbers on screen and dims them — never a second loader over live content. */
+.analytics[data-stale] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.statValue {
+  font-family: var(--font-head);
+  font-size: 1.5rem;
+  font-weight: 680;
+  line-height: 1.1;
+}
+
+.statLabel {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.stat[data-tone='bad'] {
+  background: var(--tint-bad-bg);
+  border-color: var(--tint-bad-bd);
+}
+.stat[data-tone='warn'] {
+  background: var(--tint-warn-bg);
+  border-color: var(--tint-warn-bd);
+}
+.stat[data-tone='good'] {
+  background: var(--tint-good-bg);
+  border-color: var(--tint-good-bd);
+}
+
+/* Horizontal bar breakdown list (status / priority / department / agents). */
+.barList {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+}
+
+.barLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.barTrack {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  min-width: 2px;
+}
+
+/* Status/priority tints so a bar reads at a glance without a legend. */
+.barRow[data-key='open'] .barFill,
+.barRow[data-key='medium'] .barFill {
+  background: var(--tone-amber);
+}
+.barRow[data-key='escalated'] .barFill,
+.barRow[data-key='critical'] .barFill,
+.barRow[data-key='high'] .barFill {
+  background: var(--tone-rose);
+}
+.barRow[data-key='resolved'] .barFill,
+.barRow[data-key='closed'] .barFill {
+  background: var(--tone-emerald);
+}
+
+.barCount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.barPct {
+  font-style: normal;
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Volume mini bar chart. */
+.legend {
+  display: flex;
+  gap: 0.9rem;
+  margin-top: 0.1rem;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.legendItem::before {
+  content: '';
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.legendItem[data-series='resolved']::before {
+  background: var(--tone-emerald);
+}
+
+.volBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 8rem;
+  margin-top: 0.4rem;
+}
+
+.volCol {
+  flex: 1 1 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  height: 100%;
+  min-width: 0;
+}
+
+.volBar {
+  flex: 1 1 0;
+  max-width: 0.5rem;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  min-height: 1px;
+}
+
+.volBar[data-series='resolved'] {
+  background: var(--tone-emerald);
+}

@@ -250,6 +250,46 @@ export async function setTicketStatus(
   })) as { ticket: TicketDto };
 }
 
+/** Read-only aggregates behind the Desk Analytics & SLA tab — see commsAnalyticsRepo. */
+export interface CommsAnalyticsDto {
+  window: { sinceDays: number; since: string };
+  totals: {
+    all: number;
+    open: number;
+    resolved: number;
+    closed: number;
+    overdue: number;
+    breached: number;
+  };
+  sla: {
+    firstResponseMet: number;
+    firstResponseMissed: number;
+    firstResponsePending: number;
+    avgResolutionHours: number | null;
+    avgFirstResponseHours: number | null;
+  };
+  byStatus: { key: string; count: number }[];
+  byPriority: { key: string; count: number }[];
+  byDepartment: { key: string | null; count: number }[];
+  /** Dense daily series over the window — every day present, zeros included. */
+  volume: { date: string; created: number; resolved: number }[];
+  topAssignees: { zohoUserId: string; name: string | null; open: number }[];
+}
+
+export async function getCommsAnalytics(
+  params: { kind?: TicketKind; department?: string; sinceDays?: number } = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<CommsAnalyticsDto> {
+  return (await request('GET', '/comms/analytics', {
+    query: {
+      ...(params.kind ? { kind: params.kind } : {}),
+      ...(params.department ? { department: params.department } : {}),
+      ...(params.sinceDays ? { sinceDays: params.sinceDays } : {}),
+    },
+    signal: options.signal,
+  })) as CommsAnalyticsDto;
+}
+
 /**
  * Change a ticket's priority. `expectedVersion` is mandatory: the server 409s a stale decision rather
  * than overwriting another agent's re-prioritisation.

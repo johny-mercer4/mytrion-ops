@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { actorZohoUserIdOf, commsThreadRepo } from '../../src/repos/commsThreadRepo.js';
 import { commsCatalogRepo } from '../../src/repos/commsCatalogRepo.js';
 import { commsDepartmentRepo } from '../../src/repos/commsDepartmentRepo.js';
+import { commsAnalyticsRepo } from '../../src/repos/commsAnalyticsRepo.js';
 import { commsEscalationRepo } from '../../src/repos/commsEscalationRepo.js';
 import { commsSettingsRepo } from '../../src/repos/commsSettingsRepo.js';
 import { commsTicketEventRepo } from '../../src/repos/commsTicketEventRepo.js';
@@ -505,6 +506,53 @@ describe('commsEscalationRepo — escalations are gated by the SAME thread filte
   it('clamps the list limit at both ends', () => {
     expect(commsEscalationRepo.buildListQuery(ctxOf(), { limit: 10_000 }).toSQL().params).toContain(200);
     expect(commsEscalationRepo.buildListQuery(ctxOf(), { limit: 0 }).toSQL().params).toContain(1);
+  });
+});
+
+describe('commsAnalyticsRepo.buildScalarQuery — the dashboard counts what the queue can see', () => {
+  // Every analytics query shares this builder's baseWhere + join, so the gate proven here holds for
+  // all of them: an unfiltered dashboard would leak counts of tickets the agent may never open.
+  const analyticsSql = (ctx: TenantContext, filter = {}) =>
+    commsAnalyticsRepo.buildScalarQuery(ctx, filter).toSQL();
+
+  it('binds the caller tenant and never a second one', () => {
+    const { sql, params } = analyticsSql(ctxOf());
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('CARRIES THE THREAD READER FILTER — both arms, the same gate as the ticket list', () => {
+    const { sql, params } = analyticsSql(ctxOf({ departments: ['customer-service'] }));
+    expect(sql).toContain('exists');
+    expect(params).toContain('worker');
+    expect(params).toContain('left');
+    expect(params).toContain('42');
+    expect(sql).toContain(' or ');
+    expect(params).toContain('customer-service');
+  });
+
+  it('an empty department grant collapses the department arm to false, not to "no filter"', () => {
+    const { sql, params } = analyticsSql(ctxOf({ departments: [] }));
+    expect(sql).toContain('false');
+    expect(sql).toContain('exists'); // own tickets still counted
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('a department filter NARROWS inside the grant — it never replaces the reader filter', () => {
+    const { sql, params } = analyticsSql(ctxOf({ departments: ['sales'] }), {
+      department: 'customer-service',
+    });
+    expect(sql).toContain('exists');
+    expect(params).toContain('sales');
+    expect(params).toContain('customer-service');
+  });
+
+  it('a different tenant produces the same SQL with a different binding', () => {
+    const a = analyticsSql(ctxOf({ tenantId: 'octane' }));
+    const b = analyticsSql(ctxOf({ tenantId: OTHER_TENANT }));
+    expect(a.sql).toBe(b.sql);
+    expect(b.params).not.toContain('octane');
   });
 });
 
