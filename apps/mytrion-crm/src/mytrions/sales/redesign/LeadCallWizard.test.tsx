@@ -9,6 +9,8 @@ import type { RingCentralCallEvent } from '@/components/ringcentral/ringcentralE
 const hoisted = vi.hoisted(() => ({
   cb: null as null | ((ev: RingCentralCallEvent) => void),
   updateLead: vi.fn(async () => ({ id: '555', updatedFields: ['Status'] })),
+  // Returns null → lead not in a Blueprint → wizard shows all OUTCOME_OPTIONS.
+  getLeadBlueprint: vi.fn(async () => null),
   invalidate: vi.fn(),
   leads: [{ id: '555', contact: 'Jane Trucker', company: 'JT LLC', phone: '+15551234567' }] as Array<{
     id: string;
@@ -28,7 +30,7 @@ vi.mock('@/components/ringcentral/ringcentralEvents', () => ({
   },
 }));
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
-vi.mock('@/api/dataCenter', () => ({ updateLead: hoisted.updateLead }));
+vi.mock('@/api/dataCenter', () => ({ updateLead: hoisted.updateLead, getLeadBlueprint: hoisted.getLeadBlueprint }));
 vi.mock('./dcCache', () => ({
   readDcCache: () => ({ data: hoisted.leads, ts: 0 }),
   invalidateDcCache: hoisted.invalidate,
@@ -47,6 +49,8 @@ function fireCall(ev: Partial<RingCentralCallEvent>) {
 
 beforeEach(() => {
   hoisted.updateLead.mockClear();
+  hoisted.getLeadBlueprint.mockClear();
+  hoisted.getLeadBlueprint.mockResolvedValue(null); // reset: null = no Blueprint, show all outcomes
   hoisted.invalidate.mockClear();
   pushToast.mockClear();
   // Default cached lead has no status → treated as "unknown" (wizard opens, nothing pre-selected).
@@ -138,7 +142,8 @@ describe('LeadCallWizardHost', () => {
     const saveBtn = screen.getByRole('button', { name: /save status/i });
     expect(saveBtn).toBeDisabled(); // nothing picked yet
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Unqualified' }));
+    // Wait for blueprint fetch to complete (loading → picker visible).
+    fireEvent.click(await screen.findByRole('radio', { name: 'Unqualified' }));
     // Reason group now shown, submit still blocked until a reason is chosen.
     expect(screen.getByRole('radio', { name: 'No response' })).toBeInTheDocument();
     expect(saveBtn).toBeDisabled();
@@ -162,7 +167,7 @@ describe('LeadCallWizardHost', () => {
     render(<LeadCallWizardHost pushToast={pushToast} />);
     fireCall({ leadId: '555' });
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByRole('radio', { name: 'Interested' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Interested' }));
     const saveBtn = screen.getByRole('button', { name: /save status/i });
     expect(saveBtn).not.toBeDisabled();
     fireEvent.click(saveBtn);
@@ -177,7 +182,7 @@ describe('LeadCallWizardHost', () => {
     fireCall({ leadId: '555' });
     await screen.findByRole('dialog');
     // Outcomes are offered; call-number statuses are automatic (never in the picker) and nothing preset.
-    expect(screen.getByRole('radio', { name: 'Interested' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: 'Interested' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Second Call' })).toBeNull();
     expect(screen.getByRole('button', { name: /save status/i })).toBeDisabled(); // nothing picked yet
     fireEvent.click(screen.getByRole('radio', { name: 'Interested' }));
@@ -192,7 +197,7 @@ describe('LeadCallWizardHost', () => {
     render(<LeadCallWizardHost pushToast={pushToast} />);
     fireCall({ leadId: '555' });
     await screen.findByRole('dialog');
-    expect(screen.getByRole('radio', { name: 'Interested' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: 'Interested' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'First Call' })).toBeNull();
   });
 
