@@ -27,7 +27,7 @@ import './array.css';
 const PAGE_SIZE = 50;
 const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 45 + 34}px`;
 
-export function CollectionArray() {
+export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) => void }) {
   const [period, setPeriod] = useState('all');
   const [status, setStatus] = useState('all');
   const [agency, setAgency] = useState('all');
@@ -146,7 +146,15 @@ export function CollectionArray() {
     [],
   );
 
-  if (openId) return <ArrayDetail reportId={openId} onBack={() => setOpenId(null)} />;
+  if (openId) {
+    return (
+      <ArrayDetail
+        reportId={openId}
+        onBack={() => setOpenId(null)}
+        {...(onOpenCase ? { onOpenCase } : {})}
+      />
+    );
+  }
 
   return (
     <div className="cc-list" data-stale={stale ? 'true' : undefined}>

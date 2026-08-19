@@ -216,7 +216,7 @@ function QueueBody({
             <th scope="col">State</th>
             <th scope="col">Blocking</th>
             <th scope="col" className="ar-end">
-              <span className="ds-sr-only">Action</span>
+              <span className="co-sr">Action</span>
             </th>
           </tr>
         </thead>

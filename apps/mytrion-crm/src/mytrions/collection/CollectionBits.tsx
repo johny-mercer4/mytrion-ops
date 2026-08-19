@@ -72,11 +72,16 @@ export function AgeCell({ days, bands }: { days: number; bands?: readonly number
 }
 
 /**
- * RECOVERY BAR — one invoiced total split three ways.
+ * RECOVERY BAR — how much of one invoiced total has come back.
  *
- * Scheduled-on-plan is NOT recovered and never shares the paid colour: money a debtor has agreed
- * to pay and money that has arrived are different facts, and the whole reason this bar exists is
- * that reading them off three separate figures made people subtract by hand.
+ * The remainder is the TRACK, not a third filled segment. Drawing "outstanding" as its own
+ * coloured band meant a case with nothing recovered rendered as a full-width dull red slab: the
+ * loudest element on the page, saying only that the debt exists — which the big figure beside it
+ * already said. As a track, an empty bar reads instantly as "nothing yet", and every pixel of
+ * colour on it is money that actually came back.
+ *
+ * Scheduled-on-plan is drawn separately and never shares the paid colour: money a debtor has
+ * agreed to pay is not money that has arrived.
  */
 export function RecoveryBar({
   invoiced,
@@ -94,17 +99,22 @@ export function RecoveryBar({
   const total = Math.max(invoiced, paid + scheduled, 1);
   const pct = (n: number): string => `${Math.max(0, Math.min(100, (n / total) * 100)).toFixed(1)}%`;
   const outstanding = Math.max(0, invoiced - paid - scheduled);
+  const recoveredPct = Math.round((paid / total) * 100);
   return (
     <div className="co-recovery">
-      <div
-        className="co-recbar"
-        style={{ height }}
-        role="img"
-        aria-label={`${money(paid)} paid, ${money(scheduled)} scheduled, ${money(outstanding)} outstanding of ${money(invoiced)} invoiced`}
-      >
-        <i data-part="paid" style={{ width: pct(paid) }} />
-        <i data-part="plan" style={{ width: pct(scheduled) }} />
-        <i data-part="open" style={{ width: pct(outstanding) }} />
+      <div className="co-recbar-row">
+        <div
+          className="co-recbar"
+          style={{ height }}
+          role="img"
+          aria-label={`${money(paid)} paid and ${money(scheduled)} scheduled of ${money(invoiced)} invoiced — ${money(outstanding)} outstanding`}
+        >
+          <i data-part="paid" style={{ width: pct(paid) }} />
+          <i data-part="plan" style={{ width: pct(scheduled) }} />
+        </div>
+        <span className="co-recbar-pct num" data-zero={paid <= 0 ? 'true' : undefined}>
+          {recoveredPct}% back
+        </span>
       </div>
       {legend ? (
         <div className="co-legend">
@@ -118,7 +128,7 @@ export function RecoveryBar({
           </span>
           <span>
             <i data-part="open" />
-            Unscheduled <b className="num">{money(outstanding)}</b>
+            Outstanding <b className="num">{money(outstanding)}</b>
           </span>
         </div>
       ) : null}

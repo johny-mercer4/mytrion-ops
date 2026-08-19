@@ -77,7 +77,7 @@ export default function CollectionMytrion() {
               <CollectionCases openCaseId={openCaseId} onOpenCase={setOpenCaseId} />
             ) : null}
             {view === 'queue' ? <PlacementQueue onOpenCase={openCase} /> : null}
-            {view === 'array' ? <CollectionArray /> : null}
+            {view === 'array' ? <CollectionArray onOpenCase={openCase} /> : null}
           </div>
         </ToastProvider>
       </MytrionShell>

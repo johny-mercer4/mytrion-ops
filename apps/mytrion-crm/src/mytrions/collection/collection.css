@@ -392,15 +392,23 @@
   font-weight: var(--fw-bold);
 }
 
-/* RECOVERY BAR */
+/* RECOVERY BAR — the remainder is the TRACK. See the note on the component. */
 .co-root .co-recovery {
   display: flex;
   flex-direction: column;
   gap: var(--space-2_5);
   min-width: 0;
 }
+.co-root .co-recbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
 .co-root .co-recbar {
   display: flex;
+  flex: 1;
+  min-width: 0;
   border-radius: var(--radius-full);
   overflow: hidden;
   background: var(--field);
@@ -411,9 +419,24 @@
   height: 100%;
   transition: width var(--dur-base) var(--ease-standard);
 }
+.co-root .co-recbar-pct {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--success);
+}
+/* Nothing back yet is a fact, not an alarm — it reads muted rather than red. */
+.co-root .co-recbar-pct[data-zero='true'] {
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
 .co-root [data-part='paid'] { background: var(--success); }
 .co-root [data-part='plan'] { background: color-mix(in srgb, var(--success) 40%, transparent); }
-.co-root [data-part='open'] { background: color-mix(in srgb, var(--danger) 45%, transparent); }
+/* Only ever a legend swatch now — it names what the empty part of the track means. */
+.co-root .co-legend [data-part='open'] {
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
 
 .co-root .co-legend {
   display: flex;
@@ -519,4 +542,19 @@
 .co-root .co-fact-v {
   font-size: var(--text-sm);
   color: var(--text-primary);
+}
+
+/* Visually hidden, still announced. There is no app-wide utility for this — every ds component
+   redefines the clip pattern locally — so the module gets one rather than three. */
+.co-root .co-sr,
+[data-mytrion='collection'] .co-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

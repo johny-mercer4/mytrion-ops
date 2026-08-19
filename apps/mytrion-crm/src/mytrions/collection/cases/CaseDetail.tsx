@@ -193,7 +193,7 @@ export function CaseDetail({
           <CaseTimeline
             caseId={caseId}
             reloadKey={reloadKey}
-            onLogContact={() => actions.openContact(row)}
+            onLogContact={(channel) => actions.openContact(row, channel)}
           />
 
           <section className="cc-pane">

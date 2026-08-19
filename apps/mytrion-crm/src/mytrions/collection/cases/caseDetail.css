@@ -446,3 +446,88 @@
     width: 100%;
   }
 }
+
+/* ── Fact strip ───────────────────────────────────────────────────────────
+   RESTORED. `.cc-fact` and the banner block below lost their rules when this file was split out
+   of cases.css, which is why the header read "CARRIER5759661MC / DOTDOT 3472965" — label and
+   value with nothing between them. The hairline between facts is new: at five facts on one line
+   the eye needs a boundary, and a wider gap alone was not enough. */
+[data-mytrion='collection'] .cc-case-facts {
+  gap: var(--space-4);
+  row-gap: var(--space-3);
+}
+[data-mytrion='collection'] .cc-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-fact + .cc-fact {
+  padding-inline-start: var(--space-4);
+  border-inline-start: 1px solid var(--row-line);
+}
+[data-mytrion='collection'] .cc-fact-v {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+[data-mytrion='collection'] .cc-fact-v[data-empty='true'] {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
+/* ── Banners ──────────────────────────────────────────────────────────────
+   RESTORED with the rest. These carry every load failure in the module plus the closed-case
+   notice, so unstyled they were the least visible and most important thing on the page. */
+[data-mytrion='collection'] .cc-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+[data-mytrion='collection'] .cc-banner[data-tone='danger'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+}
+[data-mytrion='collection'] .cc-banner[data-tone='success'] {
+  border-color: var(--intent-success-bd);
+  background: var(--intent-success-bg);
+}
+[data-mytrion='collection'] .cc-banner-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-banner-body {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .cc-banner button {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
+[data-mytrion='collection'] .cc-compose-label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: none;
+}
+/* A sentence, not a full EmptyState block: an empty feed on a case nobody has worked yet is the
+   NORMAL state, and a centred icon-and-heading treatment made it the loudest thing on the record. */
+[data-mytrion='collection'] .cc-tl-empty {
+  margin: 0;
+  padding: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-muted);
+}

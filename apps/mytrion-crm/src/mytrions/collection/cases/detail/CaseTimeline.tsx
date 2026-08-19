@@ -9,8 +9,14 @@
  * case's feed is bounded (the API caps at 200) and the tabs are a reading aid, not a query.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Badge, Button, EmptyState, Icon, Skeleton, SkeletonRegion, Tabs, type IconName } from '@/ds';
-import { listActivity, type ActivityKind, type ActivityRow } from '@/api/collectionDesk';
+import { Badge, Button, Icon, Skeleton, SkeletonRegion, Tabs, type IconName } from '@/ds';
+import {
+  CONTACT_CHANNELS,
+  listActivity,
+  type ActivityKind,
+  type ActivityRow,
+  type ContactChannel,
+} from '@/api/collectionDesk';
 import { useCachedLoad } from '../../../_shared/swrCache';
 import { LOCALE, moneyExact } from '../../collectionFormat';
 
@@ -54,6 +60,14 @@ function when(iso: string): string {
   });
 }
 
+/** One button per channel: the collector picks how they reached out, not a generic "log". */
+const CHANNEL_BUTTON: Record<ContactChannel, { label: string; icon: IconName }> = {
+  call: { label: 'Call', icon: 'call' },
+  email: { label: 'Email', icon: 'mail' },
+  sms: { label: 'SMS', icon: 'chat' },
+  letter: { label: 'Letter', icon: 'description' },
+};
+
 export function CaseTimeline({
   caseId,
   reloadKey,
@@ -62,7 +76,7 @@ export function CaseTimeline({
   caseId: string;
   /** Bumped by the parent after any write, so the feed re-fetches without owning the mutations. */
   reloadKey: number;
-  onLogContact: () => void;
+  onLogContact: (channel: ContactChannel) => void;
 }) {
   const [filter, setFilter] = useState('all');
   const load = useCallback(() => listActivity(caseId, { limit: 100 }), [caseId]);
@@ -89,12 +103,20 @@ export function CaseTimeline({
       </header>
 
       <div className="cc-compose">
-        <Button variant="secondary" size="sm" icon="call" onClick={onLogContact}>
-          Log a contact
-        </Button>
+        <span className="cc-compose-label">Log</span>
+        {CONTACT_CHANNELS.map((c) => (
+          <Button
+            key={c}
+            variant="secondary"
+            size="sm"
+            icon={CHANNEL_BUTTON[c].icon}
+            onClick={() => onLogContact(c)}
+          >
+            {CHANNEL_BUTTON[c].label}
+          </Button>
+        ))}
         <span className="cc-compose-hint">
-          Every call, email and letter — this is what the worklist reads to decide a case has gone
-          quiet.
+          This is what the worklist reads to decide a case has gone quiet.
         </span>
       </div>
 
@@ -103,16 +125,11 @@ export function CaseTimeline({
           <Skeleton variant="rect" height="180px" radius="panel" />
         </SkeletonRegion>
       ) : items.length === 0 ? (
-        <EmptyState
-          size="panel"
-          icon="history"
-          title={filter === 'all' ? 'Nothing logged yet' : 'Nothing of this kind yet'}
-          description={
-            filter === 'all'
-              ? 'Log the first contact attempt and it appears here, newest first.'
-              : 'Switch back to All to see the rest of the record.'
-          }
-        />
+        <p className="cc-tl-empty">
+          {filter === 'all'
+            ? 'Nothing logged yet — the first contact attempt appears here, newest first.'
+            : 'Nothing of this kind yet. Switch back to All for the rest of the record.'}
+        </p>
       ) : (
         <ol className="cc-tl">
           {items.map((row) => (

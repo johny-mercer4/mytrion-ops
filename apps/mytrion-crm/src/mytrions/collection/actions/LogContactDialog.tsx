@@ -36,17 +36,20 @@ const OUTCOME_LABEL: Record<ContactOutcome, string> = {
 
 export function LogContactDialog({
   row,
+  channel: initialChannel = 'call',
   open,
   onClose,
   onDone,
 }: {
   row: CollectionCaseRow;
+  /** Pre-selected from the button that opened this — the composer offers one per channel. */
+  channel?: ContactChannel;
   open: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
   const { toast } = useToast();
-  const [channel, setChannel] = useState<ContactChannel>('call');
+  const [channel, setChannel] = useState<ContactChannel>(initialChannel);
   const [outcome, setOutcome] = useState<ContactOutcome>('reached');
   const [note, setNote] = useState('');
   const [contactName, setContactName] = useState(row.debtorFullName ?? '');

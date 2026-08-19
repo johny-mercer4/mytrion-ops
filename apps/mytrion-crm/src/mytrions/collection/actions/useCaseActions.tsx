@@ -8,7 +8,7 @@
  */
 import { useState } from 'react';
 import type { CollectionCaseRow } from '@/api/collection';
-import type { PaymentPlan, PlacementRow } from '@/api/collectionDesk';
+import type { ContactChannel, PaymentPlan, PlacementRow } from '@/api/collectionDesk';
 import { CloseCaseDialog } from './CloseCaseDialog';
 import { LogContactDialog } from './LogContactDialog';
 import { PaymentPlanDialog } from './PaymentPlanDialog';
@@ -20,6 +20,8 @@ type ActionKind = 'contact' | 'plan' | 'placement' | 'close';
 interface OpenState {
   kind: ActionKind;
   row: CollectionCaseRow;
+  /** Which channel the contact dialog opens on — the button the collector actually pressed. */
+  channel: ContactChannel;
   /** Only the plan dialog needs it, and only to say what it is replacing. */
   plan: PaymentPlan | null;
   /** Only the placement dialog needs it, and only when the caller has the queue's verdict. */
@@ -27,7 +29,7 @@ interface OpenState {
 }
 
 export interface CaseActions {
-  openContact: (row: CollectionCaseRow) => void;
+  openContact: (row: CollectionCaseRow, channel?: ContactChannel) => void;
   openPlan: (row: CollectionCaseRow, existing?: PaymentPlan | null) => void;
   openPlacement: (row: CollectionCaseRow, placement?: PlacementRow | null) => void;
   openClose: (row: CollectionCaseRow) => void;
@@ -39,10 +41,10 @@ export interface CaseActions {
 export function useCaseActions({ onDone }: { onDone: () => void }): CaseActions {
   const [state, setState] = useState<OpenState | null>(null);
   const open = (kind: ActionKind, row: CollectionCaseRow, extra: Partial<OpenState> = {}): void => {
-    setState({ kind, row, plan: null, placement: null, ...extra });
+    setState({ kind, row, plan: null, placement: null, channel: 'call', ...extra });
   };
   return {
-    openContact: (row) => open('contact', row),
+    openContact: (row, channel = 'call') => open('contact', row, { channel }),
     openPlan: (row, existing = null) => open('plan', row, { plan: existing }),
     openPlacement: (row, placement = null) => open('placement', row, { placement }),
     openClose: (row) => open('close', row),
@@ -66,7 +68,7 @@ export function CaseActionDialogs({ actions }: { actions: CaseActions }) {
   const key = `${state.kind}:${state.row.id}`;
   switch (state.kind) {
     case 'contact':
-      return <LogContactDialog key={key} {...shared} />;
+      return <LogContactDialog key={`${key}:${state.channel}`} channel={state.channel} {...shared} />;
     case 'plan':
       return <PaymentPlanDialog key={key} existing={state.plan} {...shared} />;
     case 'placement':
