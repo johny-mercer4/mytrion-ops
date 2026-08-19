@@ -15,12 +15,13 @@
  * the header now offers the case.
  */
 import { useCallback } from 'react';
-import { Badge, Button, Icon, Skeleton, SkeletonRegion } from '@/ds';
+import { Badge, Button, Icon } from '@/ds';
 import { getArrayReport, listCollectionCases } from '@/api/collection';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { fmtDate, moneyExact } from '../collectionFormat';
 import { accountStatusLabel, reportInitials, reportName } from './arrayModel';
 import { PaymentHistoryStrip } from './PaymentHistoryStrip';
+import { PaneSkeleton, RecordHeaderSkeleton } from '../CollectionSkeletons';
 import '../cases/cases.css';
 import '../cases/caseDetail.css';
 import './array.css';
@@ -81,10 +82,13 @@ export function ArrayDetail({
         ) : null}
 
         {feed.loading && !row ? (
-          <SkeletonRegion busy label="Loading the Array report">
-            <Skeleton variant="rect" height="112px" radius="panel" />
-            <Skeleton variant="rect" height="220px" radius="panel" />
-          </SkeletonRegion>
+          <>
+            <RecordHeaderSkeleton label="Loading the Array report" band="180px" />
+            <div className="ar-detail-cols">
+              <PaneSkeleton rows={5} />
+              <PaneSkeleton rows={5} />
+            </div>
+          </>
         ) : row ? (
           <>
             <div className="cc-case-identity">

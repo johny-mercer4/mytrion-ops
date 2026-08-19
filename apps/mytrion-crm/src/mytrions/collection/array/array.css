@@ -207,3 +207,30 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The 12-month scan for the list. No codes and no legend — it answers "has this ever gone bad",
+   and the full 24-month read with the characters is one click away on the record. */
+[data-mytrion='collection'] .ar-history-mini {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  cursor: default;
+}
+[data-mytrion='collection'] .ar-history-mini i {
+  width: 6px;
+  height: 14px;
+  border-radius: 1px;
+  flex: none;
+  background: var(--border-strong);
+  opacity: 0.45;
+}
+[data-mytrion='collection'] .ar-history-mini i[data-tone='current'] { background: var(--success); opacity: 1; }
+[data-mytrion='collection'] .ar-history-mini i[data-tone='late'] { background: var(--warning); opacity: 1; }
+[data-mytrion='collection'] .ar-history-mini i[data-tone='severe'] { background: var(--ember); opacity: 1; }
+[data-mytrion='collection'] .ar-history-mini i[data-tone='derogatory'] { background: var(--danger); opacity: 1; }
+
+/* The Metro 2 code beside its label — the code is what a dispute cites. */
+[data-mytrion='collection'] .ar-code {
+  opacity: 0.7;
+  margin-inline-end: 2px;
+}

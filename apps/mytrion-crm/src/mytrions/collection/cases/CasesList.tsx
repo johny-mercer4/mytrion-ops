@@ -23,11 +23,11 @@ import { Badge, DataTable, EmptyState, Pagination, type DataColumn } from '@/ds'
 import type { CollectionCaseRow } from '@/api/collection';
 import type { CaseDeskInfo } from '@/api/collectionDesk';
 import { AgeCell, LastTouch, PromiseChip } from '../CollectionBits';
+import { TableSkeleton } from '../CollectionSkeletons';
 import { fmtDate, money } from '../collectionFormat';
 import { caseInitials, caseName, stageChip, stageLabel } from './casesModel';
 
 const PAGE_SIZE = 15;
-const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 66 + 37}px`;
 
 /** Share of the invoiced total already recovered. Null when nothing was ever invoiced. */
 function recoveredShare(row: CollectionCaseRow): number | null {
@@ -174,6 +174,24 @@ export function CasesList({
     [desk],
   );
 
+  if (loading && rows.length === 0) {
+    return (
+      <TableSkeleton
+        label="Loading collection cases"
+        rows={PAGE_SIZE}
+        cols={[
+          { kind: 'ident', w: '22%' },
+          { kind: 'chip', w: '13%' },
+          { kind: 'num', w: '12%' },
+          { kind: 'stack', w: '13%' },
+          { kind: 'meter', w: '10%' },
+          { kind: 'text', w: '9%', chars: 5 },
+          { kind: 'chip', w: '21%' },
+        ]}
+      />
+    );
+  }
+
   if (!loading && total === 0) {
     return (
       <EmptyState
@@ -198,8 +216,6 @@ export function CasesList({
         columns={columns}
         layout="fixed"
         density="comfortable"
-        loading={loading}
-        {...(loading && rows.length === 0 ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } } : {})}
         onRowActivate={(row) => onOpen(row.id)}
         empty={filtered ? 'Nothing matches. Clear the filters.' : 'Nothing in this state.'}
       />

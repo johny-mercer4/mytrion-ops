@@ -11,7 +11,7 @@
  * subset while claiming the whole book's numbers.
  */
 import { useCallback, useState } from 'react';
-import { Button, EmptyState, ErrorState, Input, Skeleton, SkeletonRegion, Tabs } from '@/ds';
+import { Button, EmptyState, ErrorState, Input, Tabs } from '@/ds';
 import {
   getDeskSummary,
   getWorklist,
@@ -25,6 +25,7 @@ import { useDebounced } from '../../_shared/useDebounced';
 import { money } from '../collectionFormat';
 import type { CollectionTabId } from '../collectionNav';
 import { CaseActionDialogs, useCaseActions } from '../actions/useCaseActions';
+import { KpiRowSkeleton, WorklistSkeleton } from '../CollectionSkeletons';
 import { WorklistRow } from './WorklistRow';
 import { LANES } from './worklistCopy';
 import './today.css';
@@ -107,12 +108,16 @@ export function CollectionToday({
         }
       />
 
-      <KpiGrid>
-        <KpiTile label="Needs an action" value={String(totalOpen)} />
-        <KpiTile label="Open cases" value={String(summary.data?.openCases ?? '—')} />
-        <KpiTile label="Remaining debt" value={money(summary.data?.remainingDebt)} />
-        <KpiTile label="Recovered MTD" value={money(summary.data?.recoveredMtd)} />
-      </KpiGrid>
+      {summary.data && data ? (
+        <KpiGrid>
+          <KpiTile label="Needs an action" value={String(totalOpen)} />
+          <KpiTile label="Open cases" value={summary.data.openCases.toLocaleString('en-US')} />
+          <KpiTile label="Remaining debt" value={money(summary.data.remainingDebt)} />
+          <KpiTile label="Recovered MTD" value={money(summary.data.recoveredMtd)} />
+        </KpiGrid>
+      ) : (
+        <KpiRowSkeleton label="Loading the recovery figures" />
+      )}
 
       {data?.scanTruncated ? (
         <div className="cc-banner" data-tone="danger" role="alert">
@@ -166,13 +171,7 @@ function WorklistBody({
   onAct: (item: WorklistItem) => void;
   onOpenTab: (tab: CollectionTabId) => void;
 }) {
-  if (feed.loading && !feed.data) {
-    return (
-      <SkeletonRegion busy label="Loading the worklist">
-        <Skeleton variant="rect" height="420px" radius="panel" />
-      </SkeletonRegion>
-    );
-  }
+  if (feed.loading && !feed.data) return <WorklistSkeleton />;
   if (feed.error && !feed.data) {
     return (
       <ErrorState

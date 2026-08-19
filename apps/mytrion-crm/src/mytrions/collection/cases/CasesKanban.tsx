@@ -5,10 +5,11 @@
  * one does: the MONEY in each lane (a count of cases says nothing about where recovery is stuck)
  * and each card's last touch (a card nobody has touched is the whole point of looking at a board).
  */
-import { Badge, EmptyState, Skeleton, SkeletonRegion } from '@/ds';
+import { Badge, EmptyState } from '@/ds';
 import type { CollectionCaseRow } from '@/api/collection';
 import type { CaseDeskInfo } from '@/api/collectionDesk';
 import { LastTouch, PromiseChip } from '../CollectionBits';
+import { BoardSkeleton } from '../CollectionSkeletons';
 import { money } from '../collectionFormat';
 import {
   BOARD_LANES,
@@ -47,19 +48,7 @@ export function CasesKanban({
   onOpen: (id: string) => void;
 }) {
   const lanes = hideClosedLane ? BOARD_LANES.filter((l) => l.id !== 'closed') : BOARD_LANES;
-  if (loading && rows.length === 0) {
-    return (
-      <div className="cc-board">
-        <SkeletonRegion busy label="Loading the collection board">
-          {lanes.map((lane) => (
-            <section key={lane.id} className="cc-col" aria-hidden="true">
-              <Skeleton variant="rect" height="320px" radius="panel" />
-            </section>
-          ))}
-        </SkeletonRegion>
-      </div>
-    );
-  }
+  if (loading && rows.length === 0) return <BoardSkeleton lanes={lanes.length} />;
 
   if (!loading && rows.length === 0) {
     return (

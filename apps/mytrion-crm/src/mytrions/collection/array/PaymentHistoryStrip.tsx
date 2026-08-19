@@ -14,11 +14,32 @@ import { parsePaymentHistory, summarisePaymentHistory } from './paymentHistory';
 export function PaymentHistoryStrip({
   profile,
   reportPeriod,
+  /** List mode: the most recent 12 months, no heading, no legend, no codes — a scan, not a read. */
+  compact = false,
 }: {
   profile: string | null;
   reportPeriod: string | null;
+  compact?: boolean;
 }) {
   const months = parsePaymentHistory(profile, reportPeriod);
+
+  if (compact) {
+    if (months.length === 0) return <span className="cc-muted">—</span>;
+    const recent = months.slice(0, 12);
+    const { worst, reported } = summarisePaymentHistory(months);
+    const read =
+      reported === 0
+        ? 'No payment history reported'
+        : `Worst in ${months.length} months: ${worst?.label} (${worst?.month})`;
+    return (
+      <span className="ar-history-mini" title={read} role="img" aria-label={read}>
+        {recent.map((m) => (
+          <i key={m.index} data-tone={m.tone} />
+        ))}
+      </span>
+    );
+  }
+
   if (months.length === 0) {
     return (
       <div className="ar-history">

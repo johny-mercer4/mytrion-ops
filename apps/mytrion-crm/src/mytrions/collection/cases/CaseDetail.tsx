@@ -13,14 +13,18 @@ import {
   EmptyState,
   ErrorState,
   Pagination,
-  Skeleton,
-  SkeletonRegion,
   type DataColumn,
 } from '@/ds';
 import { getCollectionCase, listCollectionInvoices, type CollectionInvoiceRow } from '@/api/collection';
 import { getCaseDesk, reopenCase, setStage } from '@/api/collectionDesk';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { CaseActionDialogs, useCaseActions } from '../actions/useCaseActions';
+import {
+  PaneSkeleton,
+  RecordHeaderSkeleton,
+  TableSkeleton,
+  TimelineSkeleton,
+} from '../CollectionSkeletons';
 import { fmtDate, moneyExact } from '../collectionFormat';
 import { CaseHeader } from './detail/CaseHeader';
 import { CaseRail } from './detail/CaseRail';
@@ -160,10 +164,18 @@ export function CaseDetail({
   if (!row) {
     return (
       <div className="cc-case">
-        <SkeletonRegion busy label="Loading the collection case">
-          <Skeleton variant="rect" height="180px" radius="panel" />
-          <Skeleton variant="rect" height="360px" radius="panel" />
-        </SkeletonRegion>
+        <RecordHeaderSkeleton label="Loading the collection case" band="120px" />
+        <div className="cc-case-body">
+          <div className="cc-case-main">
+            <div className="cc-pane">
+              <TimelineSkeleton rows={4} />
+            </div>
+          </div>
+          <div className="cc-rail">
+            <PaneSkeleton rows={4} />
+            <PaneSkeleton rows={3} />
+          </div>
+        </div>
       </div>
     );
   }
@@ -205,9 +217,19 @@ export function CaseDetail({
               </span>
             </header>
             {kind === 'loading' ? (
-              <SkeletonRegion busy label="Loading invoices">
-                <Skeleton variant="rect" height="160px" radius="panel" />
-              </SkeletonRegion>
+              <TableSkeleton
+                label="Loading invoices"
+                rows={5}
+                density="compact"
+                cols={[
+                  { kind: 'stack', w: '22%' },
+                  { kind: 'text', w: '16%', chars: 9 },
+                  { kind: 'num', w: '15%' },
+                  { kind: 'num', w: '15%' },
+                  { kind: 'num', w: '15%' },
+                  { kind: 'text', w: '13%', chars: 8 },
+                ]}
+              />
             ) : kind === 'error' ? (
               <ErrorState
                 size="panel"

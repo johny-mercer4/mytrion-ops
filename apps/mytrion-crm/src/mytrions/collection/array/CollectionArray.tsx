@@ -17,15 +17,34 @@ import {
   type ArrayReportRow,
 } from '@/api/collection';
 import { PageHead, KpiGrid, KpiTile } from '../../_shared/page';
+import { KpiRowSkeleton, TableSkeleton } from '../CollectionSkeletons';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { fmtDate, money } from '../collectionFormat';
 import { ArrayDetail } from './ArrayDetail';
-import { accountStatusLabel, reportInitials, reportName } from './arrayModel';
+import { accountStatusLabel, reportAccountRef, reportInitials, reportName } from './arrayModel';
+import { PaymentHistoryStrip } from './PaymentHistoryStrip';
 import '../cases/cases.css';
 import './array.css';
 
 const PAGE_SIZE = 50;
-const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 45 + 34}px`;
+/** Rows to draw while loading — a screenful, not the whole page. */
+const SKELETON_ROWS = 12;
+
+/** The Metro 2 code decides the tint: derogatory statuses are not neutral facts. */
+function statusIntent(code: string): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (['13', '78', '84'].includes(code)) return 'success';
+  if (['71', '80', '83', '93'].includes(code)) return 'danger';
+  if (code === '11') return 'neutral';
+  return 'warning';
+}
+
+/** A zero is a fact, not a figure — it recedes so the amounts that matter carry the column. */
+function Money({ value, strong }: { value: string | null; strong?: boolean }) {
+  const zero = !value || Number(value) === 0;
+  return (
+    <span className={`num${zero ? ' cc-muted' : strong ? ' cc-strong' : ''}`}>{money(value)}</span>
+  );
+}
 
 export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) => void }) {
   const [period, setPeriod] = useState('all');
@@ -82,7 +101,7 @@ export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) 
         id: 'name',
         header: 'Carrier',
         rowHeader: true,
-        width: '26%',
+        width: '22%',
         mobile: 'primary',
         cell: (row) => (
           <span className="cc-ident">
@@ -95,48 +114,69 @@ export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) 
               </span>
               <span className="cc-ident-sub">
                 {row.carrierId}
-                {row.customerAccountNumber ? ` · ${row.customerAccountNumber}` : ''}
+                {reportAccountRef(row) ? ` · ${reportAccountRef(row)}` : ''}
               </span>
             </span>
           </span>
         ),
       },
-      { id: 'period', header: 'Period', width: '10%', cell: (row) => row.reportPeriod },
+      { id: 'period', header: 'Period', width: '7%', cell: (row) => <span className="num">{row.reportPeriod}</span> },
       {
         id: 'status',
         header: 'Account',
         width: '14%',
         mobile: 'secondary',
-        cell: (row) => accountStatusLabel(row.accountStatus),
+        cell: (row) =>
+          row.accountStatus ? (
+            <Badge intent={statusIntent(row.accountStatus)}>
+              <span className="num ar-code">{row.accountStatus}</span>
+              {accountStatusLabel(row.accountStatus)}
+            </Badge>
+          ) : (
+            <span className="cc-muted">—</span>
+          ),
+      },
+      {
+        id: 'history',
+        header: '12 mo',
+        width: '11%',
+        cell: (row) => (
+          <PaymentHistoryStrip
+            compact
+            profile={row.paymentHistoryProfile}
+            reportPeriod={row.reportPeriod}
+          />
+        ),
       },
       {
         id: 'balance',
         header: 'Balance',
-        width: '12%',
+        width: '11%',
         align: 'end',
-        cell: (row) => <span className="num">{money(row.currentBalance)}</span>,
+        cell: (row) => <Money value={row.currentBalance} />,
       },
       {
         id: 'past',
         header: 'Past due',
-        width: '12%',
+        width: '11%',
         align: 'end',
-        cell: (row) => <span className="num">{money(row.amountPastDue)}</span>,
+        cell: (row) => <Money value={row.amountPastDue} strong />,
       },
       {
         id: 'agency',
         header: 'Agency',
-        width: '14%',
-        cell: (row) => row.agencyName ?? '—',
+        width: '13%',
+        cell: (row) =>
+          row.agencyName ? row.agencyName : <span className="cc-muted">Unplaced</span>,
       },
       {
         id: 'dob',
         header: 'DOB',
-        width: '8%',
+        width: '11%',
         cell: (row) =>
           row.needsDobLookup ? (
             <Badge intent="warning" icon="warning">
-              Needs DOB
+              No DOB
             </Badge>
           ) : (
             fmtDate(row.dateOfBirth)
@@ -186,11 +226,15 @@ export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) 
         }
       />
 
-      <KpiGrid>
-        <KpiTile label="Tradelines" value={String(agg?.total ?? '—')} />
-        <KpiTile label="Need DOB" value={String(agg?.needsDob ?? '—')} />
-        <KpiTile label="With agency" value={String(agg?.withAgency ?? '—')} />
-      </KpiGrid>
+      {agg ? (
+        <KpiGrid>
+          <KpiTile label="Tradelines" value={agg.total.toLocaleString('en-US')} />
+          <KpiTile label="Need DOB" value={agg.needsDob.toLocaleString('en-US')} />
+          <KpiTile label="With agency" value={agg.withAgency.toLocaleString('en-US')} />
+        </KpiGrid>
+      ) : (
+        <KpiRowSkeleton count={3} label="Loading the Array snapshot totals" />
+      )}
 
       {feed.error && rows.length === 0 ? (
         <ErrorState
@@ -261,7 +305,23 @@ export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) 
         />
       </div>
 
-      {feed.error && rows.length === 0 ? null : !feed.loading && total === 0 ? (
+      {feed.loading && rows.length === 0 ? (
+        <TableSkeleton
+          label="Loading Array tradelines"
+          rows={SKELETON_ROWS}
+          density="compact"
+          cols={[
+            { kind: 'ident', w: '22%' },
+            { kind: 'text', w: '7%', chars: 6 },
+            { kind: 'chip', w: '14%' },
+            { kind: 'meter', w: '11%' },
+            { kind: 'num', w: '11%' },
+            { kind: 'num', w: '11%' },
+            { kind: 'text', w: '13%', chars: 10 },
+            { kind: 'text', w: '11%', chars: 8 },
+          ]}
+        />
+      ) : feed.error && rows.length === 0 ? null : !feed.loading && total === 0 ? (
         <EmptyState
           size="page"
           icon="inbox"
@@ -281,10 +341,6 @@ export function CollectionArray({ onOpenCase }: { onOpenCase?: (caseId: string) 
             columns={columns}
             layout="fixed"
             density="compact"
-            loading={feed.loading && rows.length === 0}
-            {...(feed.loading && rows.length === 0
-              ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } }
-              : {})}
             onRowActivate={(row) => setOpenId(row.id)}
             empty={filtered ? 'Nothing matches. Clear the filters.' : 'No tradelines in this snapshot.'}
           />

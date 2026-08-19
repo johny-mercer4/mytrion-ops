@@ -10,13 +10,14 @@
  * column beside them, and the legend at the foot fixes their order.
  */
 import { useCallback, useState } from 'react';
-import { Badge, Button, EmptyState, ErrorState, Input, Skeleton, SkeletonRegion, Tabs } from '@/ds';
+import { Badge, Button, EmptyState, ErrorState, Input, Tabs } from '@/ds';
 import { getPlacementQueue, type PlacementRow, type PlacementState } from '@/api/collectionDesk';
 import { getCollectionCase } from '@/api/collection';
 import { KpiGrid, KpiTile, PageHead } from '../../_shared/page';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { useDebounced } from '../../_shared/useDebounced';
 import { AgeCell, ReadinessDots } from '../CollectionBits';
+import { KpiRowSkeleton, TableSkeleton } from '../CollectionSkeletons';
 import { money } from '../collectionFormat';
 import { CaseActionDialogs, useCaseActions } from '../actions/useCaseActions';
 import './agency.css';
@@ -88,12 +89,16 @@ export function PlacementQueue({ onOpenCase }: { onOpenCase: (caseId: string) =>
         }
       />
 
-      <KpiGrid>
-        <KpiTile label="Ready to file" value={String(counts?.ready ?? '—')} />
-        <KpiTile label="Placeable value" value={money(data?.readyAmount)} />
-        <KpiTile label="Blocked on a field" value={String(counts?.blocked ?? '—')} />
-        <KpiTile label="Validation errors" value={String(counts?.error ?? '—')} />
-      </KpiGrid>
+      {counts && data ? (
+        <KpiGrid>
+          <KpiTile label="Ready to file" value={String(counts.ready)} />
+          <KpiTile label="Placeable value" value={money(data.readyAmount)} />
+          <KpiTile label="Blocked on a field" value={String(counts.blocked)} />
+          <KpiTile label="Validation errors" value={String(counts.error)} />
+        </KpiGrid>
+      ) : (
+        <KpiRowSkeleton label="Loading the placement totals" />
+      )}
 
       {counts && counts.error > 0 ? (
         <div className="cc-banner" data-tone="danger" role="alert">
@@ -169,9 +174,19 @@ function QueueBody({
 }) {
   if (feed.loading && !feed.data) {
     return (
-      <SkeletonRegion busy label="Loading the placement queue">
-        <Skeleton variant="rect" height="360px" radius="panel" />
-      </SkeletonRegion>
+      <TableSkeleton
+        label="Loading the placement queue"
+        rows={9}
+        cols={[
+          { kind: 'ident', w: '24%' },
+          { kind: 'num', w: '11%' },
+          { kind: 'meter', w: '9%' },
+          { kind: 'meter', w: '11%' },
+          { kind: 'chip', w: '14%' },
+          { kind: 'text', w: '23%', chars: 22 },
+          { kind: 'num', w: '8%', chars: 5 },
+        ]}
+      />
     );
   }
   if (feed.error && !feed.data) {

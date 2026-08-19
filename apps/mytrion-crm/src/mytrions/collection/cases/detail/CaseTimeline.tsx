@@ -9,7 +9,7 @@
  * case's feed is bounded (the API caps at 200) and the tabs are a reading aid, not a query.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Badge, Button, Icon, Skeleton, SkeletonRegion, Tabs, type IconName } from '@/ds';
+import { Badge, Button, Icon, Tabs, type IconName } from '@/ds';
 import {
   CONTACT_CHANNELS,
   listActivity,
@@ -18,6 +18,7 @@ import {
   type ContactChannel,
 } from '@/api/collectionDesk';
 import { useCachedLoad } from '../../../_shared/swrCache';
+import { TimelineSkeleton } from '../../CollectionSkeletons';
 import { LOCALE, moneyExact } from '../../collectionFormat';
 
 /** Tab → the kinds it shows. `all` is the default; the rest group the eight kinds into four reads. */
@@ -121,9 +122,7 @@ export function CaseTimeline({
       </div>
 
       {feed.loading && !feed.data ? (
-        <SkeletonRegion busy label="Loading the case activity">
-          <Skeleton variant="rect" height="180px" radius="panel" />
-        </SkeletonRegion>
+        <TimelineSkeleton rows={3} />
       ) : items.length === 0 ? (
         <p className="cc-tl-empty">
           {filter === 'all'
