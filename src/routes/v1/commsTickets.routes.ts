@@ -24,7 +24,8 @@ import {
   toTicketEventDto,
 } from '../../modules/comms/dto.js';
 import { createClientTicket } from '../../modules/comms/ticketService.js';
-import { NotFoundError } from '../../lib/errors.js';
+import { changeTicketStatus } from '../../modules/comms/ticketActions.js';
+import { AppError, NotFoundError } from '../../lib/errors.js';
 import { commsTicketEventRepo } from '../../repos/commsTicketEventRepo.js';
 import {
   commsTicketRepo,
@@ -194,5 +195,45 @@ export async function commsTicketsRoutes(app: FastifyInstance): Promise<void> {
     if (!row) throw new NotFoundError('Ticket not found.');
     const events = await commsTicketEventRepo.listByTicket(ctx, id);
     return { events: events.map(toTicketEventDto) };
+  });
+
+  /**
+   * Move a ticket's status — the agent action (resolve / close / reopen / put in progress). Gated by
+   * the same reader filter as the read (a non-readable id 404s), carries `expectedVersion` so a stale
+   * decision 409s instead of overwriting, and journals + broadcasts the transition.
+   */
+  app.post('/comms/tickets/:id/status', guard, async (request) => {
+    const ctx = requireInternal(request, 'Comms tickets');
+    const { id } = request.params as { id: string };
+    const body = z
+      .object({
+        toStatus: z.enum(TICKET_STATUSES),
+        expectedVersion: z.number().int().min(1),
+        comment: z.string().max(4000).optional(),
+      })
+      .parse(request.body);
+    const row = await commsTicketRepo.getForReader(ctx, id);
+    if (!row) throw new NotFoundError('Ticket not found.');
+    const updated = await changeTicketStatus(ctx, row.ticket, {
+      toStatus: body.toStatus,
+      expectedVersion: body.expectedVersion,
+      comment: body.comment ?? null,
+    });
+    if (!updated) {
+      throw new AppError('This ticket changed since you loaded it — reload and try again.', {
+        statusCode: 409,
+        code: 'VERSION_CONFLICT',
+        expose: true,
+      });
+    }
+    await auditFromContext(ctx, {
+      action: 'comms.ticket.status',
+      status: 'ok',
+      resourceType: 'comms_ticket',
+      resourceId: id,
+      detail: { from: row.ticket.status, to: body.toStatus },
+    });
+    const fresh = await commsTicketRepo.getForReader(ctx, id);
+    return { ticket: toTicketDto(fresh ?? row, readerOf(ctx)) };
   });
 }

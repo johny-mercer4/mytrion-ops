@@ -7,6 +7,7 @@ import { useUserContext } from '../../context/UserContextProvider';
 import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
 import { DeskCompose, type DeskComposeResult } from './DeskCompose';
 import { DeskEscalationActions } from './DeskEscalationActions';
+import { DeskTicketActions } from './DeskTicketActions';
 import { DeskSettings } from './DeskSettings';
 import type { DeskTabKey } from './deskTabs';
 
@@ -49,11 +50,13 @@ export function DeskShell() {
     setFocusId(result.ticketId);
   };
 
-  /** The escalation ladder actions, shown in an escalation's conversation header. */
-  const escalationActions = (t: TicketDto) =>
+  /** Conversation-header actions: the escalation ladder for an escalation, the lifecycle for a ticket. */
+  const chatActions = (t: TicketDto) =>
     t.kind === 'escalation' && t.escalation ? (
       <DeskEscalationActions ticket={t} departments={departments} />
-    ) : null;
+    ) : (
+      <DeskTicketActions ticket={t} />
+    );
 
   const navSections: NavSection[] = [
     {
@@ -125,6 +128,7 @@ export function DeskShell() {
             emptyHint="Tickets filed to the desk appear here the moment they are raised."
             focusTicketId={view === 'tickets' ? focusId : null}
             onFocusConsumed={() => setFocusId(null)}
+            chatActions={chatActions}
           />
         ) : null}
         {view === 'escalations' ? (
@@ -135,7 +139,7 @@ export function DeskShell() {
             emptyHint="Escalation requests routed to you appear here, newest first."
             focusTicketId={view === 'escalations' ? focusId : null}
             onFocusConsumed={() => setFocusId(null)}
-            chatActions={escalationActions}
+            chatActions={chatActions}
           />
         ) : null}
         {view === 'settings' && admin ? <DeskSettings /> : null}

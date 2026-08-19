@@ -235,6 +235,21 @@ export async function listTicketEvents(id: string): Promise<TicketEventDto[]> {
   return res.events;
 }
 
+/**
+ * Move a ticket's status (agent action — resolve / close / reopen / put in progress). `expectedVersion`
+ * is mandatory: the server 409s a stale decision rather than overwriting another agent's.
+ */
+export async function setTicketStatus(
+  id: string,
+  toStatus: TicketStatus,
+  expectedVersion: number,
+  comment?: string,
+): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/status`, {
+    body: { toStatus, expectedVersion, ...(comment ? { comment } : {}) },
+  })) as { ticket: TicketDto };
+}
+
 export interface CreateTicketInput {
   /** Catalog code. Chooses the queue — there is deliberately no `department` field. */
   typeCode: string;

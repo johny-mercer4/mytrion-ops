@@ -324,3 +324,62 @@
 .escStatus[data-status='expired'] {
   color: var(--tone-rose);
 }
+
+/* ── Ticket lifecycle actions + activity timeline ─────────────────────────── */
+
+.ticketActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ticketActionsError {
+  font-size: 0.72rem;
+  color: var(--tone-rose);
+  max-width: 14rem;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.timelineItem {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.timelineDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.timelineBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.timelineType {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.timelineMeta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
