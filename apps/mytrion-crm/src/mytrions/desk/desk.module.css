@@ -718,7 +718,7 @@
   height: 100%;
   border-radius: 999px;
   background: var(--accent);
-  min-width: 2px;
+  min-width: 0.125rem;
 }
 
 /* Status/priority tints so a bar reads at a glance without a legend. */
