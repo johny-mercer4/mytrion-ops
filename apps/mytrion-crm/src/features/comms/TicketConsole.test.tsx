@@ -169,4 +169,11 @@ describe('TicketConsole — queue vs requester', () => {
     expect(params.status).toContain('open');
     expect(params.status).not.toContain('closed');
   });
+
+  it('scopes the list to a single kind when `kind` is set (Desk escalations tab)', async () => {
+    render(<TicketConsole mode="queue" kind="escalation" />);
+    await waitFor(() => expect(api.listTickets).toHaveBeenCalled());
+    const params = api.listTickets.mock.calls[0]?.[0] as { kind?: string };
+    expect(params.kind).toBe('escalation');
+  });
 });
