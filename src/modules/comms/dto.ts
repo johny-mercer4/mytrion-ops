@@ -126,6 +126,8 @@ export interface TicketDto {
   status: string;
   substatus: string | null;
   priority: string;
+  /** Free-form triage labels. Empty array, never null. */
+  tags: string[];
   typeCode: string | null;
   typeLabel: string | null;
   targetDepartment: string | null;
@@ -192,6 +194,7 @@ export function toTicketDto(row: TicketWithThread, reader: CommsReader): TicketD
     status: ticket.status,
     substatus: ticket.substatus,
     priority: ticket.priority,
+    tags: ticket.tags ?? [],
     typeCode: ticket.ticketTypeCode,
     typeLabel: ticket.ticketTypeLabel,
     targetDepartment: ticket.targetDepartment,

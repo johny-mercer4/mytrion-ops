@@ -32,6 +32,8 @@ export interface TicketDto {
   status: TicketStatus;
   substatus: string | null;
   priority: TicketPriority;
+  /** Free-form triage labels. Empty array, never null. */
+  tags: string[];
   typeCode: string | null;
   typeLabel: string | null;
   targetDepartment: string | null;
@@ -177,6 +179,8 @@ export interface ListTicketsParams {
   assignee?: string;
   requester?: string;
   carrierId?: string;
+  /** Narrow to tickets carrying this exact tag. */
+  tag?: string;
   q?: string;
   cursor?: string;
   limit?: number;
@@ -202,6 +206,7 @@ export async function listTickets(
       ...(params.assignee ? { assignee: params.assignee } : {}),
       ...(params.requester ? { requester: params.requester } : {}),
       ...(params.carrierId ? { carrier_id: params.carrierId } : {}),
+      ...(params.tag ? { tag: params.tag } : {}),
       ...(params.q ? { q: params.q } : {}),
       ...(params.cursor ? { cursor: params.cursor } : {}),
       ...(params.limit ? { limit: params.limit } : {}),
@@ -233,6 +238,189 @@ export async function listTicketEvents(id: string): Promise<TicketEventDto[]> {
     events: TicketEventDto[];
   };
   return res.events;
+}
+
+/**
+ * Move a ticket's status (agent action — resolve / close / reopen / put in progress). `expectedVersion`
+ * is mandatory: the server 409s a stale decision rather than overwriting another agent's.
+ */
+export async function setTicketStatus(
+  id: string,
+  toStatus: TicketStatus,
+  expectedVersion: number,
+  comment?: string,
+): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/status`, {
+    body: { toStatus, expectedVersion, ...(comment ? { comment } : {}) },
+  })) as { ticket: TicketDto };
+}
+
+export type AgentAvailability = 'available' | 'away' | 'do_not_assign';
+
+/** The signed-in agent's declared availability — governs whether the round-robin routes to them. */
+export interface AvailabilityDto {
+  zohoUserId: string;
+  availability: AgentAvailability;
+  availabilityNote: string | null;
+  /** True when the SERVER parked them (dropped socket), not a choice they made. */
+  autoAway: boolean;
+  autoAwayReason: string | null;
+  changedAt: string;
+}
+
+export async function getMyAvailability(): Promise<AvailabilityDto> {
+  const res = (await request('GET', '/comms/me/availability')) as { availability: AvailabilityDto };
+  return res.availability;
+}
+
+export async function setMyAvailability(
+  availability: AgentAvailability,
+  note?: string,
+): Promise<AvailabilityDto> {
+  const res = (await request('POST', '/comms/me/availability', {
+    body: { availability, ...(note ? { note } : {}) },
+  })) as { availability: AvailabilityDto };
+  return res.availability;
+}
+
+/** Read-only aggregates behind the Desk Analytics & SLA tab — see commsAnalyticsRepo. */
+export interface CommsAnalyticsDto {
+  window: { sinceDays: number; since: string };
+  totals: {
+    all: number;
+    open: number;
+    resolved: number;
+    closed: number;
+    overdue: number;
+    breached: number;
+  };
+  sla: {
+    firstResponseMet: number;
+    firstResponseMissed: number;
+    firstResponsePending: number;
+    avgResolutionHours: number | null;
+    avgFirstResponseHours: number | null;
+  };
+  byStatus: { key: string; count: number }[];
+  byPriority: { key: string; count: number }[];
+  byDepartment: { key: string | null; count: number }[];
+  /** Dense daily series over the window — every day present, zeros included. */
+  volume: { date: string; created: number; resolved: number }[];
+  topAssignees: { zohoUserId: string; name: string | null; open: number }[];
+}
+
+export async function getCommsAnalytics(
+  params: { kind?: TicketKind; department?: string; sinceDays?: number } = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<CommsAnalyticsDto> {
+  return (await request('GET', '/comms/analytics', {
+    query: {
+      ...(params.kind ? { kind: params.kind } : {}),
+      ...(params.department ? { department: params.department } : {}),
+      ...(params.sinceDays ? { sinceDays: params.sinceDays } : {}),
+    },
+    signal: options.signal,
+  })) as CommsAnalyticsDto;
+}
+
+/**
+ * Change a ticket's priority. `expectedVersion` is mandatory: the server 409s a stale decision rather
+ * than overwriting another agent's re-prioritisation.
+ */
+export async function setTicketPriority(
+  id: string,
+  toPriority: TicketPriority,
+  expectedVersion: number,
+): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/priority`, {
+    body: { toPriority, expectedVersion },
+  })) as { ticket: TicketDto };
+}
+
+/** One seat on a department's assignment roster, with the rotation cursor in plain sight. */
+export interface RosterMemberDto {
+  zohoUserId: string;
+  name: string | null;
+  roleTitle: string | null;
+  active: boolean;
+  acceptsNew: boolean;
+  maxOpen: number | null;
+  sortOrder: number;
+  /** Least-recently-assigned goes next under round-robin. */
+  lastAssignedAt: string | null;
+  assignedCount: number;
+}
+
+export interface QueueRoster {
+  department: string;
+  strategy: string;
+  requireOnline: boolean;
+  roster: RosterMemberDto[];
+}
+
+/** The roster a queue draws from — the candidate pool a reassign picks out of. */
+export async function getQueueRoster(department: string): Promise<QueueRoster> {
+  return (await request(
+    'GET',
+    `/comms/queue/${encodeURIComponent(department)}/roster`,
+  )) as QueueRoster;
+}
+
+/** A team-shared reply template. */
+export interface CannedReplyDto {
+  id: string;
+  title: string;
+  body: string;
+  department: string | null;
+}
+
+export async function listCannedReplies(department?: string): Promise<CannedReplyDto[]> {
+  const res = (await request('GET', '/comms/canned-replies', {
+    query: department ? { department } : {},
+  })) as { replies: CannedReplyDto[] };
+  return res.replies;
+}
+
+export async function createCannedReply(input: {
+  title: string;
+  body: string;
+  department?: string;
+}): Promise<CannedReplyDto> {
+  const res = (await request('POST', '/comms/canned-replies', { body: input })) as {
+    reply: CannedReplyDto;
+  };
+  return res.reply;
+}
+
+export async function deleteCannedReply(id: string): Promise<void> {
+  await request('DELETE', `/comms/canned-replies/${encodeURIComponent(id)}`);
+}
+
+/** Replace a ticket's triage tags. The server normalises (trim / dedupe / cap) the set. */
+export async function setTicketTags(id: string, tags: string[]): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/tags`, {
+    body: { tags },
+  })) as { ticket: TicketDto };
+}
+
+/**
+ * Claim a ticket for yourself (omit `toZohoUserId`) or assign it to a colleague. The target must hold a
+ * seat on the ticket's department roster — the same list the round-robin draws from.
+ */
+export async function assignTicket(
+  id: string,
+  toZohoUserId?: string,
+): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/queue/${encodeURIComponent(id)}/assign`, {
+    body: toZohoUserId ? { toZohoUserId } : {},
+  })) as { ticket: TicketDto };
+}
+
+/** Hand a ticket back to the queue. Only the current holder (or an admin) may do it. */
+export async function releaseTicket(id: string): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/queue/${encodeURIComponent(id)}/release`, {
+    body: {},
+  })) as { ticket: TicketDto };
 }
 
 export interface CreateTicketInput {
