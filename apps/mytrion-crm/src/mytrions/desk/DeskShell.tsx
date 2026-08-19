@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { MessagesSquare, Settings, Ticket, TriangleAlert } from 'lucide-react';
+import { TicketConsole } from '@/features/comms/TicketConsole';
 import { isAdmin } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
-import { ComingSoon } from '../_shared/ComingSoon';
+import { DeskSettings } from './DeskSettings';
 import type { DeskTabKey } from './deskTabs';
 
 /** Derived — see the note in access/tabRegistry.ts. */
 export type DeskView = DeskTabKey;
 
 /**
- * Mytrion Desk — the support workspace over the existing `comms` backend (tickets, escalations,
- * threads). Stage 1 is the registered shell + navigation; each tab lands its live surface next.
+ * Mytrion Desk — the support workspace over the existing `comms` backend. Every tab is the shared
+ * `TicketConsole` (list + live chat thread, wired to /v1/comms + the comms WebSocket), scoped to a
+ * different slice: Tickets = ticket threads, Escalations = escalation threads, Chat = everything.
+ * Visibility is decided server-side by the comms reader filter, so no Mytrion-specific gating here.
  */
 export function DeskShell() {
   const user = useUserContext();
@@ -51,7 +54,7 @@ export function DeskShell() {
           tone: 'var(--tone-sky)',
           active: view === 'chat',
           onClick: () => open('chat'),
-          keywords: ['messages', 'conversation', 'thread'],
+          keywords: ['messages', 'conversation', 'thread', 'inbox'],
           primary: true,
         },
       ],
@@ -72,43 +75,39 @@ export function DeskShell() {
     : [];
 
   return (
-    <MytrionShell id="desk" navSections={navSections} footerNav={footerNav} enableNavSearch>
+    <MytrionShell
+      id="desk"
+      navSections={navSections}
+      footerNav={footerNav}
+      enableNavSearch
+      // The console owns its own scroll (list + thread panes) so the composer never leaves the
+      // viewport; Settings is a normal page, so it hands scrolling back to the shell.
+      contentScroll={view === 'settings' ? 'shell' : 'content'}
+    >
       {view === 'tickets' ? (
-        <ComingSoon
-          title="Ticket queue"
-          body="The support ticket queue — round-robin assigned by department, with a live chat thread per ticket. Wiring to the comms backend next."
-          icon={<Ticket size={26} />}
-          tone="var(--tone-orange)"
-          sources={['mytrion_tickets', 'mytrion_threads', 'mytrion_department_agents']}
+        <TicketConsole
+          mode="queue"
+          kind="ticket"
+          title="Tickets"
+          emptyHint="Tickets filed to the desk appear here the moment they are raised."
         />
       ) : null}
       {view === 'escalations' ? (
-        <ComingSoon
+        <TicketConsole
+          mode="queue"
+          kind="escalation"
           title="Escalations"
-          body="Escalation requests auto-assigned by reason, walked up the four-level escalation ladder."
-          icon={<TriangleAlert size={26} />}
-          tone="var(--tone-rose)"
-          sources={['mytrion_escalations', 'mytrion_escalation_hops', 'mytrion_ticket_types']}
+          emptyHint="Escalation requests routed to you appear here, newest first."
         />
       ) : null}
       {view === 'chat' ? (
-        <ComingSoon
-          title="Chat"
-          body="Real-time ticket conversations — messages and file attachments streamed over the comms WebSocket."
-          icon={<MessagesSquare size={26} />}
-          tone="var(--tone-sky)"
-          sources={['mytrion_thread_messages', 'mytrion_thread_attachments', 'useCommsSocket']}
+        <TicketConsole
+          mode="queue"
+          title="Conversations"
+          emptyHint="Every ticket and escalation conversation you can see, in one inbox."
         />
       ) : null}
-      {view === 'settings' && admin ? (
-        <ComingSoon
-          title="Desk settings"
-          body="Round-robin and escalation-routing configuration, reusing Mytrion Admin → Escalation Routing."
-          icon={<Settings size={26} />}
-          tone="var(--tone-orange)"
-          sources={['mytrion_department_config', 'mytrion_comms_settings']}
-        />
-      ) : null}
+      {view === 'settings' && admin ? <DeskSettings /> : null}
     </MytrionShell>
   );
 }

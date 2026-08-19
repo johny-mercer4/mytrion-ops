@@ -4,6 +4,7 @@ import {
   listTickets,
   type TicketDto,
   type ListTicketsParams,
+  type TicketKind,
 } from '@/api/comms';
 import { ApiError } from '@/api/transport';
 import { ChevronLeft, Inbox, MessageSquare, RefreshCw, Search, Ticket, TriangleAlert, X } from 'lucide-react';
@@ -45,6 +46,11 @@ export interface TicketConsoleProps {
   title?: string;
   /** Include escalations alongside client tickets. */
   includeEscalations?: boolean;
+  /**
+   * Restrict the list to a single kind — 'ticket' for a tickets-only surface, 'escalation' for an
+   * escalations-only one. Overrides `includeEscalations`. Omit for the default ticket+escalation mix.
+   */
+  kind?: TicketKind;
   emptyHint?: string;
   /**
    * Open this ticket on entry — how "Create → jump to the new ticket" works.
@@ -68,6 +74,7 @@ export function TicketConsole({
   department,
   title,
   includeEscalations = true,
+  kind,
   emptyHint,
   focusTicketId,
   onFocusConsumed,
@@ -101,10 +108,11 @@ export function TicketConsole({
     // A queue console is scoped to its own department so a CS agent's list is CS work — the reader filter
     // would allow more (anything they participate in), and mixing the two makes a queue unusable.
     if (mode === 'queue' && department) p.department = department;
-    if (!includeEscalations) p.kind = 'ticket';
+    if (kind) p.kind = kind;
+    else if (!includeEscalations) p.kind = 'ticket';
     if (debouncedTerm) p.q = debouncedTerm;
     return p;
-  }, [filter, mode, department, includeEscalations, debouncedTerm]);
+  }, [filter, mode, department, includeEscalations, kind, debouncedTerm]);
 
   const load = useCallback(
     async (opts: { quiet?: boolean } = {}) => {
