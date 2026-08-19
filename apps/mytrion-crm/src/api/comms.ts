@@ -32,6 +32,8 @@ export interface TicketDto {
   status: TicketStatus;
   substatus: string | null;
   priority: TicketPriority;
+  /** Free-form triage labels. Empty array, never null. */
+  tags: string[];
   typeCode: string | null;
   typeLabel: string | null;
   targetDepartment: string | null;
@@ -177,6 +179,8 @@ export interface ListTicketsParams {
   assignee?: string;
   requester?: string;
   carrierId?: string;
+  /** Narrow to tickets carrying this exact tag. */
+  tag?: string;
   q?: string;
   cursor?: string;
   limit?: number;
@@ -202,6 +206,7 @@ export async function listTickets(
       ...(params.assignee ? { assignee: params.assignee } : {}),
       ...(params.requester ? { requester: params.requester } : {}),
       ...(params.carrierId ? { carrier_id: params.carrierId } : {}),
+      ...(params.tag ? { tag: params.tag } : {}),
       ...(params.q ? { q: params.q } : {}),
       ...(params.cursor ? { cursor: params.cursor } : {}),
       ...(params.limit ? { limit: params.limit } : {}),
@@ -359,6 +364,13 @@ export async function getQueueRoster(department: string): Promise<QueueRoster> {
     'GET',
     `/comms/queue/${encodeURIComponent(department)}/roster`,
   )) as QueueRoster;
+}
+
+/** Replace a ticket's triage tags. The server normalises (trim / dedupe / cap) the set. */
+export async function setTicketTags(id: string, tags: string[]): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/tags`, {
+    body: { tags },
+  })) as { ticket: TicketDto };
 }
 
 /**

@@ -107,3 +107,64 @@ export async function changeTicketPriority(
 
   return updated;
 }
+
+/**
+ * Normalise a tag set: trim, drop blanks, collapse whitespace, cap each label's length, dedupe
+ * case-insensitively (keeping the first spelling), and cap the count. Client input is not trusted to be
+ * clean, and an unbounded/duplicated set would bloat both the row and the queue board.
+ */
+export function normalizeTags(raw: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of raw) {
+    const clean = t.trim().replace(/\s+/g, ' ').slice(0, 40);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+/**
+ * Replace a ticket's tags. Journals the new set and broadcasts so the queue board re-renders the chips
+ * live. Returns null only if the ticket vanished between the caller's read and here.
+ */
+export async function setTicketTags(
+  ctx: TenantContext,
+  ticket: MytrionTicket,
+  rawTags: string[],
+): Promise<MytrionTicket | null> {
+  const actor = actorZohoUserIdOf(ctx);
+  const tags = normalizeTags(rawTags);
+  const updated = await commsTicketStateRepo.setTags(ctx, ticket.id, tags);
+  if (!updated) return null;
+
+  await commsTicketEventRepo.append(ctx, {
+    ticketId: ticket.id,
+    threadId: ticket.threadId,
+    eventType: 'tagged',
+    actorZohoUserId: actor,
+    actorName: ctx.userName ?? null,
+    detail: { tags },
+  });
+
+  publishSafely('comms.ticket.tagged', () => {
+    publishThreadEvent(
+      { id: ticket.threadId, department: ticket.targetDepartment },
+      [],
+      {
+        type: 'comms.ticket.tagged',
+        threadId: ticket.threadId,
+        ticketId: ticket.id,
+        number: ticket.number,
+        tags,
+      },
+      { alsoQueue: true },
+    );
+  });
+
+  return updated;
+}

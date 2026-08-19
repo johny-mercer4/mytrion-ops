@@ -25,6 +25,7 @@ export type CommsEventType =
   | 'comms.ticket.assigned'
   | 'comms.ticket.status_changed'
   | 'comms.ticket.priority_changed'
+  | 'comms.ticket.tagged'
   | 'comms.ticket.closed'
   | 'comms.ticket.reopened'
   | 'comms.escalation.raised'

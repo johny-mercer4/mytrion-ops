@@ -479,6 +479,59 @@
   color: var(--text-muted);
 }
 
+/* ── Ticket tags editor (dialog) ──────────────────────────────────────────── */
+
+.tagEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.tagChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--tint-info-bg);
+  border: 1px solid var(--tint-info-bd);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.tagRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tagRemove:hover:not(:disabled) {
+  color: var(--tone-rose);
+}
+
+.tagInput {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
 /* ── Availability (work mode) picker ──────────────────────────────────────── */
 
 .availList {

@@ -158,6 +158,27 @@ export const commsTicketStateRepo = {
     return rows[0];
   },
 
+  /**
+   * Replace a ticket's tags outright.
+   *
+   * NOT version-gated, unlike status/priority: tags are low-contention triage labels, and 409-ing an
+   * agent for adding a label while someone else changed the status would be noise. The caller passes the
+   * full desired set (add/remove is computed client-side), so this is a plain set, and it deliberately
+   * does not bump `version` — an independent status transition in flight must still succeed.
+   */
+  async setTags(
+    ctx: TenantContext,
+    ticketId: string,
+    tags: string[],
+  ): Promise<MytrionTicket | undefined> {
+    const rows = await db
+      .update(mytrionTickets)
+      .set({ tags, updatedAt: new Date() })
+      .where(and(eq(mytrionTickets.tenantId, ctx.tenantId), eq(mytrionTickets.id, ticketId)))
+      .returning();
+    return rows[0];
+  },
+
   /** Drop the assignee — back to the queue. Used when someone goes off shift mid-ticket. */
   async unassign(ctx: TenantContext, ticketId: string): Promise<MytrionTicket | undefined> {
     const rows = await db

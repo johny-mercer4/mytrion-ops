@@ -15,6 +15,8 @@ export interface SavedView {
   name: string;
   filter: string;
   term: string;
+  /** Optional tag narrow captured with the view. Absent on views saved before tags existed. */
+  tag?: string;
 }
 
 const KEY_PREFIX = 'desk.savedViews.v1.';
@@ -58,8 +60,8 @@ export function SavedViews({
   onApply,
 }: {
   viewsKey: string;
-  current: { filter: string; term: string };
-  onApply: (view: { filter: string; term: string }) => void;
+  current: { filter: string; term: string; tag?: string };
+  onApply: (view: { filter: string; term: string; tag: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [views, setViews] = useState<SavedView[]>(() => read(viewsKey));
@@ -80,14 +82,20 @@ export function SavedViews({
     const without = views.filter((v) => v.name.toLowerCase() !== trimmed.toLowerCase());
     persist([
       ...without,
-      { id: makeId(views), name: trimmed, filter: current.filter, term: current.term },
+      {
+        id: makeId(views),
+        name: trimmed,
+        filter: current.filter,
+        term: current.term,
+        tag: current.tag ?? '',
+      },
     ]);
     setName('');
   }, [name, views, current, persist]);
 
   const apply = useCallback(
     (v: SavedView) => {
-      onApply({ filter: v.filter, term: v.term });
+      onApply({ filter: v.filter, term: v.term, tag: v.tag ?? '' });
       setOpen(false);
     },
     [onApply],
@@ -115,6 +123,7 @@ export function SavedViews({
                   <span className={c.viewsMeta}>
                     {v.filter}
                     {v.term ? ` · “${v.term}”` : ''}
+                    {v.tag ? ` · #${v.tag}` : ''}
                   </span>
                 </button>
                 <button

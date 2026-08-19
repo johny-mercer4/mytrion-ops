@@ -10,6 +10,7 @@ import {
   type TicketStatus,
 } from '@/api/comms';
 import { DeskAssignControls } from './DeskAssignControls';
+import { DeskTicketTags } from './DeskTicketTags';
 import styles from './desk.module.css';
 
 const PRIORITY_OPTS: SelectOption[] = [
@@ -75,6 +76,7 @@ export function DeskTicketActions({
   const [error, setError] = useState('');
   const [prioBusy, setPrioBusy] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const [events, setEvents] = useState<TicketEventDto[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
 
@@ -150,6 +152,9 @@ export function DeskTicketActions({
           {a.label}
         </Button>
       ))}
+      <Button size="sm" variant="ghost" onClick={() => setTagsOpen(true)}>
+        Tags{ticket.tags.length > 0 ? ` (${ticket.tags.length})` : ''}
+      </Button>
       <Button size="sm" variant="ghost" onClick={() => void openHistory()}>
         History
       </Button>
@@ -185,6 +190,16 @@ export function DeskTicketActions({
         ) : (
           <p className={styles.cardHint}>No activity yet.</p>
         )}
+      </Dialog>
+
+      <Dialog
+        open={tagsOpen}
+        onClose={() => setTagsOpen(false)}
+        title="Tags"
+        subtitle={ticket.number}
+        size="sm"
+      >
+        <DeskTicketTags ticket={ticket} />
       </Dialog>
     </div>
   );

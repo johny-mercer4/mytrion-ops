@@ -31,6 +31,7 @@ function ticket(over: Partial<TicketDto> = {}): TicketDto {
     status: 'open',
     substatus: null,
     priority: 'medium',
+    tags: [],
     typeCode: 'C-1',
     typeLabel: 'Card Activation',
     targetDepartment: 'customer-service',

@@ -24,7 +24,11 @@ import {
   toTicketEventDto,
 } from '../../modules/comms/dto.js';
 import { createClientTicket } from '../../modules/comms/ticketService.js';
-import { changeTicketPriority, changeTicketStatus } from '../../modules/comms/ticketActions.js';
+import {
+  changeTicketPriority,
+  changeTicketStatus,
+  setTicketTags,
+} from '../../modules/comms/ticketActions.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { commsTicketEventRepo } from '../../repos/commsTicketEventRepo.js';
 import {
@@ -68,6 +72,7 @@ const listQuery = z.object({
   assignee: z.string().max(120).optional(),
   requester: z.string().max(120).optional(),
   carrier_id: z.string().max(60).optional(),
+  tag: z.string().max(40).optional(),
   q: z.string().max(200).optional(),
   cursor: z.string().max(300).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -152,6 +157,7 @@ export async function commsTicketsRoutes(app: FastifyInstance): Promise<void> {
     if (q.department) opts.targetDepartment = q.department;
     if (q.assignee) opts.assigneeZohoUserId = q.assignee;
     if (q.carrier_id) opts.carrierId = q.carrier_id;
+    if (q.tag) opts.tag = q.tag;
     if (q.q) opts.search = q.q;
     if (q.cursor) opts.cursor = q.cursor;
     if (q.limit) opts.limit = q.limit;
@@ -272,6 +278,32 @@ export async function commsTicketsRoutes(app: FastifyInstance): Promise<void> {
       resourceType: 'comms_ticket',
       resourceId: id,
       detail: { from: row.ticket.priority, to: body.toPriority },
+    });
+    const fresh = await commsTicketRepo.getForReader(ctx, id);
+    return { ticket: toTicketDto(fresh ?? row, readerOf(ctx)) };
+  });
+
+  /**
+   * Replace a ticket's tags. Same reader gate (a non-readable id 404s). Not version-gated — tags are
+   * low-contention triage labels — and the server normalises the set (trim / dedupe / cap) before it
+   * lands, so the client cannot store an unbounded or dirty set.
+   */
+  app.post('/comms/tickets/:id/tags', guard, async (request) => {
+    const ctx = requireInternal(request, 'Comms tickets');
+    const { id } = request.params as { id: string };
+    const body = z
+      .object({ tags: z.array(z.string().max(60)).max(50) })
+      .parse(request.body);
+    const row = await commsTicketRepo.getForReader(ctx, id);
+    if (!row) throw new NotFoundError('Ticket not found.');
+    const updated = await setTicketTags(ctx, row.ticket, body.tags);
+    if (!updated) throw new NotFoundError('Ticket not found.');
+    await auditFromContext(ctx, {
+      action: 'comms.ticket.tags',
+      status: 'ok',
+      resourceType: 'comms_ticket',
+      resourceId: id,
+      detail: { count: updated.tags.length },
     });
     const fresh = await commsTicketRepo.getForReader(ctx, id);
     return { ticket: toTicketDto(fresh ?? row, readerOf(ctx)) };

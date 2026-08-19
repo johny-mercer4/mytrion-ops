@@ -180,6 +180,7 @@ export function DeskShell() {
             onFocusConsumed={() => setFocusId(null)}
             chatActions={chatActions}
             enableBulk
+            enableTagFilter
             enableSavedViews
             viewsKey="desk:tickets"
           />
@@ -193,6 +194,7 @@ export function DeskShell() {
             focusTicketId={view === 'escalations' ? focusId : null}
             onFocusConsumed={() => setFocusId(null)}
             chatActions={chatActions}
+            enableTagFilter
             enableSavedViews
             viewsKey="desk:escalations"
           />

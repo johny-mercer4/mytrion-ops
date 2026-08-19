@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MytrionTicket } from '../../src/db/schema/index.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
-const state = vi.hoisted(() => ({ transitionStatus: vi.fn(), setPriority: vi.fn() }));
+const state = vi.hoisted(() => ({ transitionStatus: vi.fn(), setPriority: vi.fn(), setTags: vi.fn() }));
 const events = vi.hoisted(() => ({ append: vi.fn(async () => undefined) }));
 const publish = vi.hoisted(() => ({
   publishSafely: vi.fn((_label: string, fn: () => void) => fn()),
@@ -23,7 +23,12 @@ vi.mock('../../src/repos/commsTicketStateRepo.js', () => ({ commsTicketStateRepo
 vi.mock('../../src/repos/commsTicketEventRepo.js', () => ({ commsTicketEventRepo: events }));
 vi.mock('../../src/modules/comms/publish.js', () => publish);
 
-import { changeTicketPriority, changeTicketStatus } from '../../src/modules/comms/ticketActions.js';
+import {
+  changeTicketPriority,
+  changeTicketStatus,
+  normalizeTags,
+  setTicketTags,
+} from '../../src/modules/comms/ticketActions.js';
 
 // Test doubles — only the fields the service reads are populated.
 const ctx = { tenantId: 'octane', userId: 'zoho:42', userName: 'Ali', audience: 'internal' } as unknown as TenantContext;
@@ -108,5 +113,35 @@ describe('changeTicketPriority', () => {
     expect(result).toBeNull();
     expect(events.append).not.toHaveBeenCalled();
     expect(publish.publishThreadEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('normalizeTags', () => {
+  it('trims, collapses whitespace, drops blanks, and dedupes case-insensitively', () => {
+    expect(normalizeTags([' fraud ', 'Fraud', '', '  ', 'vip  customer'])).toEqual([
+      'fraud',
+      'vip customer',
+    ]);
+  });
+
+  it('caps the count at 20', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `t${i}`);
+    expect(normalizeTags(many)).toHaveLength(20);
+  });
+});
+
+describe('setTicketTags', () => {
+  it('writes the normalised set, journals `tagged`, and broadcasts', async () => {
+    state.setTags.mockResolvedValue({ id: 'mtk_1', tags: ['fraud'] });
+
+    const result = await setTicketTags(ctx, ticket, [' Fraud ', 'fraud']);
+
+    expect(result).not.toBeNull();
+    expect(state.setTags).toHaveBeenCalledWith(ctx, 'mtk_1', ['Fraud']);
+    expect(events.append).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ ticketId: 'mtk_1', eventType: 'tagged', detail: { tags: ['Fraud'] } }),
+    );
+    expect(publish.publishThreadEvent).toHaveBeenCalled();
   });
 });

@@ -25,7 +25,7 @@ const ticketEvents = vi.hoisted(() => ({ append: vi.fn(async () => undefined) })
 const publish = vi.hoisted(() => ({
   publishSafely: vi.fn((_label: string, fn: () => void) => fn()),
   publishThreadEvent: vi.fn(() => ({ thread: 0, lanes: 0 })),
-  publishUserEvent: vi.fn(() => 0),
+  publishUserEvent: vi.fn((_zohoUserId: string, _payload: Record<string, unknown>) => 0),
 }));
 
 vi.mock('../../src/repos/commsThreadRepo.js', () => ({

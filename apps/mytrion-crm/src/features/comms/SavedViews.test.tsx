@@ -34,7 +34,7 @@ describe('SavedViews', () => {
     expect(screen.getByText('My fraud')).toBeInTheDocument();
     // …and applying it reports the stored filter + term back to the console.
     await user.click(screen.getByText('My fraud'));
-    expect(onApply).toHaveBeenCalledWith({ filter: 'open', term: 'fraud' });
+    expect(onApply).toHaveBeenCalledWith({ filter: 'open', term: 'fraud', tag: '' });
   });
 
   it('deletes a saved view', async () => {

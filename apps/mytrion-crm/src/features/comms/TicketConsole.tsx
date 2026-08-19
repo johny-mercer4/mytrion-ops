@@ -5,12 +5,13 @@ import {
   listTickets,
   releaseTicket,
   setTicketStatus,
+  setTicketTags,
   type TicketDto,
   type ListTicketsParams,
   type TicketKind,
 } from '@/api/comms';
 import { ApiError } from '@/api/transport';
-import { CheckCheck, ChevronLeft, Inbox, MessageSquare, RefreshCw, Search, Ticket, TriangleAlert, X } from 'lucide-react';
+import { CheckCheck, ChevronLeft, Inbox, MessageSquare, RefreshCw, Search, Tag, Ticket, TriangleAlert, X } from 'lucide-react';
 import { ChatThread } from './ChatThread';
 import { SavedViews } from './SavedViews';
 import { useCommsSocket, type CommsFrame } from './useCommsSocket';
@@ -77,6 +78,8 @@ export interface TicketConsoleProps {
    * leave it off — they move through the ladder, not a queue action.
    */
   enableBulk?: boolean;
+  /** Opt-in tag filter (a free-text exact-match tag narrow). */
+  enableTagFilter?: boolean;
   /** Opt-in saved views (client-side named filter presets). Needs a `viewsKey` namespace. */
   enableSavedViews?: boolean;
   /** localStorage namespace for saved views, e.g. `desk:tickets`. Keeps tabs' presets separate. */
@@ -100,6 +103,7 @@ export function TicketConsole({
   onFocusConsumed,
   chatActions,
   enableBulk = false,
+  enableTagFilter = false,
   enableSavedViews = false,
   viewsKey,
 }: TicketConsoleProps) {
@@ -108,6 +112,12 @@ export function TicketConsole({
   /** Bulk-select set (ticket ids). Only ever populated when `enableBulk`. */
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  /** Inline bulk-tag entry: when set, the bulk bar shows a tag input instead of the action buttons. */
+  const [bulkTagMode, setBulkTagMode] = useState(false);
+  const [bulkTagValue, setBulkTagValue] = useState('');
+  /** Free-text tag filter (exact match). Debounced into the query like the search term. */
+  const [tagFilter, setTagFilter] = useState('');
+  const [debouncedTag, setDebouncedTag] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('open');
   const [term, setTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
@@ -128,6 +138,11 @@ export function TicketConsole({
     return () => window.clearTimeout(timer);
   }, [term]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedTag(tagFilter.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [tagFilter]);
+
   const params = useMemo((): ListTicketsParams => {
     const p: ListTicketsParams = { limit: 30 };
     if (filter === 'open') p.status = OPEN_STATUS_PARAM;
@@ -138,8 +153,9 @@ export function TicketConsole({
     if (kind) p.kind = kind;
     else if (!includeEscalations) p.kind = 'ticket';
     if (debouncedTerm) p.q = debouncedTerm;
+    if (debouncedTag) p.tag = debouncedTag;
     return p;
-  }, [filter, mode, department, includeEscalations, kind, debouncedTerm]);
+  }, [filter, mode, department, includeEscalations, kind, debouncedTerm, debouncedTag]);
 
   const load = useCallback(
     async (opts: { quiet?: boolean } = {}) => {
@@ -315,6 +331,30 @@ export function TicketConsole({
     [checked, bulkBusy, tickets, load],
   );
 
+  const runBulkTag = useCallback(async () => {
+    const tag = bulkTagValue.trim().replace(/\s+/g, ' ').slice(0, 40);
+    const ids = [...checked];
+    if (!tag || ids.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      await Promise.allSettled(
+        ids.map((id) => {
+          const t = tickets.find((x) => x.id === id);
+          if (!t) return Promise.resolve();
+          // Merge, not replace — bulk-tagging adds a label without dropping a ticket's existing ones.
+          if (t.tags.some((x) => x.toLowerCase() === tag.toLowerCase())) return Promise.resolve();
+          return setTicketTags(id, [...t.tags, tag]);
+        }),
+      );
+      setBulkTagMode(false);
+      setBulkTagValue('');
+      setChecked(new Set());
+      await load({ quiet: true });
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkTagValue, checked, bulkBusy, tickets, load]);
+
   const heading = title ?? (mode === 'queue' ? 'Inbound tickets' : 'My tickets');
   const openCount = tickets.filter((t) => isOpen(t.status)).length;
   const unavailable = errorCode === 'COMMS_SCHEMA_NOT_READY';
@@ -377,13 +417,36 @@ export function TicketConsole({
                 </button>
               ))}
             </div>
+            {enableTagFilter ? (
+              <span className={c.tagFilter} data-on={debouncedTag ? 'true' : undefined}>
+                <Tag className={c.tagFilterIcon} size={13} aria-hidden="true" />
+                <input
+                  className={c.tagFilterInput}
+                  value={tagFilter}
+                  onChange={(ev) => setTagFilter(ev.target.value)}
+                  placeholder="Tag…"
+                  aria-label="Filter by tag"
+                />
+                {tagFilter ? (
+                  <button
+                    type="button"
+                    className={c.searchClear}
+                    onClick={() => setTagFilter('')}
+                    aria-label="Clear tag filter"
+                  >
+                    <X size={12} strokeWidth={2.4} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             {enableSavedViews && viewsKey ? (
               <SavedViews
                 viewsKey={viewsKey}
-                current={{ filter, term }}
+                current={{ filter, term, tag: tagFilter }}
                 onApply={(v) => {
                   setFilter(v.filter as StatusFilter);
                   setTerm(v.term);
+                  setTagFilter(v.tag);
                 }}
               />
             ) : null}
@@ -401,27 +464,73 @@ export function TicketConsole({
               <CheckCheck size={14} aria-hidden="true" />
               {checked.size} selected
             </span>
-            <button type="button" className={c.bulkBtn} onClick={() => void runBulk('claim')} disabled={bulkBusy}>
-              Claim
-            </button>
-            <button type="button" className={c.bulkBtn} onClick={() => void runBulk('resolve')} disabled={bulkBusy}>
-              Resolve
-            </button>
-            <button type="button" className={c.bulkBtn} onClick={() => void runBulk('close')} disabled={bulkBusy}>
-              Close
-            </button>
-            <button type="button" className={c.bulkBtn} onClick={() => void runBulk('release')} disabled={bulkBusy}>
-              Release
-            </button>
-            <button
-              type="button"
-              className={c.bulkClear}
-              onClick={() => setChecked(new Set())}
-              disabled={bulkBusy}
-              aria-label="Clear selection"
-            >
-              <X size={13} strokeWidth={2.4} aria-hidden="true" />
-            </button>
+            {bulkTagMode ? (
+              <>
+                <input
+                  className={c.bulkTagInput}
+                  value={bulkTagValue}
+                  onChange={(ev) => setBulkTagValue(ev.target.value)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === 'Enter') {
+                      ev.preventDefault();
+                      void runBulkTag();
+                    }
+                    if (ev.key === 'Escape') {
+                      setBulkTagMode(false);
+                      setBulkTagValue('');
+                    }
+                  }}
+                  placeholder="Tag to add…"
+                  aria-label="Tag to add to the selection"
+                />
+                <button
+                  type="button"
+                  className={c.bulkBtn}
+                  onClick={() => void runBulkTag()}
+                  disabled={bulkBusy || !bulkTagValue.trim()}
+                >
+                  Add tag
+                </button>
+                <button
+                  type="button"
+                  className={c.bulkBtn}
+                  onClick={() => {
+                    setBulkTagMode(false);
+                    setBulkTagValue('');
+                  }}
+                  disabled={bulkBusy}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className={c.bulkBtn} onClick={() => void runBulk('claim')} disabled={bulkBusy}>
+                  Claim
+                </button>
+                <button type="button" className={c.bulkBtn} onClick={() => void runBulk('resolve')} disabled={bulkBusy}>
+                  Resolve
+                </button>
+                <button type="button" className={c.bulkBtn} onClick={() => void runBulk('close')} disabled={bulkBusy}>
+                  Close
+                </button>
+                <button type="button" className={c.bulkBtn} onClick={() => void runBulk('release')} disabled={bulkBusy}>
+                  Release
+                </button>
+                <button type="button" className={c.bulkBtn} onClick={() => setBulkTagMode(true)} disabled={bulkBusy}>
+                  Tag…
+                </button>
+                <button
+                  type="button"
+                  className={c.bulkClear}
+                  onClick={() => setChecked(new Set())}
+                  disabled={bulkBusy}
+                  aria-label="Clear selection"
+                >
+                  <X size={13} strokeWidth={2.4} aria-hidden="true" />
+                </button>
+              </>
+            )}
           </div>
         ) : null}
 
@@ -519,6 +628,11 @@ export function TicketConsole({
                       {sla && (
                         <span className={sla.overdue ? `${c.tag} ${c.overdue}` : c.tag}>{sla.text}</span>
                       )}
+                      {t.tags.slice(0, 4).map((tg) => (
+                        <span key={tg} className={c.rowTag}>
+                          {tg}
+                        </span>
+                      ))}
                       {t.client?.companyName && (
                         <span className={c.rowPreview}>{t.client.companyName}</span>
                       )}

@@ -1302,3 +1302,60 @@
 .mentionItemActive {
   background: var(--surface-alt);
 }
+
+/* ── Tags: list-row chips, filter control, bulk-tag input ─────────────────── */
+
+.rowTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--tint-info-bg);
+  border: 1px solid var(--tint-info-bd);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.tagFilter[data-on] {
+  border-color: var(--accent);
+}
+
+.tagFilterIcon {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.tagFilterInput {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.76rem;
+  width: 5.5rem;
+  color: inherit;
+  outline: none;
+}
+
+.bulkTagInput {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.8rem;
+  min-width: 8rem;
+}
