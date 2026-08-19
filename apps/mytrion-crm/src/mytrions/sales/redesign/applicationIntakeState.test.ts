@@ -108,14 +108,9 @@ describe('banking requirements follow the unsaved choice', () => {
     label: 'Last 3 bank statements (0 of 3 uploaded)',
     section: 'banking' as const,
   };
-  const plaid = { field: 'plaidConnected', label: 'Plaid bank connection', section: 'banking' as const };
 
   it('drops the statement ask once the form says Plaid', () => {
     expect(visibleMissingItems([statements], { bankingSource: 'plaid' })).toEqual([]);
-  });
-
-  it('drops the Plaid ask once the form says statements', () => {
-    expect(visibleMissingItems([plaid], { bankingSource: 'statements' })).toEqual([]);
   });
 
   it('keeps the statement ask while the form still says statements', () => {

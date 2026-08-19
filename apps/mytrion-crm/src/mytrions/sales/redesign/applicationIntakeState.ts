@@ -79,10 +79,10 @@ export function fieldVisiblyMissing(
  * nothing left to list and the server has not been told yet.
  */
 function bankingItemIsStale(field: string, form: Record<string, string>): boolean {
-  const source = form.bankingSource ?? 'statements';
-  if (field === 'bankStatements') return source === 'plaid';
-  if (field === 'plaidConnected') return source !== 'plaid';
-  return false;
+  // Only `bankStatements` needs this. The server stopped asking Sales for `plaidConnected` at all —
+  // the connection is the applicant's to make and the desk's to confirm, so the Plaid path has no
+  // intake requirement to go stale.
+  return field === 'bankStatements' && (form.bankingSource ?? 'statements') === 'plaid';
 }
 
 export function visibleMissingItems(

@@ -61,6 +61,13 @@ able to rewrite a case a credit agent was already reading.
 
 - **Adding is not overriding.** Pending Documents is the desk asking for a missing PDF; the agent
   uploads it and the form stays exactly as submitted. That is the ONLY state where the two gates differ.
+- **Banking is either/or, and Plaid is NOT Sales' to satisfy.** `bankingSource = 'statements'` asks for
+  three received `bank_statement` docs; `'plaid'` asks Sales for nothing — the applicant makes the
+  connection and the Verification desk confirms it (`plaidConnected`, settable only on the desk's intake
+  pane). Demanding `plaidConnected` at intake is what made the option a dead end: no surface could set
+  it, so Submit never unlocked. The browser drops a stale `bankStatements` ask the moment the form
+  switches to Plaid (`bankingItemIsStale`), so Ready to Submit stops asking for slots that have left
+  the form; the gate itself stays the server's.
 - `intake_submitted` and `pending_docs` used to be editable on the one gate. They are not: the
   requested limit, card count, EIN and principals must not move under a reviewer.
 - A correction after submit is the **desk's** (`assertDeskMayCorrect`, same columns, its own door), so
