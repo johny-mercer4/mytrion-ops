@@ -16,6 +16,42 @@ import { COLLECTION_STAGES } from '@/api/collection';
 import { initials } from '../collectionFormat';
 
 export type CaseScope = 'open' | 'closed' | 'all';
+
+/**
+ * SAVED VIEWS — additive filters over the scope tabs, and every one is a real server filter.
+ *
+ * Deliberately three, and deliberately not "my cases": nothing writes `assignee_user_id` yet, so
+ * an owner filter would be a chip that always returns nothing. It goes in when assignment does.
+ */
+export type SavedViewId = 'high_value' | 'never_contacted' | 'long_overdue';
+
+export interface SavedView {
+  id: SavedViewId;
+  label: string;
+  hint: string;
+  filter: { minRemaining?: number; neverContacted?: boolean };
+}
+
+export const SAVED_VIEWS: readonly SavedView[] = [
+  {
+    id: 'high_value',
+    label: 'Above $10k',
+    hint: 'At least $10,000 still outstanding',
+    filter: { minRemaining: 10_000 },
+  },
+  {
+    id: 'never_contacted',
+    label: 'Never contacted',
+    hint: 'No contact attempt has ever been logged',
+    filter: { neverContacted: true },
+  },
+  {
+    id: 'long_overdue',
+    label: 'Agency size',
+    hint: 'Above the $5,000 agency placement floor',
+    filter: { minRemaining: 5_000 },
+  },
+];
 export type CaseViewMode = 'list' | 'kanban';
 
 export const CASE_SCOPES: ReadonlyArray<{ id: CaseScope; label: string }> = [
@@ -55,6 +91,70 @@ export const CLOSED_REASON_LABEL: Record<CollectionClosedReason, string> = {
 };
 
 export const KANBAN_STAGES: readonly CollectionStage[] = COLLECTION_STAGES;
+
+/**
+ * BOARD LANES — five, not eight.
+ *
+ * One column per COLLECTION_STAGES entry is 8 × 260px = 2,080px of board on a ~1,192px pane, so
+ * three lanes were always off-screen and the board was never a board. These five are what a
+ * collector actually moves work BETWEEN; the exact stage survives on the card's chip, on the case
+ * record's spine, and in the data. Every stage appears in exactly one lane — `BOARD_LANES` is
+ * asserted total against COLLECTION_STAGES in collectionModel.test.ts.
+ */
+export interface BoardLane {
+  id: string;
+  label: string;
+  hint: string;
+  tone: string;
+  stages: readonly CollectionStage[];
+}
+
+export const BOARD_LANES: readonly BoardLane[] = [
+  {
+    id: 'intake',
+    label: 'Intake',
+    hint: 'Handed off, not yet worked',
+    tone: 'var(--tone-slate)',
+    stages: ['intake'],
+  },
+  {
+    id: 'working',
+    label: 'Working',
+    hint: 'Reached, chasing payment',
+    tone: 'var(--tone-sky)',
+    stages: ['connected'],
+  },
+  {
+    id: 'plan',
+    label: 'On a plan',
+    hint: 'Instalments running',
+    tone: 'var(--tone-emerald)',
+    stages: ['payment_plan'],
+  },
+  {
+    id: 'agency',
+    label: 'Agency & legal',
+    hint: 'Array, skip tracing, small claims',
+    tone: 'var(--tone-amber)',
+    stages: ['with_agency', 'skip_tracing', 'small_claims'],
+  },
+  {
+    id: 'closed',
+    label: 'Closed',
+    hint: 'Recovered or written off',
+    tone: 'var(--tone-teal)',
+    stages: ['closed_successfully', 'case_lost'],
+  },
+];
+
+const LANE_OF_STAGE = new Map<CollectionStage, string>(
+  BOARD_LANES.flatMap((lane) => lane.stages.map((stage) => [stage, lane.id] as const)),
+);
+
+/** Which board lane a stage belongs to. Falls back to intake so an unknown stage is never lost. */
+export function laneOfStage(stage: CollectionStage): string {
+  return LANE_OF_STAGE.get(stage) ?? 'intake';
+}
 
 export function stageLabel(stage: string): string {
   return STAGE_LABEL[stage as CollectionStage] ?? stage;

@@ -134,7 +134,7 @@ async function workerToken(profile: string, tenantId = DEFAULT_TENANT_ID): Promi
 const bearer = (t: string): Record<string, string> => ({ authorization: `Bearer ${t}` });
 
 describe('write RBAC', () => {
-  const writes: Array<[string, unknown]> = [
+  const writes: Array<[string, Record<string, unknown>]> = [
     ['/v1/collection/cases/cc_1/contact', { channel: 'call', outcome: 'reached' }],
     ['/v1/collection/cases/cc_1/promises', { amount: '100.00', dueDate: '2026-09-01' }],
     ['/v1/collection/cases/cc_1/stage', { stage: 'payment_plan' }],

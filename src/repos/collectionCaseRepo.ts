@@ -9,7 +9,7 @@
  * debt totals; fetching 526 invoice rows for a 50-row page would be the unbounded join this
  * desk exists to avoid.
  */
-import { and, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, notExists, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   collectionCaseInvoices,
@@ -20,6 +20,7 @@ import {
   type CollectionClosedReason,
   type CollectionStage,
 } from '../db/schema/collection.js';
+import { collectionActivity } from '../db/schema/collection_desk.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { canReadCollectionSnapshot } from './collectionAccess.js';
 import { firstOrUndefined, normalizePagination } from './util.js';
@@ -34,6 +35,10 @@ export interface CollectionCaseListFilter {
   stage?: CollectionStage | undefined;
   closedReason?: CollectionClosedReason | undefined;
   search?: string | undefined;
+  /** Saved view: only cases with at least this much still outstanding. */
+  minRemaining?: number | undefined;
+  /** Saved view: nobody has ever logged a contact attempt against the case. */
+  neverContacted?: boolean | undefined;
 }
 
 export interface CollectionCaseDto {
@@ -191,6 +196,26 @@ export function buildCaseWhere(filter: CollectionCaseListFilter): SQL | undefine
   if (filter.status) clauses.push(eq(collectionCases.status, filter.status));
   if (filter.stage) clauses.push(eq(collectionCases.collectionStage, filter.stage));
   if (filter.closedReason) clauses.push(eq(collectionCases.closedReason, filter.closedReason));
+  if (filter.minRemaining !== undefined) {
+    clauses.push(gte(collectionCases.totalDebtAmount, String(filter.minRemaining)));
+  }
+  // NOT EXISTS rather than a LEFT JOIN … IS NULL: the join would multiply the case row by its
+  // whole feed before discarding it, and this runs against the full book on every saved-view click.
+  if (filter.neverContacted) {
+    clauses.push(
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(collectionActivity)
+          .where(
+            and(
+              eq(collectionActivity.caseId, collectionCases.id),
+              eq(collectionActivity.kind, 'contact'),
+            ),
+          ),
+      ),
+    );
+  }
   const q = filter.search?.trim();
   if (q) {
     const like = `%${q}%`;

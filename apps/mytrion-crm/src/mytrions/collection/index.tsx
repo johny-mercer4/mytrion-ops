@@ -2,35 +2,52 @@ import { useState } from 'react';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { useUserContext } from '../../context/UserContextProvider';
 import {
+  COLLECTION_SECTIONS,
   accessibleCollectionTabs,
   canOpenCollectionTab,
+  defaultCollectionTab,
   type CollectionTabId,
 } from './collectionNav';
 import { CollectionArray } from './array/CollectionArray';
 import { CollectionCases } from './cases/CollectionCases';
-import { CollectionHome } from './tabs/CollectionHome';
+import { PlacementQueue } from './agency/PlacementQueue';
+import { CollectionToday } from './today/CollectionToday';
 import './collection.css';
 
 /**
- * Collection Mytrion — Home, Array Reports, Collection Cases.
+ * Collection Mytrion — Today, Cases, and the two halves of Array.
  *
- * Cases are list + kanban over `collection_cases`. Array is a server-paged Metro 2 snapshot.
+ * `openCase` is lifted here rather than living in each tab, because three surfaces now open a
+ * case record: the worklist, the list/board, and the placement queue. Holding it at the shell is
+ * what lets the queue hand off to the case and the case's Back land somewhere sensible.
+ *
  * Every view switch goes through the Layer-2 RBAC predicate so stale state can't bypass the sidebar.
  */
 export default function CollectionMytrion() {
   const user = useUserContext();
-  const [view, setView] = useState<CollectionTabId>('home');
+  const [view, setView] = useState<CollectionTabId>(() => defaultCollectionTab(user));
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
   const tabs = accessibleCollectionTabs(user);
 
   const open = (id: CollectionTabId): void => {
-    if (canOpenCollectionTab(user, id)) setView(id);
+    if (!canOpenCollectionTab(user, id)) return;
+    setOpenCaseId(null);
+    setView(id);
   };
 
-  const navSections: NavSection[] = [
-    {
-      id: 'collection',
-      label: 'Collection',
-      items: tabs.map((tab) => ({
+  /** From the queue: land on the case record with Cases as the surface behind it. */
+  const openCase = (caseId: string): void => {
+    if (!canOpenCollectionTab(user, 'cases')) return;
+    setView('cases');
+    setOpenCaseId(caseId);
+  };
+
+  const navSections: NavSection[] = COLLECTION_SECTIONS.map((section) => ({
+    id: section.id,
+    label: section.label,
+    items: tabs
+      .filter((tab) => tab.section === section.id)
+      .map((tab) => ({
         key: tab.id,
         label: tab.label,
         icon: <tab.icon size={19} />,
@@ -39,18 +56,20 @@ export default function CollectionMytrion() {
         onClick: () => open(tab.id),
         keywords: tab.keywords,
         ...(tab.soon ? { soon: true } : {}),
-        primary: tab.id === 'home',
+        primary: tab.id === 'today',
       })),
-    },
-  ];
+  })).filter((section) => section.items.length > 0);
 
   return (
     <div data-mytrion="collection" className="contents">
       <MytrionShell id="collection" navSections={navSections} enableNavSearch>
         <div className="co-root">
-          {view === 'home' ? <CollectionHome onOpen={open} /> : null}
-          {view === 'array' ? <CollectionArray /> : null}
-          {view === 'cases' ? <CollectionCases /> : null}
+          {view === 'today' ? <CollectionToday onOpenCase={openCase} onOpenTab={open} /> : null}
+          {view === 'cases' ? (
+            <CollectionCases openCaseId={openCaseId} onOpenCase={setOpenCaseId} />
+          ) : null}
+          {view === 'queue' ? <PlacementQueue onOpenCase={openCase} /> : null}
+          {view === 'filed' ? <CollectionArray /> : null}
         </div>
       </MytrionShell>
     </div>

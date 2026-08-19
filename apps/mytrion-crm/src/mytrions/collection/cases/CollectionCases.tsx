@@ -1,40 +1,59 @@
 /**
- * Collection → Collection Cases. List + kanban over the finder-owned case book.
+ * Collection → Cases. The book, as a list or a five-lane board.
  *
- * Status is a scope tab (open / closed / all), like Verification. Stages are kanban
- * columns. The board fetches up to 500 rows (the whole book is 494); the list pages
- * 15 at a time on the server so a filter change never dumps invoices.
+ * Status is a scope tab (open / closed / all), like Verification. The saved views are SERVER-side
+ * filters (`minRemaining`, `neverContacted`), not a client pass over one page: the counts and the
+ * pager describe the whole book, and filtering locally would page through a subset while claiming
+ * the book's numbers.
+ *
+ * `openCaseId` is lifted to the Mytrion shell because three surfaces open a case — this list, the
+ * worklist and the placement queue.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, ErrorState, Input, Select, Tabs } from '@/ds';
-import { listCollectionCases, type CollectionCaseListResult, type CollectionStage } from '@/api/collection';
-import { COLLECTION_STAGES } from '@/api/collection';
+import {
+  listCollectionCases,
+  COLLECTION_STAGES,
+  type CollectionCaseListResult,
+  type CollectionStage,
+} from '@/api/collection';
 import { PageHead } from '../../_shared/page';
 import { useCachedLoad } from '../../_shared/swrCache';
+import { useDebounced } from '../../_shared/useDebounced';
 import { CaseDetail } from './CaseDetail';
 import { CASES_PAGE_SIZE, CasesList } from './CasesList';
 import { CasesKanban } from './CasesKanban';
-import { CASE_SCOPES, STAGE_LABEL, statusOf, type CaseScope, type CaseViewMode } from './casesModel';
+import {
+  CASE_SCOPES,
+  SAVED_VIEWS,
+  STAGE_LABEL,
+  statusOf,
+  type CaseScope,
+  type CaseViewMode,
+  type SavedViewId,
+} from './casesModel';
 import './cases.css';
 
-export function CollectionCases() {
+export function CollectionCases({
+  openCaseId,
+  onOpenCase,
+}: {
+  openCaseId: string | null;
+  onOpenCase: (id: string | null) => void;
+}) {
   const [view, setView] = useState<CaseViewMode>('list');
   const [scope, setScope] = useState<CaseScope>('open');
   const [stage, setStage] = useState<CollectionStage | 'all'>('all');
+  const [saved, setSaved] = useState<SavedViewId | null>(null);
   const [term, setTerm] = useState('');
-  const [search, setSearch] = useState('');
+  const search = useDebounced(term.trim(), 300);
   const [page, setPage] = useState(1);
-  const [openId, setOpenId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const t = setTimeout(() => setSearch(term.trim()), 300);
-    return () => clearTimeout(t);
-  }, [term]);
-
-  useEffect(() => setPage(1), [scope, stage, search, view]);
+  useEffect(() => setPage(1), [scope, stage, saved, search, view]);
 
   const status = statusOf(scope);
   const stageFilter = stage === 'all' ? undefined : stage;
+  const savedFilter = saved ? SAVED_VIEWS.find((v) => v.id === saved)?.filter : undefined;
 
   const loadList = useCallback(
     () =>
@@ -44,12 +63,13 @@ export function CollectionCases() {
         ...(status ? { status } : {}),
         ...(stageFilter ? { stage: stageFilter } : {}),
         ...(search ? { search } : {}),
+        ...(savedFilter ?? {}),
       }),
-    [view, page, status, stageFilter, search],
+    [view, page, status, stageFilter, search, savedFilter],
   );
 
   const feed = useCachedLoad(
-    `collection:cases:${view}:${scope}:${stage}:${search}:${view === 'kanban' ? 0 : page}`,
+    `collection:cases:${view}:${scope}:${stage}:${saved ?? 'none'}:${search}:${view === 'kanban' ? 0 : page}`,
     loadList,
   );
 
@@ -57,12 +77,21 @@ export function CollectionCases() {
   if (feed.data) lastGood.current = feed.data;
   const shown = feed.data ?? lastGood.current;
   const rows = shown?.items ?? [];
+  const desk = shown?.desk ?? {};
   const total = shown?.total ?? 0;
   const agg = shown?.aggregates;
-  const filtered = Boolean(search || stage !== 'all' || scope !== 'all');
+  const filtered = Boolean(search || stage !== 'all' || saved || scope !== 'all');
   const stale = feed.loading && feed.data === null && rows.length > 0;
 
-  if (openId) return <CaseDetail caseId={openId} onBack={() => setOpenId(null)} />;
+  if (openCaseId) {
+    return (
+      <CaseDetail
+        caseId={openCaseId}
+        onBack={() => onOpenCase(null)}
+        onChanged={() => void feed.reload()}
+      />
+    );
+  }
 
   const scopeCounts: Record<CaseScope, number> = {
     open: agg?.open ?? 0,
@@ -73,8 +102,9 @@ export function CollectionCases() {
   return (
     <div className="cc-list" data-stale={stale ? 'true' : undefined}>
       <PageHead
-        title="Collection cases"
-        description="Bad-debt escalation from intake through agency, plan and recovery."
+        kicker="Collection"
+        title="Cases"
+        description="The whole bad-debt book, from hand-off through contact, plan and recovery."
         actions={
           <div className="cc-head-actions">
             <Input
@@ -89,6 +119,7 @@ export function CollectionCases() {
             />
             <Select
               label="Stage"
+              labelHidden
               size="sm"
               value={stage}
               onChange={(v) => setStage((v ?? 'all') as CollectionStage | 'all')}
@@ -128,6 +159,29 @@ export function CollectionCases() {
         aria-label="Filter cases by status"
       />
 
+      {/* Saved views. Buttons, not tabs: they are additive filters over the scope above, and a
+          second tab rail under the first would read as a second, competing scope. */}
+      <div className="cc-saved" role="group" aria-label="Saved views">
+        <span className="t-eyebrow">Saved</span>
+        {SAVED_VIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            className="cc-saved-chip"
+            aria-pressed={saved === v.id}
+            title={v.hint}
+            onClick={() => setSaved(saved === v.id ? null : v.id)}
+          >
+            {v.label}
+          </button>
+        ))}
+        {saved ? (
+          <Button variant="link" size="sm" onClick={() => setSaved(null)}>
+            Clear
+          </Button>
+        ) : null}
+      </div>
+
       {feed.error && rows.length === 0 ? (
         <ErrorState
           size="page"
@@ -143,8 +197,10 @@ export function CollectionCases() {
         <>
           {feed.error ? (
             <div className="cc-banner" data-tone="danger" role="alert">
-              <span className="cc-banner-title">Could not load collection cases</span>
-              <p className="cc-banner-body">{String(feed.error)}</p>
+              <span className="cc-banner-title">Could not refresh the case book</span>
+              <p className="cc-banner-body">
+                {String(feed.error)} — the rows below are the last good page.
+              </p>
               <Button variant="secondary" size="sm" onClick={() => void feed.reload()}>
                 Retry
               </Button>
@@ -154,19 +210,21 @@ export function CollectionCases() {
           {view === 'list' ? (
             <CasesList
               rows={rows}
+              desk={desk}
               total={total}
               page={page}
               loading={feed.loading && rows.length === 0}
               filtered={filtered}
               onPage={setPage}
-              onOpen={setOpenId}
+              onOpen={onOpenCase}
             />
           ) : (
             <CasesKanban
               rows={rows}
+              desk={desk}
               loading={feed.loading && rows.length === 0}
               filtered={filtered}
-              onOpen={setOpenId}
+              onOpen={onOpenCase}
             />
           )}
         </>

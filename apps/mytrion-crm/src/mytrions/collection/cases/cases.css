@@ -230,192 +230,148 @@
   color: var(--text-primary);
 }
 
-/* ── Detail ─────────────────────────────────────────────────────────────── */
-[data-mytrion='collection'] .cc-case-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+/* Board lanes are FIVE and equal-width now, not eight fixed-width columns that scrolled off the
+   pane. `flex: 1` with a floor, so five lanes fill the measure and nothing is hidden at rest. */
+[data-mytrion='collection'] .cc-board {
+  align-items: stretch;
 }
-[data-mytrion='collection'] .cc-crumbs {
-  display: flex;
+[data-mytrion='collection'] .cc-col {
+  flex: 1 1 0;
+  min-height: 320px;
+}
+[data-mytrion='collection'] .cc-lane-name {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
-}
-[data-mytrion='collection'] .cc-crumb,
-[data-mytrion='collection'] .cc-crumb-current {
   font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-[data-mytrion='collection'] .cc-crumb-current {
-  color: var(--text-primary);
   font-weight: var(--fw-semibold);
-}
-[data-mytrion='collection'] .cc-crumb-sep {
-  color: var(--text-disabled);
-}
-[data-mytrion='collection'] .cc-crumbs-gap {
-  flex: 1;
-}
-[data-mytrion='collection'] .cc-case-id {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-}
-[data-mytrion='collection'] .cc-case-identity {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-[data-mytrion='collection'] .cc-case-who {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  min-width: 0;
-}
-[data-mytrion='collection'] .cc-case-titles {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-[data-mytrion='collection'] .cc-case-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-[data-mytrion='collection'] .cc-case-name {
-  margin: 0;
-  font-family: var(--font-head);
-  font-size: var(--text-xl);
-  font-weight: var(--fw-bold);
-  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
-[data-mytrion='collection'] .cc-case-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-}
-[data-mytrion='collection'] .cc-fact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-[data-mytrion='collection'] .cc-fact-v {
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-}
-[data-mytrion='collection'] .cc-fact-v[data-empty='true'] {
-  color: var(--text-disabled);
-  font-style: italic;
-}
-
-[data-mytrion='collection'] .cc-spine {
-  display: flex;
-  gap: var(--space-1_5);
-  margin: 0;
-  padding: var(--space-2) 0 0;
-  list-style: none;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-}
-[data-mytrion='collection'] .cc-spine-step {
+[data-mytrion='collection'] .cc-lane-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
   flex: none;
-  opacity: 0.55;
 }
-[data-mytrion='collection'] .cc-spine-step[data-active='true'] {
-  opacity: 1;
-}
-
-[data-mytrion='collection'] .cc-banner {
+[data-mytrion='collection'] .cc-col-sub {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-0_5);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--cc-r-md);
-  border: 1px solid var(--border);
-  background: var(--surface-data);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
-[data-mytrion='collection'] .cc-banner[data-tone='danger'] {
-  border-color: var(--intent-danger-bd);
-  background: var(--intent-danger-bg);
-}
-[data-mytrion='collection'] .cc-banner[data-tone='success'] {
-  border-color: var(--intent-success-bd);
-  background: var(--intent-success-bg);
-}
-[data-mytrion='collection'] .cc-banner-title {
-  font-size: var(--text-sm);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
-}
-[data-mytrion='collection'] .cc-banner-body {
-  margin: 0;
+/* The money in the lane. A count says how many cases are stuck; this says how much is. */
+[data-mytrion='collection'] .cc-col-money {
   font-size: var(--text-xs);
-  line-height: 1.5;
+  font-weight: var(--fw-semibold);
   color: var(--text-secondary);
 }
-[data-mytrion='collection'] .cc-banner .ds-btn,
-[data-mytrion='collection'] .cc-banner button {
-  align-self: flex-start;
-  margin-top: var(--space-1);
+[data-mytrion='collection'] .cc-col-money[data-zero='true'] {
+  color: var(--text-disabled);
 }
 
-[data-mytrion='collection'] .cc-panes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
+/* The card's left edge carries the LANE tone, not the stage — the stage is the chip. */
+[data-mytrion='collection'] .cc-card {
+  overflow: hidden;
+  padding-left: var(--space-3);
 }
-[data-mytrion='collection'] .cc-pane {
+[data-mytrion='collection'] .cc-card-edge {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 2px;
+  background: var(--cc-card-tone, transparent);
+}
+[data-mytrion='collection'] .cc-card-foot {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--cc-r-md);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+}
+
+/* ── Saved views ────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-saved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-saved-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 var(--space-2_5);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
-  background: var(--surface-data);
-  box-shadow: var(--hz-glass-inset);
-  overflow-x: auto;
-}
-[data-mytrion='collection'] .cc-pane-title {
-  margin: 0;
+  background: var(--field);
+  color: var(--text-secondary);
+  font-family: inherit;
   font-size: var(--text-xs);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
 }
-[data-mytrion='collection'] .cc-dl {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-  margin: 0;
-}
-[data-mytrion='collection'] .cc-dl-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-[data-mytrion='collection'] .cc-dl-row dt {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-[data-mytrion='collection'] .cc-dl-row dd {
-  margin: 0;
-  font-size: var(--text-sm);
+[data-mytrion='collection'] .cc-saved-chip:hover {
   color: var(--text-primary);
-  overflow-wrap: anywhere;
+  border-color: var(--border-strong);
+}
+/* aria-pressed IS the selected state — no second class to fall out of step with it. */
+[data-mytrion='collection'] .cc-saved-chip[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+[data-mytrion='collection'] .cc-saved-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-@media (width < 900px) {
-  [data-mytrion='collection'] .cc-panes,
-  [data-mytrion='collection'] .cc-dl {
-    grid-template-columns: 1fr;
+/* ── List cells ─────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-strong {
+  font-weight: var(--fw-semibold);
+}
+[data-mytrion='collection'] .cc-muted {
+  color: var(--text-disabled);
+}
+[data-mytrion='collection'] .cc-recovered {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+[data-mytrion='collection'] .cc-recovered .num[data-zero='true'] {
+  color: var(--text-disabled);
+}
+[data-mytrion='collection'] .cc-recovered .num:not([data-zero]) {
+  color: var(--success);
+}
+[data-mytrion='collection'] .cc-recovered-share {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-owner {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--field);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-num);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+}
+
+@media (width < 1200px) {
+  [data-mytrion='collection'] .cc-board {
+    align-items: flex-start;
+  }
+  [data-mytrion='collection'] .cc-col {
+    flex: 0 0 240px;
   }
 }
 @media (width < 640px) {
@@ -427,7 +383,6 @@
     flex-basis: 220px;
   }
 }
-
 @media (hover: none) {
   [data-mytrion='collection'] .cc-card:hover {
     background: var(--surface);

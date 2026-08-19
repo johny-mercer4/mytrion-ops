@@ -10,6 +10,8 @@ import { CASE_INVOICES_PAGE_SIZE } from './casesModel';
 
 const getCollectionCase = vi.fn();
 const listCollectionInvoices = vi.fn();
+const getCaseDesk = vi.fn();
+const listActivity = vi.fn();
 
 vi.mock('@/api/collection', async () => {
   const actual = await vi.importActual<typeof import('@/api/collection')>('@/api/collection');
@@ -17,6 +19,19 @@ vi.mock('@/api/collection', async () => {
     ...actual,
     getCollectionCase: (...args: unknown[]) => getCollectionCase(...args),
     listCollectionInvoices: (...args: unknown[]) => listCollectionInvoices(...args),
+  };
+});
+
+/**
+ * The record now reads four sources, not two. The desk bundle and the activity feed are stubbed
+ * so these tests stay about the INVOICE panel's load states — the thing they were written for.
+ */
+vi.mock('@/api/collectionDesk', async () => {
+  const actual = await vi.importActual<typeof import('@/api/collectionDesk')>('@/api/collectionDesk');
+  return {
+    ...actual,
+    getCaseDesk: (...args: unknown[]) => getCaseDesk(...args),
+    listActivity: (...args: unknown[]) => listActivity(...args),
   };
 });
 
@@ -98,15 +113,33 @@ function pageOf(offset: number, total: number): { items: CollectionInvoiceRow[];
 
 beforeEach(() => {
   invalidateSwrCache('collection:case');
+  invalidateSwrCache('collection:activity');
   getCollectionCase.mockReset();
   listCollectionInvoices.mockReset();
+  getCaseDesk.mockReset();
+  listActivity.mockReset();
   getCollectionCase.mockResolvedValue({ case: caseRow() });
+  getCaseDesk.mockResolvedValue({
+    plan: null,
+    promises: [],
+    tradeline: null,
+    policy: {
+      agencyMinDaysPastDue: 180,
+      agencyMinRemaining: 5000,
+      agencyWarnWindowDays: 14,
+      promiseGraceDays: 5,
+      silentAfterDays: 30,
+      intakeUncontactedDays: 2,
+      agingBands: [30, 90, 180],
+    },
+  });
+  listActivity.mockResolvedValue({ items: [], total: 0 });
 });
 
 describe('case invoice load states', () => {
   it('shows an error and Retry when invoices fail and there is no cache', async () => {
     listCollectionInvoices.mockRejectedValue(new Error('Backend issue'));
-    render(<CaseDetail caseId="cc_1" onBack={() => undefined} />);
+    render(<CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load invoices');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
@@ -115,7 +148,7 @@ describe('case invoice load states', () => {
 
   it('shows the empty state only after a successful zero-item load', async () => {
     listCollectionInvoices.mockResolvedValue({ items: [], total: 0 });
-    render(<CaseDetail caseId="cc_1" onBack={() => undefined} />);
+    render(<CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />);
 
     expect(await screen.findByText('No invoices on this case')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -129,7 +162,7 @@ describe('case invoice pagination', () => {
       Promise.resolve(pageOf(page?.offset ?? 0, 120)),
     );
     const user = userEvent.setup();
-    render(<CaseDetail caseId="cc_1" onBack={() => undefined} />);
+    render(<CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />);
 
     expect(await screen.findByText('INV-1')).toBeInTheDocument();
     expect(screen.getByText('INV-50')).toBeInTheDocument();

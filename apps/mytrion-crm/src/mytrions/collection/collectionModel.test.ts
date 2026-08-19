@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ArrayReportRow, CollectionCaseRow } from '@/api/collection';
+import { COLLECTION_STAGES, type ArrayReportRow, type CollectionCaseRow } from '@/api/collection';
 import { accountStatusLabel, reportName } from './array/arrayModel';
 import {
+  BOARD_LANES,
   CASE_INVOICES_PAGE_SIZE,
   caseName,
+  laneOfStage,
   daysTone,
   invoiceCacheKey,
   invoicePageOffset,
@@ -138,5 +140,34 @@ describe('collection format', () => {
   it('does not render a missing amount as $0', () => {
     expect(money(null)).toBe('—');
     expect(money('not-a-number')).toBe('—');
+  });
+});
+
+/**
+ * The five board lanes must cover all eight stages, exactly once each.
+ *
+ * The board groups; the case spine and the data stay at eight. A stage that fell out of every
+ * lane would vanish from the board silently — the cards would simply not be there — which is the
+ * one failure mode this grouping introduces.
+ */
+describe('board lanes', () => {
+  it('partitions COLLECTION_STAGES — every stage in exactly one lane', () => {
+    const mapped = BOARD_LANES.flatMap((lane) => lane.stages);
+    expect([...mapped].sort()).toEqual([...COLLECTION_STAGES].sort());
+    expect(new Set(mapped).size).toBe(COLLECTION_STAGES.length);
+  });
+
+  it('routes every stage to a lane that actually exists', () => {
+    const ids = new Set(BOARD_LANES.map((l) => l.id));
+    for (const stage of COLLECTION_STAGES) {
+      expect(ids.has(laneOfStage(stage)), stage).toBe(true);
+    }
+  });
+
+  it('keeps the terminal stages out of the working lanes', () => {
+    expect(laneOfStage('closed_successfully')).toBe('closed');
+    expect(laneOfStage('case_lost')).toBe('closed');
+    expect(laneOfStage('with_agency')).toBe('agency');
+    expect(laneOfStage('small_claims')).toBe('agency');
   });
 });

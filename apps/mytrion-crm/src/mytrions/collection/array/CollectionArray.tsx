@@ -1,5 +1,9 @@
 /**
- * Collection → Array Reports. Server-paged list — the book is 9k+ rows.
+ * Collection → Agency → Filed tradelines. Server-paged list — the book is 9k+ rows.
+ *
+ * Renamed, not rewritten: this is the OUTPUT of the monthly Metro 2 filing and it works. The work
+ * that happens BEFORE a filing moved to its own screen (`agency/PlacementQueue`), which is what
+ * the old "Array Reports" tab was missing rather than getting wrong.
  *
  * Pattern is Mytrion Watch: filter+page cache key, lastGood so a filter change does not
  * blank the table, tiles describe the WHOLE snapshot, never the current page.
@@ -147,8 +151,9 @@ export function CollectionArray() {
   return (
     <div className="cc-list" data-stale={stale ? 'true' : undefined}>
       <PageHead
-        title="Array reports"
-        description="Metro 2 tradelines placed with Array — a snapshot, not the live Zoho write."
+        kicker="Collection · Agency"
+        title="Filed tradelines"
+        description="The Metro 2 snapshot sent to Array — what we reported, and what came back. A snapshot, not the live Zoho write."
         actions={
           <div className="cc-head-actions">
             <Input

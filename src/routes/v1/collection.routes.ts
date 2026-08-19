@@ -45,6 +45,12 @@ const caseListQuery = z.object({
   stage: z.enum(COLLECTION_STAGES).optional(),
   closedReason: z.enum(COLLECTION_CLOSED_REASONS).optional(),
   search: z.string().trim().min(1).max(120).optional(),
+  /** Saved views. Cheap server-side filters rather than a client pass over one page. */
+  minRemaining: z.coerce.number().min(0).max(100_000_000).optional(),
+  neverContacted: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
 });
 
 const arrayListQuery = z.object({
