@@ -4,7 +4,6 @@ import type { TabDescriptor } from '../../access/tabRegistry';
 export const DESK_TABS = [
   { key: 'tickets', label: 'Tickets' },
   { key: 'escalations', label: 'Escalations' },
-  { key: 'chat', label: 'Chat' },
   // Admin-only in the shell (`admin ? [settings] : []`). Declared anyway — the registry answers
   // "what exists", the shell answers "may you see it", and a tab absent from the registry could
   // never be granted at all.

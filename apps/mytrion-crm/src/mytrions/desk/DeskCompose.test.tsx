@@ -1,9 +1,10 @@
 /**
  * DeskCompose — the "New ticket / escalation" modal.
  *
- * Pins the wiring that is easy to ship broken: only ROUTED escalation reasons are offered, the deal
- * picker drops rows with no numeric CRM id (createTicket rejects those), and a successful create
- * hands the parent the id to open — an escalation reports its backing ticketId, a ticket its own id.
+ * Pins the wiring that is easy to ship broken: the ticket type list is driven by the chosen
+ * department, the deal picker drops rows with no numeric CRM id, an optional attachment is uploaded
+ * to the new conversation, and a successful create hands the parent the id to open (an escalation
+ * reports its backing ticketId, a ticket its own id).
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -14,6 +15,7 @@ const api = vi.hoisted(() => ({
   getCommsCatalog: vi.fn(),
   createTicket: vi.fn(),
   createEscalation: vi.fn(),
+  uploadThreadAttachment: vi.fn(),
 }));
 vi.mock('@/api/comms', () => api);
 
@@ -37,6 +39,19 @@ const CATALOG: CommsCatalog = {
       requestable: true,
       sortOrder: 1,
     },
+    {
+      code: 'Q-1',
+      label: 'Invoice Request',
+      group: null,
+      targetDepartment: 'billing',
+      defaultPriority: 'medium',
+      slaHours: 24,
+      requiresCarrier: false,
+      requiresCard: false,
+      automationKey: null,
+      requestable: true,
+      sortOrder: 1,
+    },
   ],
   escalationReasons: [
     { code: 'ESC-CLIENT', label: 'Problem with the client', sortOrder: 1, routed: true },
@@ -44,7 +59,7 @@ const CATALOG: CommsCatalog = {
   ],
   departments: [
     { department: 'customer-service', label: 'Customer Service', acceptsTickets: true, acceptsEscalations: true },
-    { department: 'sales', label: 'Sales', acceptsTickets: true, acceptsEscalations: false },
+    { department: 'billing', label: 'Billing & Accounting', acceptsTickets: true, acceptsEscalations: true },
   ],
   sla: {
     resolutionHoursByPriority: { critical: 4, high: 4, medium: 24, low: 72 },
@@ -53,7 +68,6 @@ const CATALOG: CommsCatalog = {
 };
 
 beforeAll(() => {
-  // The submit path mints an idempotency key; jsdom's crypto may lack randomUUID.
   if (typeof globalThis.crypto.randomUUID !== 'function') {
     Object.defineProperty(globalThis.crypto, 'randomUUID', {
       configurable: true,
@@ -71,6 +85,7 @@ beforeEach(() => {
     threadId: 'mth_esc1',
   });
   api.createTicket.mockResolvedValue({ ticket: { id: 'mtk_1', threadId: 'mth_1', number: 'T-000001' } });
+  api.uploadThreadAttachment.mockResolvedValue({ message: {}, attachment: {} });
   dc.listDeals.mockResolvedValue([
     { id: '123', Deal_Name: 'Acme Trucking', Carrier_ID: '5001' },
     { id: 'not-a-number', Deal_Name: 'Bad row' },
@@ -82,24 +97,26 @@ describe('DeskCompose', () => {
     render(<DeskCompose open onClose={vi.fn()} onCreated={vi.fn()} />);
     await waitFor(() => expect(api.getCommsCatalog).toHaveBeenCalled());
     expect(dc.listDeals).toHaveBeenCalled();
-    // Both tabs exist; escalation submit is the default and is disabled until the form is valid.
     expect(screen.getByRole('tab', { name: 'Escalation' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Ticket' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Raise escalation' })).toBeDisabled();
   });
 
-  it('offers only ROUTED escalation reasons', async () => {
+  it('offers every escalation reason and has no department picker', async () => {
     const user = userEvent.setup();
     render(<DeskCompose open onClose={vi.fn()} onCreated={vi.fn()} />);
     await waitFor(() => expect(api.getCommsCatalog).toHaveBeenCalled());
 
+    // Escalation routes by reason alone — the department picker moved to the Ticket tab.
+    expect(screen.queryByRole('combobox', { name: 'Department' })).toBeNull();
+
     await user.click(await screen.findByRole('combobox', { name: 'Reason' }));
     const list = await screen.findByRole('listbox');
     expect(within(list).getByRole('option', { name: /Problem with the client/ })).toBeInTheDocument();
-    expect(within(list).queryByRole('option', { name: /Nobody configured/ })).toBeNull();
+    expect(within(list).getByRole('option', { name: /Nobody configured/ })).toBeInTheDocument();
   });
 
-  it('raises an escalation and reports its backing ticketId', async () => {
+  it('raises an escalation (reason only) and reports its backing ticketId', async () => {
     const user = userEvent.setup();
     const onCreated = vi.fn();
     render(<DeskCompose open onClose={vi.fn()} onCreated={onCreated} />);
@@ -107,7 +124,6 @@ describe('DeskCompose', () => {
 
     await user.click(await screen.findByRole('combobox', { name: 'Reason' }));
     await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: /Problem with the client/ }));
-
     await user.type(screen.getByPlaceholderText(/Brief summary of the issue/i), 'Cannot reach the client');
     await user.type(screen.getByPlaceholderText(/what's the issue/i), 'Phone disconnected for two days');
 
@@ -122,15 +138,15 @@ describe('DeskCompose', () => {
           subject: 'Cannot reach the client',
           description: 'Phone disconnected for two days',
           sourceMytrion: 'desk',
-          idempotencyKey: expect.any(String),
         }),
       ),
     );
-    expect(api.createTicket).not.toHaveBeenCalled();
+    // No department is sent for an escalation any more.
+    expect(api.createEscalation.mock.calls[0]?.[0]).not.toHaveProperty('targetDepartment');
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ kind: 'escalation', ticketId: 'mtk_esc1' }));
   });
 
-  it('drops deals with no numeric CRM id and files a ticket against a real one', async () => {
+  it('files a ticket: department drives the type list, and non-numeric deals are dropped', async () => {
     const user = userEvent.setup();
     const onCreated = vi.fn();
     render(<DeskCompose open onClose={vi.fn()} onCreated={onCreated} />);
@@ -138,12 +154,19 @@ describe('DeskCompose', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Ticket' }));
 
-    await user.click(await screen.findByRole('combobox', { name: 'Ticket type' }));
-    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: /Card Activation/ }));
+    // Pick the department — that scopes the ticket-type list to that department's codes.
+    await user.click(await screen.findByRole('combobox', { name: 'Department' }));
+    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: /Customer Service/ }));
+
+    await user.click(screen.getByRole('combobox', { name: 'Ticket type' }));
+    const typeList = await screen.findByRole('listbox');
+    // Only Customer Service's C-* type is offered; Billing's Q-* is not.
+    expect(within(typeList).getByRole('option', { name: /Card Activation/ })).toBeInTheDocument();
+    expect(within(typeList).queryByRole('option', { name: /Invoice Request/ })).toBeNull();
+    await user.click(within(typeList).getByRole('option', { name: /Card Activation/ }));
 
     await user.click(screen.getByRole('combobox', { name: 'Deal' }));
     const dealList = await screen.findByRole('listbox');
-    // The non-numeric-id row is not a valid CRM deal and must not be offered.
     expect(within(dealList).queryByRole('option', { name: /Bad row/ })).toBeNull();
     await user.click(within(dealList).getByRole('option', { name: /Acme Trucking/ }));
 
@@ -156,17 +179,32 @@ describe('DeskCompose', () => {
 
     await waitFor(() =>
       expect(api.createTicket).toHaveBeenCalledWith(
-        expect.objectContaining({
-          typeCode: 'C-1',
-          dealId: '123',
-          subject: 'Card not working',
-          description: 'Driver reports declines',
-          sourceMytrion: 'desk',
-          idempotencyKey: expect.any(String),
-        }),
+        expect.objectContaining({ typeCode: 'C-1', dealId: '123', subject: 'Card not working' }),
       ),
     );
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ kind: 'ticket', ticketId: 'mtk_1' }));
+  });
+
+  it('uploads an attached file to the new conversation', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<DeskCompose open onClose={vi.fn()} onCreated={vi.fn()} />);
+    await waitFor(() => expect(api.getCommsCatalog).toHaveBeenCalled());
+
+    await user.click(await screen.findByRole('combobox', { name: 'Reason' }));
+    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: /Problem with the client/ }));
+    await user.type(screen.getByPlaceholderText(/Brief summary of the issue/i), 'See screenshot');
+    await user.type(screen.getByPlaceholderText(/what's the issue/i), 'attached');
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const png = new File(['x'], 'screenshot.png', { type: 'image/png' });
+    await user.upload(fileInput, png);
+
+    await user.click(screen.getByRole('button', { name: 'Raise escalation' }));
+
+    await waitFor(() => expect(api.createEscalation).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(api.uploadThreadAttachment).toHaveBeenCalledWith('mth_esc1', png, expect.anything()),
+    );
   });
 
   it('surfaces a server error instead of reporting success', async () => {

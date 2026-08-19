@@ -309,13 +309,14 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     title: 'Mytrion Desk',
     tag: 'Desk',
     icon: 'desk',
-    blurb: 'Support desk — tickets, escalations and live chat, routed by department.',
+    blurb: 'Support desk — tickets and escalations, routed by department.',
     hue: 'orange',
     department: 'desk',
     allDepartments: false,
-    // Access is granted per-team in Mytrion Admin (Profile Defaults / per-user); no profile
-    // auto-entry yet — the real support profile names aren't confirmed. Admins always get in.
-    allowedProfiles: [],
+    // The shared support console for Customer Service, Billing and Verification. Verified sessions
+    // ride on a real cs/billing/verification grant (see resolveAccess canAccess('desk')); these
+    // profile names are only the dev-mock / legacy fallback. Admins always get in.
+    allowedProfiles: ['Customer Retention', 'Billing', 'Standard Plus', 'Verification'],
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,

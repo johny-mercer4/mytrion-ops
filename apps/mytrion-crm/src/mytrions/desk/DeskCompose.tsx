@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Paperclip, X } from 'lucide-react';
 import { Button, Dialog, Input, Select, Tabs, Textarea, type SelectOption } from '@/ds';
 import {
   createEscalation,
   createTicket,
   getCommsCatalog,
+  uploadThreadAttachment,
   type CommsCatalog,
   type TicketPriority,
 } from '@/api/comms';
@@ -49,11 +51,13 @@ function dealOption(row: CrmRow): SelectOption | null {
 
 /**
  * The Desk compose modal — raise a ticket or an escalation against the comms backend, so round-robin
- * (ticket, by department) and the escalation ladder (by reason) fire server-side. On success the
+ * (ticket, by department) and the escalation ladder (by reason) fire server-side. An optional file or
+ * image is uploaded to the new conversation after it is created, so it lands in Dropbox. On success the
  * parent opens the new item live in the console.
  *
- * Ticket creation is Sales-gated server-side (filing against a Deal is a Sales act) and needs a linked
- * deal; escalation creation is open to any internal worker. The form surfaces a clear error either way.
+ * A ticket routes by DEPARTMENT (which filters the ticket-type list) and is filed against a Zoho deal;
+ * an escalation routes by REASON alone. Ticket creation is Sales-gated + deal-bound server-side; the
+ * form surfaces a clear error if the caller may not file one.
  */
 export function DeskCompose({
   open,
@@ -72,12 +76,16 @@ export function DeskCompose({
 
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
+  // ticket
+  const [ticketDepartment, setTicketDepartment] = useState<string | null>(null);
   const [typeCode, setTypeCode] = useState<string | null>(null);
   const [dealId, setDealId] = useState<string | null>(null);
   const [priority, setPriority] = useState<string | null>(null);
   const [cardNumber, setCardNumber] = useState('');
+  // escalation
   const [reasonCode, setReasonCode] = useState<string | null>(null);
-  const [department, setDepartment] = useState<string | null>(null);
+  // shared
+  const [file, setFile] = useState<File | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -89,12 +97,13 @@ export function DeskCompose({
     let cancelled = false;
     setSubject('');
     setDescription('');
+    setTicketDepartment(null);
     setTypeCode(null);
     setDealId(null);
     setPriority(null);
     setCardNumber('');
     setReasonCode(null);
-    setDepartment(null);
+    setFile(null);
     setError('');
     setCatalogError('');
 
@@ -129,28 +138,32 @@ export function DeskCompose({
     };
   }, [open]);
 
-  const ticketTypeOpts = useMemo<SelectOption[]>(
-    () => (catalog?.ticketTypes ?? []).map((t) => ({ value: t.code, label: `${t.code} · ${t.label}` })),
-    [catalog],
-  );
-  const reasonOpts = useMemo<SelectOption[]>(
-    () =>
-      (catalog?.escalationReasons ?? [])
-        .filter((r) => r.routed)
-        .map((r) => ({ value: r.code, label: r.label })),
-    [catalog],
-  );
-  const deptOpts = useMemo<SelectOption[]>(
+  const departmentOpts = useMemo<SelectOption[]>(
     () =>
       (catalog?.departments ?? [])
-        .filter((d) => d.acceptsEscalations)
+        .filter((d) => d.acceptsTickets)
         .map((d) => ({ value: d.department, label: d.label || d.department })),
+    [catalog],
+  );
+  // Ticket types belong to a department (C-* Customer Service, Q-* Billing, V-* Verification, …), so
+  // the type list is the picked department's types — the department picker drives it.
+  const ticketTypeOpts = useMemo<SelectOption[]>(
+    () =>
+      ticketDepartment
+        ? (catalog?.ticketTypes ?? [])
+            .filter((t) => t.targetDepartment === ticketDepartment)
+            .map((t) => ({ value: t.code, label: `${t.code} · ${t.label}` }))
+        : [],
+    [catalog, ticketDepartment],
+  );
+  const reasonOpts = useMemo<SelectOption[]>(
+    () => (catalog?.escalationReasons ?? []).map((r) => ({ value: r.code, label: r.label })),
     [catalog],
   );
 
   const canSubmit =
     kind === 'ticket'
-      ? Boolean(typeCode && dealId && subject.trim() && description.trim())
+      ? Boolean(ticketDepartment && typeCode && dealId && subject.trim() && description.trim())
       : Boolean(reasonCode && subject.trim() && description.trim());
 
   const submit = useCallback(async () => {
@@ -160,6 +173,8 @@ export function DeskCompose({
     setError('');
     const idempotencyKey = crypto.randomUUID();
     try {
+      let threadId: string;
+      let result: DeskComposeResult;
       if (kind === 'ticket' && typeCode && dealId) {
         const { ticket } = await createTicket({
           typeCode,
@@ -171,25 +186,32 @@ export function DeskCompose({
           sourceMytrion: 'desk',
           idempotencyKey,
         });
-        onCreated({ kind: 'ticket', ticketId: ticket.id });
+        threadId = ticket.threadId;
+        result = { kind: 'ticket', ticketId: ticket.id };
       } else if (kind === 'escalation' && reasonCode) {
-        const { escalation } = await createEscalation({
+        const escalation = await createEscalation({
           reasonCode,
-          ...(department ? { targetDepartment: department } : {}),
           subject: subject.trim(),
           description: description.trim(),
           sourceMytrion: 'desk',
           idempotencyKey,
         });
-        onCreated({ kind: 'escalation', ticketId: escalation.ticketId });
+        threadId = escalation.threadId;
+        result = { kind: 'escalation', ticketId: escalation.escalation.ticketId };
+      } else {
+        return;
       }
+      // The item exists now; attach the file to its conversation (→ Dropbox). Best-effort — a failed
+      // upload must not lose the ticket/escalation the user just filed; they can re-attach in the thread.
+      if (file) await uploadThreadAttachment(threadId, file, {}).catch(() => undefined);
+      onCreated(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
       submitLatch.current = false;
     }
-  }, [canSubmit, submitting, kind, typeCode, dealId, subject, description, priority, cardNumber, reasonCode, department, onCreated]);
+  }, [canSubmit, submitting, kind, typeCode, dealId, subject, description, priority, cardNumber, reasonCode, file, onCreated]);
 
   return (
     <Dialog
@@ -231,6 +253,22 @@ export function DeskCompose({
         {kind === 'ticket' ? (
           <>
             <div className={styles.field}>
+              <span className={styles.fieldLabel}>Department</span>
+              <Select
+                label="Department"
+                labelHidden
+                options={departmentOpts}
+                value={ticketDepartment}
+                onChange={(v) => {
+                  setTicketDepartment(v);
+                  setTypeCode(null);
+                }}
+                placeholder="Choose a department"
+                loading={!catalog && !catalogError}
+                emptyLabel="No departments configured"
+              />
+            </div>
+            <div className={styles.field}>
               <span className={styles.fieldLabel}>Ticket type</span>
               <Select
                 label="Ticket type"
@@ -238,9 +276,9 @@ export function DeskCompose({
                 options={ticketTypeOpts}
                 value={typeCode}
                 onChange={setTypeCode}
-                placeholder="Choose a type"
-                loading={!catalog && !catalogError}
-                emptyLabel="No ticket types configured"
+                placeholder={ticketDepartment ? 'Choose a type' : 'Choose a department first'}
+                disabled={!ticketDepartment}
+                emptyLabel="No ticket types for this department"
               />
             </div>
             <div className={styles.field}>
@@ -285,7 +323,7 @@ export function DeskCompose({
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                rows={5}
+                rows={4}
                 placeholder="What's needed, which card / driver, and any context…"
               />
             </label>
@@ -302,19 +340,7 @@ export function DeskCompose({
                 onChange={setReasonCode}
                 placeholder="Choose a reason"
                 loading={!catalog && !catalogError}
-                emptyLabel="No routed reasons — configure in Mytrion Admin"
-              />
-            </div>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Department (optional)</span>
-              <Select
-                label="Department"
-                labelHidden
-                options={deptOpts}
-                value={department}
-                onChange={setDepartment}
-                placeholder="Auto by reason"
-                clearable
+                emptyLabel="No escalation reasons configured"
               />
             </div>
             <label className={styles.field}>
@@ -326,12 +352,42 @@ export function DeskCompose({
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                rows={5}
+                rows={4}
                 placeholder="What's the issue, and any context…"
               />
             </label>
           </>
         )}
+
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Attachment (optional)</span>
+          {file ? (
+            <div className={styles.attachChip}>
+              <Paperclip size={14} aria-hidden="true" />
+              <span className={styles.attachChipName}>{file.name}</span>
+              <button
+                type="button"
+                className={styles.attachChipRemove}
+                onClick={() => setFile(null)}
+                aria-label="Remove attachment"
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <label className={styles.attachPick}>
+              <input
+                type="file"
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  e.currentTarget.value = '';
+                }}
+              />
+              <Paperclip size={14} aria-hidden="true" />
+              Choose a file or image
+            </label>
+          )}
+        </div>
 
         {error ? (
           <p className={styles.error} role="alert">

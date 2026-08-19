@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessagesSquare, Plus, Settings, Ticket, TriangleAlert } from 'lucide-react';
+import { Plus, Settings, Ticket, TriangleAlert } from 'lucide-react';
 import { TicketConsole } from '@/features/comms/TicketConsole';
 import { getCommsCatalog, type DepartmentOptionDto, type TicketDto } from '@/api/comms';
 import { isAdmin } from '../../access/resolveAccess';
@@ -14,11 +14,11 @@ import type { DeskTabKey } from './deskTabs';
 export type DeskView = DeskTabKey;
 
 /**
- * Mytrion Desk — the support workspace over the existing `comms` backend. Every tab is the shared
- * `TicketConsole` (list + live chat thread, wired to /v1/comms + the comms WebSocket), scoped per
- * tab: Tickets = ticket threads, Escalations = escalation threads, Chat = everything. "New" opens the
- * compose modal (ticket or escalation); on an escalation the chat header carries the ladder actions.
- * Visibility is decided server-side by the comms reader filter, so no Mytrion-specific gating here.
+ * Mytrion Desk — the support workspace over the existing `comms` backend, for Customer Service,
+ * Billing and Verification. Tickets and Escalations are each the shared `TicketConsole` (list + live
+ * chat thread over /v1/comms + the comms WebSocket), scoped per tab. "New" opens the compose modal;
+ * on an escalation the conversation header carries the ladder actions. Visibility is gated in
+ * resolveAccess and the data is scoped server-side by the comms reader filter.
  */
 export function DeskShell() {
   const user = useUserContext();
@@ -27,7 +27,7 @@ export function DeskShell() {
   const [composeOpen, setComposeOpen] = useState(false);
   /** Ticket id to auto-open in the active console after a create; cleared once honoured. */
   const [focusId, setFocusId] = useState<string | null>(null);
-  /** Departments that accept escalations — the hand-off targets. Loaded once. */
+  /** Departments used for the ticket type filter + escalation hand-off. Loaded once. */
   const [departments, setDepartments] = useState<DepartmentOptionDto[]>([]);
   const open = (next: DeskView): void => setView(next);
 
@@ -89,16 +89,6 @@ export function DeskShell() {
           keywords: ['escalate', 'raise', 'ladder'],
           primary: true,
         },
-        {
-          key: 'chat',
-          label: 'Chat',
-          icon: <MessagesSquare size={19} />,
-          tone: 'var(--tone-sky)',
-          active: view === 'chat',
-          onClick: () => open('chat'),
-          keywords: ['messages', 'conversation', 'thread', 'inbox'],
-          primary: true,
-        },
       ],
     },
   ];
@@ -145,14 +135,6 @@ export function DeskShell() {
             emptyHint="Escalation requests routed to you appear here, newest first."
             focusTicketId={view === 'escalations' ? focusId : null}
             onFocusConsumed={() => setFocusId(null)}
-            chatActions={escalationActions}
-          />
-        ) : null}
-        {view === 'chat' ? (
-          <TicketConsole
-            mode="queue"
-            title="Conversations"
-            emptyHint="Every ticket and escalation conversation you can see, in one inbox."
             chatActions={escalationActions}
           />
         ) : null}
