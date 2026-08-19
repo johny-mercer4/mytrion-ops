@@ -21,3 +21,216 @@
     width: 100%;
   }
 }
+
+/* =====================================================
+   Array report detail.
+   ===================================================== */
+
+/* Money as a figure row, not a list. Six cells, and the two that decide anything are heavier. */
+/* flex-wrap with a flex-BASIS, not `grid-template-columns: repeat(auto-fit, minmax(140px, 1fr))`:
+   a px track in a grid template is a floor no phone can go under, and these six figures should be
+   allowed to shrink and wrap. Same layout above 900px, correct below it. */
+[data-mytrion='collection'] .ar-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+[data-mytrion='collection'] .ar-figure {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--field);
+  min-width: 0;
+}
+[data-mytrion='collection'] .ar-figure-v {
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='collection'] .ar-figure[data-strong] .ar-figure-v {
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-fig);
+}
+
+/* ── Payment history strip ────────────────────────────────────────────────
+   24 cells. The character stays visible inside its cell: the colour is the scan, the code is the
+   fact, and an operator reading a Metro 2 dispute needs the character itself. */
+[data-mytrion='collection'] .ar-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+}
+[data-mytrion='collection'] .ar-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .ar-history-read {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .ar-history-read b {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .ar-history-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+[data-mytrion='collection'] .ar-history-strip {
+  display: flex;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .ar-history-strip li {
+  flex: 1 1 22px;
+  max-width: 40px;
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  font-family: var(--font-num);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  cursor: default;
+}
+/* Absence is a GAP — dashed, unfilled, muted. Never the current colour. */
+[data-mytrion='collection'] .ar-history-strip li[data-tone='none'] {
+  background: transparent;
+  border-color: var(--border-strong);
+  border-style: dashed;
+  color: var(--text-disabled);
+}
+[data-mytrion='collection'] .ar-history-strip li[data-tone='current'] {
+  background: var(--intent-success-bg);
+  border-color: var(--intent-success-bd);
+  color: var(--intent-success-fg);
+}
+[data-mytrion='collection'] .ar-history-strip li[data-tone='late'] {
+  background: var(--intent-warning-bg);
+  border-color: var(--intent-warning-bd);
+  color: var(--intent-warning-fg);
+}
+[data-mytrion='collection'] .ar-history-strip li[data-tone='severe'] {
+  background: color-mix(in srgb, var(--ember) 16%, transparent);
+  border-color: color-mix(in srgb, var(--ember) 40%, transparent);
+  color: var(--ember);
+}
+[data-mytrion='collection'] .ar-history-strip li[data-tone='derogatory'] {
+  background: var(--intent-danger-bg);
+  border-color: var(--intent-danger-bd);
+  color: var(--intent-danger-fg);
+}
+
+[data-mytrion='collection'] .ar-history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .ar-history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+}
+[data-mytrion='collection'] .ar-history-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  flex: none;
+}
+[data-mytrion='collection'] .ar-history-legend i[data-tone='current'] {
+  background: var(--intent-success-bg);
+  border-color: var(--intent-success-bd);
+}
+[data-mytrion='collection'] .ar-history-legend i[data-tone='late'] {
+  background: var(--intent-warning-bg);
+  border-color: var(--intent-warning-bd);
+}
+[data-mytrion='collection'] .ar-history-legend i[data-tone='severe'] {
+  background: color-mix(in srgb, var(--ember) 16%, transparent);
+  border-color: color-mix(in srgb, var(--ember) 40%, transparent);
+}
+[data-mytrion='collection'] .ar-history-legend i[data-tone='derogatory'] {
+  background: var(--intent-danger-bg);
+  border-color: var(--intent-danger-bd);
+}
+[data-mytrion='collection'] .ar-history-legend i[data-tone='none'] {
+  border-color: var(--border-strong);
+  border-style: dashed;
+}
+
+/* Two columns for identity + placement; one below the density line. */
+[data-mytrion='collection'] .ar-detail-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+[data-mytrion='collection'] .ar-note {
+  margin: 0;
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+/* An absent value should read as absent, not as data. */
+[data-mytrion='collection'] .cc-dl-row dd[data-empty='true'] {
+  color: var(--text-disabled);
+}
+
+@media (width < 900px) {
+  [data-mytrion='collection'] .ar-detail-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The 12-month scan for the list. No codes and no legend — it answers "has this ever gone bad",
+   and the full 24-month read with the characters is one click away on the record. */
+[data-mytrion='collection'] .ar-history-mini {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  cursor: default;
+}
+[data-mytrion='collection'] .ar-history-mini i {
+  width: 6px;
+  height: 14px;
+  border-radius: 1px;
+  flex: none;
+  background: var(--border-strong);
+  opacity: 0.45;
+}
+[data-mytrion='collection'] .ar-history-mini i[data-tone='current'] { background: var(--success); opacity: 1; }
+[data-mytrion='collection'] .ar-history-mini i[data-tone='late'] { background: var(--warning); opacity: 1; }
+[data-mytrion='collection'] .ar-history-mini i[data-tone='severe'] { background: var(--ember); opacity: 1; }
+[data-mytrion='collection'] .ar-history-mini i[data-tone='derogatory'] { background: var(--danger); opacity: 1; }
+
+/* The Metro 2 code beside its label — the code is what a dispute cites. */
+[data-mytrion='collection'] .ar-code {
+  opacity: 0.7;
+  margin-inline-end: 2px;
+}

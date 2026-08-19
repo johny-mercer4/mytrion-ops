@@ -1,26 +1,45 @@
 /**
- * Collection cases — list. Same desk language as Verification's applicant queue:
- * PageHead lives in the shell; this is the panel, table, and pager.
+ * Collection cases — the list.
+ *
+ * WHAT CHANGED AND WHY. The shipped table answered "what state is this in" three times over —
+ * Stage, Status and Close reason are the same fact at different resolutions, and the stage badge
+ * already carries all of it. Those three collapse into one, which buys the width for the two
+ * columns a collector actually reads first and neither of which existed:
+ *
+ *   Recovered   how much of the invoiced total has come back, and what share that is. Remaining
+ *               alone cannot distinguish a debt nobody has touched from one 80% repaid.
+ *   Last touch  when anyone last reached out, and how. Needs the contact log, which is why this
+ *               column could not exist before the desk had a write side.
+ *
+ * `Next action` is the open promise, so a due or lapsed commitment is visible without opening
+ * the case.
+ *
+ * There is deliberately NO owner column. `assignee_user_id` has been on the table all along with
+ * nothing writing it, so the column would render an em-dash on every row for ever. It goes in
+ * with case assignment, not before.
  */
 import { useMemo } from 'react';
 import { Badge, DataTable, EmptyState, Pagination, type DataColumn } from '@/ds';
 import type { CollectionCaseRow } from '@/api/collection';
+import type { CaseDeskInfo } from '@/api/collectionDesk';
+import { AgeCell, LastTouch, PromiseChip } from '../CollectionBits';
+import { TableSkeleton } from '../CollectionSkeletons';
 import { fmtDate, money } from '../collectionFormat';
-import {
-  CLOSED_REASON_LABEL,
-  caseInitials,
-  caseName,
-  daysTone,
-  stageChip,
-  stageLabel,
-  statusChip,
-} from './casesModel';
+import { caseInitials, caseName, stageChip, stageLabel } from './casesModel';
 
 const PAGE_SIZE = 15;
-const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 66 + 37}px`;
+
+/** Share of the invoiced total already recovered. Null when nothing was ever invoiced. */
+function recoveredShare(row: CollectionCaseRow): number | null {
+  const invoiced = Number(row.totalInvoiceAmount);
+  const paid = Number(row.totalAmountPaid);
+  if (!Number.isFinite(invoiced) || invoiced <= 0 || !Number.isFinite(paid)) return null;
+  return Math.min(100, Math.round((paid / invoiced) * 100));
+}
 
 export function CasesList({
   rows,
+  desk,
   total,
   page,
   loading,
@@ -29,6 +48,7 @@ export function CasesList({
   onOpen,
 }: {
   rows: CollectionCaseRow[];
+  desk: Record<string, CaseDeskInfo>;
   total: number;
   page: number;
   loading: boolean;
@@ -47,7 +67,7 @@ export function CasesList({
         id: 'name',
         header: 'Carrier',
         rowHeader: true,
-        width: '24%',
+        width: '22%',
         mobile: 'primary',
         cell: (row) => (
           <span className="cc-ident">
@@ -69,7 +89,7 @@ export function CasesList({
       {
         id: 'stage',
         header: 'Stage',
-        width: '14%',
+        width: '13%',
         mobile: 'secondary',
         cell: (row) => {
           const chip = stageChip(row.collectionStage);
@@ -83,58 +103,94 @@ export function CasesList({
         },
       },
       {
-        id: 'status',
-        header: 'Status',
-        width: '12%',
-        cell: (row) => {
-          const chip = statusChip(row);
-          return (
-            <Badge intent={chip.intent} icon={chip.icon}>
-              {chip.label}
-            </Badge>
-          );
-        },
-      },
-      {
         id: 'debt',
         header: 'Remaining',
         width: '12%',
         align: 'end',
-        cell: (row) => <span className="num">{money(row.totalDebtAmount)}</span>,
+        cell: (row) => <span className="num cc-strong">{money(row.totalDebtAmount)}</span>,
       },
       {
-        id: 'dpd',
-        header: 'Past due',
+        id: 'recovered',
+        header: 'Recovered',
+        width: '13%',
+        align: 'end',
+        cell: (row) => {
+          const share = recoveredShare(row);
+          const paid = Number(row.totalAmountPaid) || 0;
+          return (
+            <span className="cc-recovered">
+              <span className="num" data-zero={paid <= 0 ? 'true' : undefined}>
+                {money(row.totalAmountPaid)}
+              </span>
+              <span className="cc-recovered-share num">
+                {share === null ? '—' : `${share}% of invoiced`}
+              </span>
+            </span>
+          );
+        },
+      },
+      {
+        id: 'age',
+        header: 'Age',
         width: '10%',
-        align: 'end',
-        cell: (row) => (
-          <span className="num" data-tone={daysTone(row.daysPastDue)}>
-            {row.daysPastDue}d
-          </span>
-        ),
+        cell: (row) => <AgeCell days={row.daysPastDue} />,
       },
       {
-        id: 'invoices',
-        header: 'Invoices',
-        width: '8%',
-        align: 'end',
-        cell: (row) => <span className="num">{row.issueInvoiceCount}</span>,
+        id: 'touch',
+        header: 'Last touch',
+        width: '9%',
+        cell: (row) => {
+          const info = desk[row.id];
+          return (
+            <LastTouch
+              days={info?.daysSinceContact ?? null}
+              channel={info?.lastContact?.channel ?? null}
+            />
+          );
+        },
       },
       {
-        id: 'placed',
-        header: 'Placed',
-        width: '12%',
-        cell: (row) => <span className="num">{fmtDate(row.placementDate)}</span>,
-      },
-      {
-        id: 'closed',
-        header: 'Close reason',
-        width: '8%',
-        cell: (row) => (row.closedReason ? CLOSED_REASON_LABEL[row.closedReason] : '—'),
+        id: 'next',
+        header: 'Next action',
+        width: '21%',
+        cell: (row) => {
+          const promise = desk[row.id]?.promise;
+          if (promise) {
+            return (
+              <PromiseChip
+                amount={promise.amount}
+                dueDate={promise.dueDate}
+                daysLate={promise.daysLate}
+              />
+            );
+          }
+          if (row.placementDate) {
+            return <span className="cc-muted">Filed {fmtDate(row.placementDate)}</span>;
+          }
+          return <span className="cc-muted">—</span>;
+        },
       },
     ],
-    [],
+    [desk],
   );
+
+  if (loading && rows.length === 0) {
+    return (
+      <TableSkeleton
+        label="Loading collection cases"
+        rows={PAGE_SIZE}
+        cols={[
+          { kind: 'ident', w: '22%' },
+          { kind: 'chip', w: '13%' },
+          { kind: 'num', w: '12%' },
+          { kind: 'stack', w: '13%' },
+          { kind: 'meter', w: '10%' },
+          { kind: 'text', w: '9%', chars: 5 },
+          { kind: 'chip', w: '21%' },
+        ]}
+      />
+    );
+  }
 
   if (!loading && total === 0) {
     return (
@@ -144,7 +200,7 @@ export function CasesList({
         title={filtered ? 'No cases match' : 'No collection cases'}
         description={
           filtered
-            ? 'Nothing matches these filters. Clear them to see the board.'
+            ? 'Nothing matches these filters. Clear them to see the book.'
             : 'Cases appear when remaining debt stays above $100. The finder writes them here, not Zoho.'
         }
       />
@@ -160,8 +216,6 @@ export function CasesList({
         columns={columns}
         layout="fixed"
         density="comfortable"
-        loading={loading}
-        {...(loading && rows.length === 0 ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } } : {})}
         onRowActivate={(row) => onOpen(row.id)}
         empty={filtered ? 'Nothing matches. Clear the filters.' : 'Nothing in this state.'}
       />

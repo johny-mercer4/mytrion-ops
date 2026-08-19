@@ -5,13 +5,13 @@ import { withDbRetry } from '../db/retry.js';
 import { ConflictError } from '../lib/errors.js';
 import { maintenanceCases, type MaintenanceCase, type NewMaintenanceCase } from '../db/schema/index.js';
 import { PREPAY_PAYMENT_METHOD } from '../modules/customerService/maintenanceFields.js';
+import { deleteById } from './maintenanceCaseDeleteRepo.js';
 import { firstOrUndefined, isUniqueViolation } from './util.js';
 
 /**
  * A raw SQLSTATE 23505 is not an AppError, so errorHandler swaps its message for "Internal server
- * error" — same trap as hrEmployeeRepo's employeeWriteConflict. Only reachable for an agent-TYPED
- * reference number: `withGeneratedReferenceNumber` already checks-and-retries before insert for the
- * auto-generated path, so this is the backstop for the one case that skips that check on purpose.
+ * error" (same trap as hrEmployeeRepo's employeeWriteConflict). Only reachable for an agent-typed
+ * reference number — the auto-generated path already checks-and-retries before insert.
  */
 export function referenceNumberConflict(err: unknown): unknown {
   if (!isUniqueViolation(err)) return err;
@@ -327,6 +327,7 @@ export const maintenanceCaseRepo = {
     );
   },
 
+  deleteById,
   async getByZohoId(zohoRecordId: string): Promise<MaintenanceCase | undefined> {
     return firstOrUndefined(
       await db
@@ -446,10 +447,8 @@ export const maintenanceCaseRepo = {
 
   /**
    * Individual maintenance cases for one carrier in a window — the itemized lines behind the
-   * maintenance term of a Billing Ledger statement (the drill-down modal).
-   *
-   * Returns every payment method; the caller filters to the one that hits the EFS card for that client
-   * type, because it also needs to itemize exactly what the aggregate counted.
+   * maintenance term of a Billing Ledger statement (the drill-down modal). Returns every payment
+   * method; the caller filters to the one that hits the EFS card, since it itemizes the aggregate.
    */
   async listForLedger(
     carrierId: string,

@@ -1,0 +1,533 @@
+/* =====================================================
+   The case record. Scoped under [data-mytrion='collection'].
+
+   Split out of cases.css because the record is now four distinct reads (head, timeline,
+   invoices, rail) and the two files were about to cross the 600-line cap together.
+   ===================================================== */
+
+[data-mytrion='collection'] .cc-case-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+[data-mytrion='collection'] .cc-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-crumb,
+[data-mytrion='collection'] .cc-crumb-current {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-crumb-current {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+[data-mytrion='collection'] .cc-crumb-sep {
+  color: var(--text-disabled);
+}
+[data-mytrion='collection'] .cc-crumbs-gap {
+  flex: 1;
+}
+[data-mytrion='collection'] .cc-case-id {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+[data-mytrion='collection'] .cc-case-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-case-who {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+}
+[data-mytrion='collection'] .cc-mono-lg {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-panel);
+  font-size: var(--text-md);
+}
+[data-mytrion='collection'] .cc-case-titles {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+}
+[data-mytrion='collection'] .cc-case-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-case-name {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-xl);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-case-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+[data-mytrion='collection'] .cc-case-cta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* ── Recovery block ─────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-recovery-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-6);
+  align-items: end;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='collection'] .cc-recovery-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-recovery-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-recovery-age {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-recovery-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+}
+[data-mytrion='collection'] .cc-recovery-value {
+  font-size: var(--text-3xl);
+  line-height: 1.05;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-fig-3xl, -0.014em);
+  color: var(--text-primary);
+}
+
+/* ── Stage spine ────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-spine {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+[data-mytrion='collection'] .cc-spine-step {
+  /* flex-basis, not min-width: the spine is a scroller, so a step may shrink below its label
+     rather than pin a track the viewport cannot fit. */
+  flex: 1 1 84px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+}
+[data-mytrion='collection'] .cc-spine-bar {
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  opacity: 0.45;
+}
+[data-mytrion='collection'] .cc-spine-step[data-state='done'] .cc-spine-bar {
+  background: var(--success);
+  opacity: 1;
+}
+[data-mytrion='collection'] .cc-spine-step[data-state='now'] .cc-spine-bar {
+  background: var(--accent-strong);
+  opacity: 1;
+}
+[data-mytrion='collection'] .cc-spine-label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-mytrion='collection'] .cc-spine-step[data-state='now'] .cc-spine-label {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-case-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-case-main {
+  flex: 1 1 520px;
+}
+/* `1 1 340px`, not `0 0 340px`: the rail holds its width where there is room and shrinks with the
+   row below the density line, so nothing has a track a phone cannot fit. */
+[data-mytrion='collection'] .cc-rail {
+  flex: 1 1 340px;
+  max-width: 340px;
+}
+[data-mytrion='collection'] .cc-case-main,
+[data-mytrion='collection'] .cc-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+[data-mytrion='collection'] .cc-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+  box-shadow: var(--hz-glass-inset);
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-pane-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-pane-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-pane-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .cc-rail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+[data-mytrion='collection'] .cc-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: 0;
+}
+[data-mytrion='collection'] .cc-dl-1 {
+  grid-template-columns: 1fr;
+}
+[data-mytrion='collection'] .cc-dl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-dl-row dt {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-dl-row dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+[data-mytrion='collection'] .cc-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  color: var(--danger);
+}
+
+/* ── Payment plan strip ─────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+}
+[data-mytrion='collection'] .cc-plan-line {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .cc-plan-amount {
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-plan-foot {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ── Timeline ───────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cc-compose {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--field);
+}
+[data-mytrion='collection'] .cc-compose-hint {
+  flex: 1 1 200px;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+[data-mytrion='collection'] .cc-tl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-mytrion='collection'] .cc-tl-item {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+/* The connector. Drawn on the item rather than as a single spine behind the list so the first
+   and last entries can crop it — a line running off the top of the feed reads as truncation. */
+[data-mytrion='collection'] .cc-tl-item::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 13px;
+  inset-block: 0;
+  width: 1px;
+  background: var(--row-line);
+}
+[data-mytrion='collection'] .cc-tl-item:first-child::before {
+  inset-block-start: 24px;
+}
+[data-mytrion='collection'] .cc-tl-item:last-child::before {
+  inset-block-end: auto;
+  height: 24px;
+}
+[data-mytrion='collection'] .cc-tl-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: var(--radius-full);
+  background: var(--surface-data);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-tl-dot[data-tone='success'] {
+  border-color: var(--intent-success-bd);
+  background: var(--intent-success-bg);
+  color: var(--intent-success-fg);
+}
+[data-mytrion='collection'] .cc-tl-dot[data-tone='warning'] {
+  border-color: var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+  color: var(--intent-warning-fg);
+}
+[data-mytrion='collection'] .cc-tl-dot[data-tone='danger'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+  color: var(--intent-danger-fg);
+}
+[data-mytrion='collection'] .cc-tl-dot[data-tone='info'] {
+  border-color: var(--intent-info-bd);
+  background: var(--intent-info-bg);
+  color: var(--intent-info-fg);
+}
+[data-mytrion='collection'] .cc-tl-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 3px;
+}
+[data-mytrion='collection'] .cc-tl-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-tl-what {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-tl-when {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cc-tl-who,
+[data-mytrion='collection'] .cc-tl-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+[data-mytrion='collection'] .cc-tl-who {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+@media (width < 1200px) {
+  [data-mytrion='collection'] .cc-rail {
+    max-width: none;
+  }
+  [data-mytrion='collection'] .cc-recovery-block {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  [data-mytrion='collection'] .cc-recovery-figure {
+    align-items: flex-start;
+  }
+}
+@media (width < 640px) {
+  [data-mytrion='collection'] .cc-dl {
+    grid-template-columns: 1fr;
+  }
+  [data-mytrion='collection'] .cc-case-cta {
+    width: 100%;
+  }
+}
+
+/* ── Fact strip ───────────────────────────────────────────────────────────
+   RESTORED. `.cc-fact` and the banner block below lost their rules when this file was split out
+   of cases.css, which is why the header read "CARRIER5759661MC / DOTDOT 3472965" — label and
+   value with nothing between them. The hairline between facts is new: at five facts on one line
+   the eye needs a boundary, and a wider gap alone was not enough. */
+[data-mytrion='collection'] .cc-case-facts {
+  gap: var(--space-4);
+  row-gap: var(--space-3);
+}
+[data-mytrion='collection'] .cc-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-mytrion='collection'] .cc-fact + .cc-fact {
+  padding-inline-start: var(--space-4);
+  border-inline-start: 1px solid var(--row-line);
+}
+[data-mytrion='collection'] .cc-fact-v {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+[data-mytrion='collection'] .cc-fact-v[data-empty='true'] {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
+/* ── Banners ──────────────────────────────────────────────────────────────
+   RESTORED with the rest. These carry every load failure in the module plus the closed-case
+   notice, so unstyled they were the least visible and most important thing on the page. */
+[data-mytrion='collection'] .cc-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+[data-mytrion='collection'] .cc-banner[data-tone='danger'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+}
+[data-mytrion='collection'] .cc-banner[data-tone='success'] {
+  border-color: var(--intent-success-bd);
+  background: var(--intent-success-bg);
+}
+[data-mytrion='collection'] .cc-banner-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cc-banner-body {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+[data-mytrion='collection'] .cc-banner button {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
+[data-mytrion='collection'] .cc-compose-label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: none;
+}
+/* A sentence, not a full EmptyState block: an empty feed on a case nobody has worked yet is the
+   NORMAL state, and a centred icon-and-heading treatment made it the loudest thing on the record. */
+[data-mytrion='collection'] .cc-tl-empty {
+  margin: 0;
+  padding: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-muted);
+}
