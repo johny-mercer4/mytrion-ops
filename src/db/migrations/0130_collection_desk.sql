@@ -8,6 +8,16 @@
 --
 -- All four cascade off collection_cases: the finder deletes a case once remaining debt falls below
 -- $100, and desk history for a debt that no longer exists is not worth orphaning.
+--
+-- ⚠ THE JOURNAL TIMESTAMP ON THIS ONE IS DELIBERATE (1787090000001), and the reason is a live trap.
+-- drizzle's migrator applies an entry only when `lastAppliedCreatedAt < folderMillis` (see
+-- pg-core/dialect.js). PROD's __drizzle_migrations high-water mark is 1787081000001 — two
+-- migrations were applied there out of band, from no branch in this repo — so ANY migration
+-- numbered below that is silently skipped on prod for ever, with `db:migrate` still reporting
+-- success. This file was originally 0129 at 1786997506836 and would have been swallowed exactly
+-- that way. `0129_recruit_resume` on build is below the mark and IS currently being swallowed:
+-- none of its five `recruit_candidates.resume_*` columns exist on prod. Check the mark before
+-- numbering the next one.
 
 CREATE TABLE IF NOT EXISTS collection_activity (
   id                text PRIMARY KEY,
