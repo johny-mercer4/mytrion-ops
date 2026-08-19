@@ -179,6 +179,7 @@ export function DeskShell() {
             focusTicketId={view === 'tickets' ? focusId : null}
             onFocusConsumed={() => setFocusId(null)}
             chatActions={chatActions}
+            enableBulk
           />
         ) : null}
         {view === 'escalations' ? (
