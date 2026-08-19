@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import { Badge, Icon, type BadgeIntent, type IconName } from '@/ds';
 import type { ContactChannel, Metro2Field, PlanProgress } from '@/api/collectionDesk';
 import { findCollectionTab, type CollectionTabId } from './collectionNav';
-import { money } from './collectionFormat';
+import { LOCALE, money } from './collectionFormat';
 
 /** Kicker → title → sub, matching every other Mytrion's page head. */
 export function CollectionPageHead({
@@ -147,7 +147,7 @@ export function PromiseChip({
     ? `${daysLate}d late`
     : daysLate === 0
       ? 'due today'
-      : `due ${new Date(`${dueDate}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+      : `due ${new Date(`${dueDate}T00:00:00`).toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })}`;
   return (
     <span className="co-promise" data-late={late ? 'true' : undefined}>
       <Icon name={late ? 'warning' : 'schedule'} size="sm" />

@@ -122,6 +122,29 @@ export const collectionActivityRepo = {
   },
 
   /**
+   * The stages this case has actually been moved to, oldest first.
+   *
+   * Read off the timeline's own `stage` entries rather than inferred from where the case sits
+   * now. A case on `payment_plan` has NOT been through `with_agency` just because the enum lists
+   * agency first — the stage list is a vocabulary, not a track, and a spine that marks unvisited
+   * stages as done is telling the reader something untrue about a debt.
+   */
+  async stageHistory(ctx: TenantContext, caseId: string): Promise<string[]> {
+    if (!canReadCollectionSnapshot(ctx)) return [];
+    const rows = await db
+      .select({ meta: collectionActivity.meta, occurredAt: collectionActivity.occurredAt })
+      .from(collectionActivity)
+      .where(and(eq(collectionActivity.caseId, caseId), eq(collectionActivity.kind, 'stage')))
+      .orderBy(collectionActivity.occurredAt);
+    const seen: string[] = [];
+    for (const row of rows) {
+      const to = row.meta?.['to'];
+      if (typeof to === 'string' && !seen.includes(to)) seen.push(to);
+    }
+    return seen;
+  },
+
+  /**
    * Append one entry. There is no update and no delete: a timeline that can be edited after the
    * fact is not a record of what happened, and this one is read before a debt is written off.
    */

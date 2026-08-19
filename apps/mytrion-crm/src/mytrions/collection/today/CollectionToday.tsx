@@ -1,9 +1,9 @@
 /**
- * Collection → Today. The worklist that replaced the Home launcher.
+ * Collection → Home. The worklist that replaced the launcher.
  *
- * The old Home was three tiles, a hero and two buttons to the tabs already in the rail. This is
- * the work: every open case that wants an action, in one risk-ordered list, each row saying why
- * it surfaced. Lane counts describe the whole open book and do not move when you filter under
+ * Same tab, same grant key; a different screen. The old Home was three tiles, a hero and two
+ * buttons to the tabs already in the rail. This is the work: every open case that wants an
+ * action, in one risk-ordered list, each row saying why it surfaced. Lane counts describe the whole open book and do not move when you filter under
  * them — a tile that changes when you click it cannot be used to check your work.
  *
  * The lane filter is SERVER-side (a `lane` query param) rather than a client filter over one
@@ -81,7 +81,7 @@ export function CollectionToday({
     <div className="cc-list">
       <PageHead
         kicker="Collection"
-        title="Today"
+        title="Home"
         description="Everything the desk owes an action on, ordered by the recovery at risk if nobody touches it."
         actions={
           <div className="cc-head-actions">
@@ -197,7 +197,7 @@ function WorklistBody({
         title={lane === 'all' ? 'Nothing needs you right now' : 'Nothing in this lane'}
         description={
           lane === 'all'
-            ? 'Every open case has been touched inside its window and no promise is due. The book is still there under Cases.'
+            ? 'Every open case has been touched inside its window and no promise is due. The book is still there under Collection Cases.'
             : 'No case matches this reason today.'
         }
         primaryAction={

@@ -154,9 +154,12 @@ export function CloseCaseDialog({
           label={noteRequired ? 'Note (required)' : 'Note'}
           hint="The last thing anyone reads if this is ever reopened."
         >
+          {/* No `autoGrow`: ds/Textarea measures scrollHeight in a layout effect, and inside a
+              native <dialog> that has not been shown yet it measures 0 and pins height: 0px.
+              A fixed `rows` box is correct here anyway — the field's size should not move while
+              someone is typing a call note. */}
           <Textarea
             rows={3}
-            autoGrow
             value={note}
             invalid={noteRequired && note.trim().length === 0}
             placeholder={

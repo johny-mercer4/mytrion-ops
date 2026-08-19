@@ -12,7 +12,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Badge, Button, EmptyState, Icon, Skeleton, SkeletonRegion, Tabs, type IconName } from '@/ds';
 import { listActivity, type ActivityKind, type ActivityRow } from '@/api/collectionDesk';
 import { useCachedLoad } from '../../../_shared/swrCache';
-import { moneyExact } from '../../collectionFormat';
+import { LOCALE, moneyExact } from '../../collectionFormat';
 
 /** Tab → the kinds it shows. `all` is the default; the rest group the eight kinds into four reads. */
 const FILTERS: ReadonlyArray<{ id: string; label: string; kinds: readonly ActivityKind[] | null }> = [
@@ -46,7 +46,7 @@ function toneOf(row: ActivityRow): 'success' | 'warning' | 'danger' | 'info' | '
 function when(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(LOCALE, {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',

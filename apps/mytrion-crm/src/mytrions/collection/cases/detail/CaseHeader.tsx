@@ -8,15 +8,17 @@
  * not money that has arrived.
  */
 import { Badge, Button, Icon } from '@/ds';
-import type { CollectionCaseRow, CollectionStage } from '@/api/collection';
+import type { CollectionCaseRow } from '@/api/collection';
 import type { CaseDeskBundle, DeskPolicy } from '@/api/collectionDesk';
 import { AgingMeter, PromiseChip, RecoveryBar } from '../../CollectionBits';
 import { fmtDate, money } from '../../collectionFormat';
 import {
   CLOSED_REASON_LABEL,
-  KANBAN_STAGES,
+  STAGE_PROGRESSION,
   caseInitials,
   caseName,
+  nextStage,
+  spineState,
   stageLabel,
   statusChip,
 } from '../casesModel';
@@ -28,12 +30,6 @@ function scheduledOnPlan(bundle: CaseDeskBundle | null): number {
   return plan.instalments
     .filter((i) => i.status === 'scheduled')
     .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-}
-
-/** The stage the case is on, and every stage it has already passed through. */
-function spineState(current: CollectionStage, stage: CollectionStage): 'done' | 'now' | 'todo' {
-  if (stage === current) return 'now';
-  return KANBAN_STAGES.indexOf(stage) < KANBAN_STAGES.indexOf(current) ? 'done' : 'todo';
 }
 
 export function CaseHeader({
@@ -51,6 +47,7 @@ export function CaseHeader({
   onAdvance: () => void;
   onLogContact: () => void;
 }) {
+  const canAdvance = row.status !== 'closed' && nextStage(row.collectionStage) !== null;
   const name = caseName(row);
   const chip = statusChip(row);
   const invoiced = Number(row.totalInvoiceAmount) || 0;
@@ -109,7 +106,7 @@ export function CaseHeader({
           <Button
             variant="primary"
             icon="arrow_forward"
-            disabled={row.status === 'closed'}
+            disabled={!canAdvance}
             onClick={onAdvance}
           >
             Advance stage
@@ -147,8 +144,8 @@ export function CaseHeader({
       ) : null}
 
       <ol className="cc-spine" aria-label="Collection stages">
-        {KANBAN_STAGES.map((stage) => {
-          const state = spineState(row.collectionStage, stage);
+        {STAGE_PROGRESSION.map((stage) => {
+          const state = spineState(row.collectionStage, stage, bundle?.stageHistory ?? []);
           return (
             <li key={stage} className="cc-spine-step" data-state={state}>
               <span className="cc-spine-bar" aria-hidden="true" />

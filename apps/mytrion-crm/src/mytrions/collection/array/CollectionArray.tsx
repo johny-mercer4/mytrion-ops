@@ -1,5 +1,5 @@
 /**
- * Collection → Agency → Filed tradelines. Server-paged list — the book is 9k+ rows.
+ * Collection → Agency → Array Reports. Server-paged list — the book is 9k+ rows.
  *
  * Renamed, not rewritten: this is the OUTPUT of the monthly Metro 2 filing and it works. The work
  * that happens BEFORE a filing moved to its own screen (`agency/PlacementQueue`), which is what
@@ -152,8 +152,8 @@ export function CollectionArray() {
     <div className="cc-list" data-stale={stale ? 'true' : undefined}>
       <PageHead
         kicker="Collection · Agency"
-        title="Filed tradelines"
-        description="The Metro 2 snapshot sent to Array — what we reported, and what came back. A snapshot, not the live Zoho write."
+        title="Array reports"
+        description="Metro 2 tradelines placed with Array — a snapshot, not the live Zoho write."
         actions={
           <div className="cc-head-actions">
             <Input

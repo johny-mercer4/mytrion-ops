@@ -145,9 +145,12 @@ export function LogContactDialog({
         </ActionField>
 
         <ActionField label="What was said">
+          {/* No `autoGrow`: ds/Textarea measures scrollHeight in a layout effect, and inside a
+              native <dialog> that has not been shown yet it measures 0 and pins height: 0px.
+              A fixed `rows` box is correct here anyway — the field's size should not move while
+              someone is typing a call note. */}
           <Textarea
             rows={4}
-            autoGrow
             placeholder="Kept short and factual — this is the record another collector reads before the next call."
             value={note}
             onChange={(e) => setNote(e.currentTarget.value)}

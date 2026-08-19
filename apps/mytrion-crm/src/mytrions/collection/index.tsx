@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ToastProvider } from '@/ds';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { useUserContext } from '../../context/UserContextProvider';
 import {
@@ -15,13 +16,19 @@ import { CollectionToday } from './today/CollectionToday';
 import './collection.css';
 
 /**
- * Collection Mytrion — Today, Cases, and the two halves of Array.
+ * Collection Mytrion — Home, Collection Cases, and the two halves of Array.
  *
  * `openCase` is lifted here rather than living in each tab, because three surfaces now open a
  * case record: the worklist, the list/board, and the placement queue. Holding it at the shell is
  * what lets the queue hand off to the case and the case's Back land somewhere sensible.
  *
  * Every view switch goes through the Layer-2 RBAC predicate so stale state can't bypass the sidebar.
+ *
+ * `ToastProvider` is mounted HERE rather than app-wide, and that is the smallest correct place:
+ * this is the first module to use `ds/Toast` (the others each rolled a local one), and a provider
+ * at the app root would be a change every workspace inherits without asking for it. It wraps the
+ * whole module so the write dialogs — which render under `CaseActionDialogs`, several levels down
+ * — can report what happened.
  */
 export default function CollectionMytrion() {
   const user = useUserContext();
@@ -56,21 +63,23 @@ export default function CollectionMytrion() {
         onClick: () => open(tab.id),
         keywords: tab.keywords,
         ...(tab.soon ? { soon: true } : {}),
-        primary: tab.id === 'today',
+        primary: tab.id === 'home',
       })),
   })).filter((section) => section.items.length > 0);
 
   return (
     <div data-mytrion="collection" className="contents">
       <MytrionShell id="collection" navSections={navSections} enableNavSearch>
-        <div className="co-root">
-          {view === 'today' ? <CollectionToday onOpenCase={openCase} onOpenTab={open} /> : null}
-          {view === 'cases' ? (
-            <CollectionCases openCaseId={openCaseId} onOpenCase={setOpenCaseId} />
-          ) : null}
-          {view === 'queue' ? <PlacementQueue onOpenCase={openCase} /> : null}
-          {view === 'filed' ? <CollectionArray /> : null}
-        </div>
+        <ToastProvider>
+          <div className="co-root">
+            {view === 'home' ? <CollectionToday onOpenCase={openCase} onOpenTab={open} /> : null}
+            {view === 'cases' ? (
+              <CollectionCases openCaseId={openCaseId} onOpenCase={setOpenCaseId} />
+            ) : null}
+            {view === 'queue' ? <PlacementQueue onOpenCase={openCase} /> : null}
+            {view === 'array' ? <CollectionArray /> : null}
+          </div>
+        </ToastProvider>
       </MytrionShell>
     </div>
   );

@@ -169,6 +169,8 @@ export interface CaseDeskBundle {
   plan: PaymentPlan | null;
   promises: PromiseRow[];
   tradeline: ArrayTradeline | null;
+  /** Stages this case has actually been moved to, oldest first. Drives the spine's done marks. */
+  stageHistory: CollectionStage[];
   policy: DeskPolicy;
 }
 

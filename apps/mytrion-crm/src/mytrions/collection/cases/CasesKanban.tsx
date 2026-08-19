@@ -32,19 +32,26 @@ export function CasesKanban({
   desk,
   loading,
   filtered,
+  hideClosedLane,
   onOpen,
 }: {
   rows: CollectionCaseRow[];
   desk: Record<string, CaseDeskInfo>;
   loading: boolean;
   filtered: boolean;
+  /**
+   * True under the Open scope. The Closed lane can never hold a row there, and an always-empty
+   * fifth of the board is dead width — the other four lanes get it back instead.
+   */
+  hideClosedLane: boolean;
   onOpen: (id: string) => void;
 }) {
+  const lanes = hideClosedLane ? BOARD_LANES.filter((l) => l.id !== 'closed') : BOARD_LANES;
   if (loading && rows.length === 0) {
     return (
       <div className="cc-board">
         <SkeletonRegion busy label="Loading the collection board">
-          {BOARD_LANES.map((lane) => (
+          {lanes.map((lane) => (
             <section key={lane.id} className="cc-col" aria-hidden="true">
               <Skeleton variant="rect" height="320px" radius="panel" />
             </section>
@@ -69,12 +76,12 @@ export function CasesKanban({
     );
   }
 
-  const byLane = new Map<string, CollectionCaseRow[]>(BOARD_LANES.map((l) => [l.id, []]));
+  const byLane = new Map<string, CollectionCaseRow[]>(lanes.map((l) => [l.id, []]));
   for (const row of rows) byLane.get(laneOfStage(row.collectionStage))?.push(row);
 
   return (
     <div className="cc-board" data-stale={loading && rows.length > 0 ? 'true' : undefined}>
-      {BOARD_LANES.map((lane) => {
+      {lanes.map((lane) => {
         const cards = byLane.get(lane.id) ?? [];
         const total = cards.reduce((sum, row) => sum + (Number(row.totalDebtAmount) || 0), 0);
         return (

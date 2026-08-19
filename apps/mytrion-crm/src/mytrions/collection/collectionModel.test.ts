@@ -4,8 +4,11 @@ import { accountStatusLabel, reportName } from './array/arrayModel';
 import {
   BOARD_LANES,
   CASE_INVOICES_PAGE_SIZE,
+  STAGE_PROGRESSION,
   caseName,
   laneOfStage,
+  nextStage,
+  spineState,
   daysTone,
   invoiceCacheKey,
   invoicePageOffset,
@@ -169,5 +172,40 @@ describe('board lanes', () => {
     expect(laneOfStage('case_lost')).toBe('closed');
     expect(laneOfStage('with_agency')).toBe('agency');
     expect(laneOfStage('small_claims')).toBe('agency');
+  });
+});
+
+/**
+ * The spine's reading order and its done marks.
+ *
+ * The bug this covers: inferring "done" from position on a linear rail told the reader that a
+ * case sitting on a payment plan had already been through agency placement, because the enum
+ * happens to list `with_agency` first.
+ */
+describe('stage progression', () => {
+  it('holds exactly the eight enum stages, reordered', () => {
+    expect([...STAGE_PROGRESSION].sort()).toEqual([...COLLECTION_STAGES].sort());
+    expect(STAGE_PROGRESSION.indexOf('payment_plan')).toBeLessThan(
+      STAGE_PROGRESSION.indexOf('with_agency'),
+    );
+  });
+
+  it('never marks a stage done that the case has not been through', () => {
+    // On a plan, never placed. The agency stages must NOT read as visited.
+    expect(spineState('payment_plan', 'with_agency', ['connected', 'payment_plan'])).toBe('todo');
+    expect(spineState('payment_plan', 'skip_tracing', ['connected', 'payment_plan'])).toBe('todo');
+    expect(spineState('payment_plan', 'payment_plan', [])).toBe('now');
+    expect(spineState('payment_plan', 'connected', ['connected', 'payment_plan'])).toBe('done');
+  });
+
+  it('always treats intake as visited — every case starts there', () => {
+    expect(spineState('with_agency', 'intake', [])).toBe('done');
+  });
+
+  it('advances along the progression and stops at the end', () => {
+    expect(nextStage('intake')).toBe('connected');
+    expect(nextStage('connected')).toBe('payment_plan');
+    expect(nextStage('closed_successfully')).toBe('case_lost');
+    expect(nextStage('case_lost')).toBeNull();
   });
 });

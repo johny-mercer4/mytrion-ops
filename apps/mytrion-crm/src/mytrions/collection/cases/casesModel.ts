@@ -93,6 +93,49 @@ export const CLOSED_REASON_LABEL: Record<CollectionClosedReason, string> = {
 export const KANBAN_STAGES: readonly CollectionStage[] = COLLECTION_STAGES;
 
 /**
+ * READING ORDER for the case spine, and the order `Advance stage` walks.
+ *
+ * COLLECTION_STAGES is the wire vocabulary and its order is arbitrary — it lists `with_agency`
+ * BEFORE `payment_plan`, so a left-to-right rail in enum order shows a case on a plan as having
+ * already been to the agency. This is the order the work actually happens in. It contains exactly
+ * the same eight members (asserted in collectionModel.test.ts); nothing is renamed or dropped.
+ */
+export const STAGE_PROGRESSION: readonly CollectionStage[] = [
+  'intake',
+  'connected',
+  'payment_plan',
+  'skip_tracing',
+  'with_agency',
+  'small_claims',
+  'closed_successfully',
+  'case_lost',
+];
+
+/**
+ * How a stage renders on the spine.
+ *
+ * `done` comes from the case's OWN history, never from position: a linear rail cannot express a
+ * branching process, and marking everything to the left as visited claims a case went through
+ * agency placement when it went straight onto a plan. `intake` is the one safe assumption — every
+ * case starts there.
+ */
+export function spineState(
+  current: CollectionStage,
+  stage: CollectionStage,
+  history: readonly CollectionStage[],
+): 'done' | 'now' | 'todo' {
+  if (stage === current) return 'now';
+  if (stage === 'intake') return 'done';
+  return history.includes(stage) ? 'done' : 'todo';
+}
+
+/** The stage `Advance` moves to, or null at the end of the progression. */
+export function nextStage(current: CollectionStage): CollectionStage | null {
+  const i = STAGE_PROGRESSION.indexOf(current);
+  return i >= 0 ? (STAGE_PROGRESSION[i + 1] ?? null) : null;
+}
+
+/**
  * BOARD LANES — five, not eight.
  *
  * One column per COLLECTION_STAGES entry is 8 × 260px = 2,080px of board on a ~1,192px pane, so

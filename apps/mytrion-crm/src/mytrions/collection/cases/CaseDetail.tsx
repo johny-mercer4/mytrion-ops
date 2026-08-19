@@ -17,12 +17,7 @@ import {
   SkeletonRegion,
   type DataColumn,
 } from '@/ds';
-import {
-  getCollectionCase,
-  listCollectionInvoices,
-  type CollectionInvoiceRow,
-  type CollectionStage,
-} from '@/api/collection';
+import { getCollectionCase, listCollectionInvoices, type CollectionInvoiceRow } from '@/api/collection';
 import { getCaseDesk, reopenCase, setStage } from '@/api/collectionDesk';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { CaseActionDialogs, useCaseActions } from '../actions/useCaseActions';
@@ -32,10 +27,10 @@ import { CaseRail } from './detail/CaseRail';
 import { CaseTimeline } from './detail/CaseTimeline';
 import {
   CASE_INVOICES_PAGE_SIZE,
-  KANBAN_STAGES,
   invoiceCacheKey,
   invoicePageOffset,
   invoicePanelKind,
+  nextStage,
 } from './casesModel';
 import './cases.css';
 import './caseDetail.css';
@@ -92,12 +87,12 @@ export function CaseDetail({
     refresh();
   }, [caseId, refresh]);
 
-  /** Advance = the next stage on the spine. The spine is the vocabulary; this is the shortcut. */
+  /** Advance = the next stage in the progression the spine reads left to right. */
   const advance = useCallback(async () => {
     if (!row) return;
-    const next = KANBAN_STAGES[KANBAN_STAGES.indexOf(row.collectionStage) + 1];
+    const next = nextStage(row.collectionStage);
     if (!next) return;
-    await setStage(caseId, { stage: next as CollectionStage });
+    await setStage(caseId, { stage: next });
     refresh();
   }, [row, caseId, refresh]);
 

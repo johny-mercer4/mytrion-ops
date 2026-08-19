@@ -15,7 +15,17 @@
    ===================================================== */
 
 .co-root {
-  --co-measure: var(--hz-measure);
+  /*
+   * FULL WIDTH, deliberately, and the only Mytrion that opts out of --hz-measure (1280px).
+   *
+   * This desk is a data surface: an eight-column case table, a five-lane board and a
+   * seven-column placement queue. Clamping those to 1280 on a 2560px monitor does not improve
+   * a reading measure — there is no prose to measure — it just squeezes the columns the desk
+   * exists to compare and leaves half the screen empty. Prose keeps its own limit: `.co-sub`
+   * and PageHead's description are still capped in ch, so the one line of text on each page
+   * does not run the full width.
+   */
+  --co-measure: none;
   --co-gap: 18px;
   --co-gap-lg: 26px;
   --co-pad: clamp(20px, 3vw, 34px);

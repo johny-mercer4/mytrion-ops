@@ -1,11 +1,11 @@
 /**
  * Collection Mytrion navigation — TWO sections, not one flat tab set.
  *
- * The old set was Home / Array Reports / Collection Cases, where Home was a launcher whose only
- * job was linking to the other two. It is gone: `today` is the worklist a collector actually
- * opens the desk for. And Array split in half, because the filed Metro 2 book and the queue of
- * work in front of it are two jobs on two clocks — the queue is worked daily, the book is a
- * monthly artefact you look things up in.
+ * The old set was Home / Array Reports / Collection Cases, flat. The names and the grant KEYS are
+ * unchanged — `home`, `cases`, `array` — so no permission set is orphaned by this redesign. What
+ * changed is what Home IS (a launcher became the worklist) and the addition of `queue`: the filed
+ * Metro 2 book and the queue of work in front of it are two jobs on two clocks, and only the book
+ * had a screen.
  *
  * RBAC is layered. Layer 1 is entering the Mytrion (`canAccess` in resolveAccess, driven by the
  * access table). Layer 2 is `access(user)` per tab here. Both only shape the UI — the endpoint is
@@ -17,7 +17,7 @@ import { LayoutGrid, Send, Sheet, Target } from 'lucide-react';
 import type { UserContext } from '../../context/userContext';
 import { canSeeTab } from '../../access/resolveAccess';
 
-export type CollectionTabId = 'today' | 'cases' | 'queue' | 'filed';
+export type CollectionTabId = 'home' | 'cases' | 'queue' | 'array';
 
 /** The rail's two groups. Order here is order on screen. */
 export type CollectionSectionId = 'desk' | 'agency';
@@ -45,9 +45,9 @@ export const COLLECTION_SECTIONS: ReadonlyArray<{ id: CollectionSectionId; label
 
 export const COLLECTION_TABS: CollectionTab[] = [
   {
-    id: 'today',
+    id: 'home',
     section: 'desk',
-    label: 'Today',
+    label: 'Home',
     description: 'Everything the desk owes an action on, ordered by the recovery at risk.',
     icon: Target,
     tone: 'var(--tone-rose)',
@@ -57,7 +57,7 @@ export const COLLECTION_TABS: CollectionTab[] = [
   {
     id: 'cases',
     section: 'desk',
-    label: 'Cases',
+    label: 'Collection Cases',
     description: 'The whole bad-debt book, from hand-off through contact, plan and recovery.',
     icon: LayoutGrid,
     tone: 'var(--tone-sky)',
@@ -75,10 +75,10 @@ export const COLLECTION_TABS: CollectionTab[] = [
     access: () => true,
   },
   {
-    id: 'filed',
+    id: 'array',
     section: 'agency',
-    label: 'Filed tradelines',
-    description: 'The Metro 2 snapshot sent to Array — what we reported, and what came back.',
+    label: 'Array Reports',
+    description: 'Metro 2 tradelines placed with Array — a snapshot, not the live Zoho write.',
     icon: Sheet,
     tone: 'var(--tone-violet)',
     keywords: ['array', 'report', 'tradeline', 'filing', 'snapshot', 'period'],
@@ -103,10 +103,10 @@ export function findCollectionTab(id: CollectionTabId): CollectionTab {
 }
 
 /**
- * The first tab this user may open. `today` for everyone who can see it — a desk should land on
+ * The first tab this user may open. `home` for everyone who can see it — a desk should land on
  * the work, not on the first thing that happens to be permitted.
  */
 export function defaultCollectionTab(user: UserContext): CollectionTabId {
   const tabs = accessibleCollectionTabs(user);
-  return tabs.find((t) => t.id === 'today')?.id ?? tabs[0]?.id ?? 'today';
+  return tabs.find((t) => t.id === 'home')?.id ?? tabs[0]?.id ?? 'home';
 }

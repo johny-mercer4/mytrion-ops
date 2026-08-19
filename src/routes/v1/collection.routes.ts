@@ -155,12 +155,13 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParams.parse(request.params);
     const row = await collectionCaseRepo.findById(ctx, id);
     if (!row) throw new NotFoundError('Collection case not found');
-    const [plan, promises, tradeline] = await Promise.all([
+    const [plan, promises, tradeline, stageHistory] = await Promise.all([
       collectionPlanRepo.activePlan(ctx, id),
       collectionPlanRepo.listPromises(ctx, id),
       collectionPlacementRepo.latestForCarrier(ctx, row.carrierId),
+      collectionActivityRepo.stageHistory(ctx, id),
     ]);
-    return { plan, promises, tradeline, policy: DESK_POLICY };
+    return { plan, promises, tradeline, stageHistory, policy: DESK_POLICY };
   });
 
   app.get('/collection/array-reports/facets', auth, async (request) => {

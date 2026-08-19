@@ -1,5 +1,5 @@
 /**
- * Collection → Cases. The book, as a list or a five-lane board.
+ * Collection → Collection Cases. The book, as a list or a five-lane board.
  *
  * Status is a scope tab (open / closed / all), like Verification. The saved views are SERVER-side
  * filters (`minRemaining`, `neverContacted`), not a client pass over one page: the counts and the
@@ -103,7 +103,7 @@ export function CollectionCases({
     <div className="cc-list" data-stale={stale ? 'true' : undefined}>
       <PageHead
         kicker="Collection"
-        title="Cases"
+        title="Collection cases"
         description="The whole bad-debt book, from hand-off through contact, plan and recovery."
         actions={
           <div className="cc-head-actions">
@@ -224,6 +224,7 @@ export function CollectionCases({
               desk={desk}
               loading={feed.loading && rows.length === 0}
               filtered={filtered}
+              hideClosedLane={scope === 'open'}
               onOpen={onOpenCase}
             />
           )}
