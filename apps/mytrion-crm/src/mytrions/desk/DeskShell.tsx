@@ -8,7 +8,8 @@ import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionS
 import { DeskCompose, type DeskComposeResult } from './DeskCompose';
 import { DeskEscalationActions } from './DeskEscalationActions';
 import { DeskTicketActions } from './DeskTicketActions';
-import { DeskSettings } from './DeskSettings';
+import { EscalationRouting } from '../admin/EscalationRouting';
+import { AdminToastHost } from '../admin/toast';
 import type { DeskTabKey } from './deskTabs';
 
 /** Derived — see the note in access/tabRegistry.ts. */
@@ -100,7 +101,7 @@ export function DeskShell() {
     ? [
         {
           key: 'settings',
-          label: 'Settings',
+          label: 'Routing',
           icon: <Settings size={19} />,
           tone: 'var(--tone-orange)',
           active: view === 'settings',
@@ -142,7 +143,12 @@ export function DeskShell() {
             chatActions={chatActions}
           />
         ) : null}
-        {view === 'settings' && admin ? <DeskSettings /> : null}
+        {view === 'settings' && admin ? (
+          <>
+            <EscalationRouting />
+            <AdminToastHost />
+          </>
+        ) : null}
       </MytrionShell>
 
       <DeskCompose open={composeOpen} onClose={() => setComposeOpen(false)} onCreated={onCreated} />

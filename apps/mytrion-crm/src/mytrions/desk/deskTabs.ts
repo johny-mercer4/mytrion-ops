@@ -7,7 +7,7 @@ export const DESK_TABS = [
   // Admin-only in the shell (`admin ? [settings] : []`). Declared anyway — the registry answers
   // "what exists", the shell answers "may you see it", and a tab absent from the registry could
   // never be granted at all.
-  { key: 'settings', label: 'Settings' },
+  { key: 'settings', label: 'Routing' },
 ] as const satisfies readonly TabDescriptor[];
 
 export type DeskTabKey = (typeof DESK_TABS)[number]['key'];
