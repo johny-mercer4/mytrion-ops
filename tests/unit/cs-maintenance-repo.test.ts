@@ -43,6 +43,7 @@ function makeBuilder(): Record<string, unknown> {
     'returning',
     'update',
     'set',
+    'delete',
   ]) {
     builder[method] = record(method);
   }
@@ -254,6 +255,21 @@ describe('update', () => {
     void maintenanceCaseRepo.update('mtc_abc', { status: 'Completed' });
     const set = calls.find((c) => c.method === 'set')?.args[0] as Record<string, unknown>;
     expect(set.updatedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('deleteById (test-case cleanup only, 2026-08-19)', () => {
+  it('deletes by id and returns the deleted row', async () => {
+    resultRows = [{ id: 'mtc_abc', carrierId: '900001' }];
+    const row = await maintenanceCaseRepo.deleteById('mtc_abc');
+    expect(calls.some((c) => c.method === 'delete')).toBe(true);
+    expect(row).toEqual({ id: 'mtc_abc', carrierId: '900001' });
+  });
+
+  it('returns undefined when the id does not exist', async () => {
+    resultRows = [];
+    const row = await maintenanceCaseRepo.deleteById('mtc_missing');
+    expect(row).toBeUndefined();
   });
 });
 

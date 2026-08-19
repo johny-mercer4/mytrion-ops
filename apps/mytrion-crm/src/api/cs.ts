@@ -349,6 +349,13 @@ export function updateMaintenance(
   }) as Promise<MaintenanceRecord>;
 }
 
+/** Hard delete — test-case cleanup only, see the route's own doc comment. */
+export function deleteMaintenance(id: string): Promise<{ id: string; deleted: boolean }> {
+  return request('DELETE', `/cs/maintenance/${encodeURIComponent(id)}`, {
+    headers: CS_HEADERS,
+  }) as Promise<{ id: string; deleted: boolean }>;
+}
+
 // ---- Maintenance attachments (CS feedback 2026-07-31 — the CRM has this on every record) ----
 
 export interface MaintenanceAttachment {

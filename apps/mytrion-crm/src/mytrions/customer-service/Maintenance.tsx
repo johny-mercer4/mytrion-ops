@@ -488,6 +488,11 @@ export function Maintenance() {
             notify('success', creating ? `Case created for ${label}` : `Case updated for ${label}`);
             refreshAll();
           }}
+          onDeleted={() => {
+            setModalOpen(false);
+            notify('success', 'Case deleted');
+            refreshAll();
+          }}
         />
       ) : null}
 
