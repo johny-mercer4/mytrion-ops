@@ -202,6 +202,11 @@ export function ClientModal({
   const dialogRef = useAccessibleDialog(true, onClose);
 
   useEffect(() => {
+    document.body.setAttribute('data-dc-modal-open', 'true');
+    return () => document.body.removeAttribute('data-dc-modal-open');
+  }, []);
+
+  useEffect(() => {
     let off = false;
     setActRows([]);
     setActLimit(CLIENT_ACTIVITY_PAGE);

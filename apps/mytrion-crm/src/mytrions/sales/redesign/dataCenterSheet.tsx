@@ -13,7 +13,7 @@
  * sheet renders with global tokens and ignores light mode. Same fix, same reason, as Finance's
  * ClientModal.
  */
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useIsPhone } from '@/hooks/useMediaQuery';
 import { useTheme } from '@/hooks/useTheme';
@@ -56,6 +56,13 @@ export function DetailSheet({
   const dialogRef = useAccessibleDialog(true, onClose, { dismissible: !saving });
   const phone = useIsPhone();
   const { theme } = useTheme();
+
+  // Raise the RC widget above the modal backdrop while this sheet is open (backdrop-filter on the
+  // scrim would otherwise render the widget behind it — ringcentralHost.css acts on this attribute).
+  useEffect(() => {
+    document.body.setAttribute('data-dc-modal-open', 'true');
+    return () => document.body.removeAttribute('data-dc-modal-open');
+  }, []);
 
   return createPortal(
     <div
