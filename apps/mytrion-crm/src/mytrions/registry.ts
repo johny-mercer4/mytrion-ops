@@ -20,4 +20,5 @@ export const MYTRION_MODULES: Record<MytrionId, LazyExoticComponent<ComponentTyp
   hr: lazy(() => import('./hr')),
   recruit: lazy(() => import('./recruit')),
   trailhead: lazy(() => import('./trailhead')),
+  desk: lazy(() => import('./desk')),
 };
