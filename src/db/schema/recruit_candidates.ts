@@ -29,6 +29,13 @@ export const recruitCandidates = pgTable(
     currentCompany: text('current_company'),
     currentTitle: text('current_title'),
     notes: text('notes'),
+    // Resume stored in Dropbox (the `dropbox_recruit` provider, `/recruit/candidates/<id>/<file>`).
+    // The KEY is the durable reference; a viewable link is minted on demand (Dropbox links expire).
+    resumeFileKey: text('resume_file_key'),
+    resumeFileName: text('resume_file_name'),
+    resumeContentType: text('resume_content_type'),
+    resumeStorageProvider: text('resume_storage_provider'),
+    resumeUploadedAt: timestamp('resume_uploaded_at', { withTimezone: true }),
     appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
     convertedEmployeeId: text('converted_employee_id'),
     convertedAt: timestamp('converted_at', { withTimezone: true }),

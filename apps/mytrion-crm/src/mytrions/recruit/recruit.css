@@ -332,6 +332,26 @@
 .recruit-candidate-actions select { width: 128px; padding: 9px; text-transform: capitalize; }
 .recruit-convert { color: var(--success); }
 
+/* Résumé: view / upload / replace / remove, grouped under the candidate's details. */
+.recruit-resume { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; }
+.recruit-resume svg { flex: none; }
+.recruit-resume-link,
+.recruit-resume-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0; padding: 0; border: 0; background: none;
+  font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+}
+.recruit-resume-link { color: var(--accent); max-width: 260px; }
+.recruit-resume-link span,
+.recruit-resume-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recruit-resume-link:hover { text-decoration: underline; }
+.recruit-resume-none { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 13px; }
+.recruit-resume-action { color: var(--text-muted); }
+.recruit-resume-action:hover { color: var(--accent); }
+.recruit-resume-action:disabled { opacity: .6; cursor: wait; }
+.recruit-spin { animation: recruit-spin .8s linear infinite; }
+@keyframes recruit-spin { to { transform: rotate(360deg); } }
+
 .recruit-modal-backdrop {
   position: fixed;
   inset: 0;
