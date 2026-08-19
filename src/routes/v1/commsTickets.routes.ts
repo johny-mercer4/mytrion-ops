@@ -24,7 +24,7 @@ import {
   toTicketEventDto,
 } from '../../modules/comms/dto.js';
 import { createClientTicket } from '../../modules/comms/ticketService.js';
-import { changeTicketStatus } from '../../modules/comms/ticketActions.js';
+import { changeTicketPriority, changeTicketStatus } from '../../modules/comms/ticketActions.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { commsTicketEventRepo } from '../../repos/commsTicketEventRepo.js';
 import {
@@ -44,6 +44,8 @@ const TICKET_STATUSES = [
   'closed',
   'cancelled',
 ] as const;
+
+const TICKET_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
 
 const createBody = z.object({
   /** Catalog code. Chooses the queue — there is deliberately no `department` field. */
@@ -232,6 +234,44 @@ export async function commsTicketsRoutes(app: FastifyInstance): Promise<void> {
       resourceType: 'comms_ticket',
       resourceId: id,
       detail: { from: row.ticket.status, to: body.toStatus },
+    });
+    const fresh = await commsTicketRepo.getForReader(ctx, id);
+    return { ticket: toTicketDto(fresh ?? row, readerOf(ctx)) };
+  });
+
+  /**
+   * Re-prioritise a ticket. Same gate, version contract and 409 semantics as the status route: a
+   * non-readable id 404s, a stale `expectedVersion` 409s, and the change is journalled + broadcast so the
+   * queue board re-sorts for everyone watching.
+   */
+  app.post('/comms/tickets/:id/priority', guard, async (request) => {
+    const ctx = requireInternal(request, 'Comms tickets');
+    const { id } = request.params as { id: string };
+    const body = z
+      .object({
+        toPriority: z.enum(TICKET_PRIORITIES),
+        expectedVersion: z.number().int().min(1),
+      })
+      .parse(request.body);
+    const row = await commsTicketRepo.getForReader(ctx, id);
+    if (!row) throw new NotFoundError('Ticket not found.');
+    const updated = await changeTicketPriority(ctx, row.ticket, {
+      toPriority: body.toPriority,
+      expectedVersion: body.expectedVersion,
+    });
+    if (!updated) {
+      throw new AppError('This ticket changed since you loaded it — reload and try again.', {
+        statusCode: 409,
+        code: 'VERSION_CONFLICT',
+        expose: true,
+      });
+    }
+    await auditFromContext(ctx, {
+      action: 'comms.ticket.priority',
+      status: 'ok',
+      resourceType: 'comms_ticket',
+      resourceId: id,
+      detail: { from: row.ticket.priority, to: body.toPriority },
     });
     const fresh = await commsTicketRepo.getForReader(ctx, id);
     return { ticket: toTicketDto(fresh ?? row, readerOf(ctx)) };

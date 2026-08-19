@@ -1,6 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { mytrionTickets, type CommsTicketStatus, type MytrionTicket } from '../db/schema/index.js';
+import {
+  mytrionTickets,
+  type CommsTicketPriority,
+  type CommsTicketStatus,
+  type MytrionTicket,
+} from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
 
 /**
@@ -54,6 +59,32 @@ export const commsTicketStateRepo = {
     const rows = await db
       .update(mytrionTickets)
       .set(patch)
+      .where(
+        and(
+          eq(mytrionTickets.tenantId, ctx.tenantId),
+          eq(mytrionTickets.id, opts.ticketId),
+          eq(mytrionTickets.version, opts.expectedVersion),
+        ),
+      )
+      .returning();
+    return rows[0];
+  },
+
+  /**
+   * Change priority under optimistic concurrency.
+   *
+   * Version-gated like `transitionStatus` and for the same reason: priority is what an SLA report and a
+   * queue sort read off, so two agents re-prioritising at once must not silently clobber one another.
+   * Returns undefined when `expectedVersion` no longer matches, which the route turns into a 409.
+   */
+  async setPriority(
+    ctx: TenantContext,
+    opts: { ticketId: string; expectedVersion: number; toPriority: CommsTicketPriority },
+  ): Promise<MytrionTicket | undefined> {
+    const now = new Date();
+    const rows = await db
+      .update(mytrionTickets)
+      .set({ priority: opts.toPriority, version: opts.expectedVersion + 1, updatedAt: now })
       .where(
         and(
           eq(mytrionTickets.tenantId, ctx.tenantId),

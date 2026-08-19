@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MytrionTicket } from '../../src/db/schema/index.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
-const state = vi.hoisted(() => ({ transitionStatus: vi.fn() }));
+const state = vi.hoisted(() => ({ transitionStatus: vi.fn(), setPriority: vi.fn() }));
 const events = vi.hoisted(() => ({ append: vi.fn(async () => undefined) }));
 const publish = vi.hoisted(() => ({
   publishSafely: vi.fn((_label: string, fn: () => void) => fn()),
@@ -23,7 +23,7 @@ vi.mock('../../src/repos/commsTicketStateRepo.js', () => ({ commsTicketStateRepo
 vi.mock('../../src/repos/commsTicketEventRepo.js', () => ({ commsTicketEventRepo: events }));
 vi.mock('../../src/modules/comms/publish.js', () => publish);
 
-import { changeTicketStatus } from '../../src/modules/comms/ticketActions.js';
+import { changeTicketPriority, changeTicketStatus } from '../../src/modules/comms/ticketActions.js';
 
 // Test doubles — only the fields the service reads are populated.
 const ctx = { tenantId: 'octane', userId: 'zoho:42', userName: 'Ali', audience: 'internal' } as unknown as TenantContext;
@@ -32,6 +32,7 @@ const ticket = {
   threadId: 'mth_1',
   number: 'T-000001',
   status: 'open',
+  priority: 'medium',
   targetDepartment: 'customer-service',
   version: 3,
 } as unknown as MytrionTicket;
@@ -70,6 +71,39 @@ describe('changeTicketStatus', () => {
     state.transitionStatus.mockResolvedValue(undefined);
 
     const result = await changeTicketStatus(ctx, ticket, { toStatus: 'closed', expectedVersion: 1 });
+
+    expect(result).toBeNull();
+    expect(events.append).not.toHaveBeenCalled();
+    expect(publish.publishThreadEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('changeTicketPriority', () => {
+  it('changes priority under the seen version, journals from→to, and broadcasts', async () => {
+    state.setPriority.mockResolvedValue({ id: 'mtk_1', priority: 'high', version: 4 });
+
+    const result = await changeTicketPriority(ctx, ticket, { toPriority: 'high', expectedVersion: 3 });
+
+    expect(result).not.toBeNull();
+    expect(state.setPriority).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ ticketId: 'mtk_1', expectedVersion: 3, toPriority: 'high' }),
+    );
+    expect(events.append).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({
+        ticketId: 'mtk_1',
+        eventType: 'priority_changed',
+        detail: { from: 'medium', to: 'high' },
+      }),
+    );
+    expect(publish.publishThreadEvent).toHaveBeenCalled();
+  });
+
+  it('returns null on a stale version and does NOT journal or broadcast', async () => {
+    state.setPriority.mockResolvedValue(undefined);
+
+    const result = await changeTicketPriority(ctx, ticket, { toPriority: 'low', expectedVersion: 1 });
 
     expect(result).toBeNull();
     expect(events.append).not.toHaveBeenCalled();

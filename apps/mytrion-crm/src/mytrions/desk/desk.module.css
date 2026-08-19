@@ -343,6 +343,101 @@
   max-width: 14rem;
 }
 
+/* Assignment cluster (claim / reassign / release) + priority selector in the header. */
+.assign {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.assignWho {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.assignWho[data-assigned='true'] {
+  color: inherit;
+}
+
+.assignWho svg {
+  color: var(--text-muted);
+}
+
+.assignWho[data-assigned='true'] svg {
+  color: var(--tone-emerald);
+}
+
+/* Keep the inline priority dropdown compact so the header does not sprawl. */
+.priorityWrap {
+  display: inline-flex;
+  min-width: 7.5rem;
+}
+
+.rosterList {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rosterItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.rosterItem:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.rosterItem:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rosterItem[data-current] {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.rosterName {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.rosterRole {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.rosterLoad {
+  flex: none;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .timeline {
   list-style: none;
   margin: 0.6rem 0 0;

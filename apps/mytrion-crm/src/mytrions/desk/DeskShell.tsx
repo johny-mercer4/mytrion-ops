@@ -56,7 +56,7 @@ export function DeskShell() {
     t.kind === 'escalation' && t.escalation ? (
       <DeskEscalationActions ticket={t} departments={departments} />
     ) : (
-      <DeskTicketActions ticket={t} />
+      <DeskTicketActions ticket={t} me={user.userId} admin={admin} />
     );
 
   const navSections: NavSection[] = [

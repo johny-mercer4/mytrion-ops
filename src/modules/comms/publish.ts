@@ -23,6 +23,7 @@ export type CommsEventType =
   | 'comms.ticket.created'
   | 'comms.ticket.assigned'
   | 'comms.ticket.status_changed'
+  | 'comms.ticket.priority_changed'
   | 'comms.ticket.closed'
   | 'comms.ticket.reopened'
   | 'comms.escalation.raised'

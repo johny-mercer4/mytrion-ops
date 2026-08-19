@@ -1,13 +1,23 @@
 import { useCallback, useState } from 'react';
-import { Button, Dialog } from '@/ds';
+import { Button, Dialog, Select, type SelectOption } from '@/ds';
 import {
   listTicketEvents,
+  setTicketPriority,
   setTicketStatus,
   type TicketDto,
   type TicketEventDto,
+  type TicketPriority,
   type TicketStatus,
 } from '@/api/comms';
+import { DeskAssignControls } from './DeskAssignControls';
 import styles from './desk.module.css';
+
+const PRIORITY_OPTS: SelectOption[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'critical', label: 'Critical' },
+];
 
 interface StatusAction {
   to: TicketStatus;
@@ -37,6 +47,11 @@ function eventLabel(e: TicketEventDto): string {
   if (e.eventType === 'status_changed' && e.fromStatus && e.toStatus) {
     return `Status: ${e.fromStatus.replace(/_/g, ' ')} → ${e.toStatus.replace(/_/g, ' ')}`;
   }
+  if (e.eventType === 'priority_changed' && e.detail) {
+    const from = typeof e.detail.from === 'string' ? e.detail.from : null;
+    const to = typeof e.detail.to === 'string' ? e.detail.to : null;
+    if (from && to) return `Priority: ${from} → ${to}`;
+  }
   return e.eventType.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
@@ -46,9 +61,19 @@ function eventLabel(e: TicketEventDto): string {
  * overwriting; the console refreshes off the realtime frame the transition publishes. "History" opens
  * the append-only activity trail (assignments, transitions, escalation hops).
  */
-export function DeskTicketActions({ ticket }: { ticket: TicketDto }) {
+export function DeskTicketActions({
+  ticket,
+  me,
+  admin,
+}: {
+  ticket: TicketDto;
+  /** Signed-in worker's Zoho id + admin flag — passed through to the assignment cluster. */
+  me: string;
+  admin: boolean;
+}) {
   const [busyTo, setBusyTo] = useState<TicketStatus | null>(null);
   const [error, setError] = useState('');
+  const [prioBusy, setPrioBusy] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [events, setEvents] = useState<TicketEventDto[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -70,6 +95,23 @@ export function DeskTicketActions({ ticket }: { ticket: TicketDto }) {
     [busyTo, ticket.id, ticket.version],
   );
 
+  const changePriority = useCallback(
+    async (next: string | null) => {
+      if (!next || next === ticket.priority || prioBusy) return;
+      setPrioBusy(true);
+      setError('');
+      try {
+        await setTicketPriority(ticket.id, next as TicketPriority, ticket.version);
+        // The list (and this header) reload off the realtime frame the change publishes.
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setPrioBusy(false);
+      }
+    },
+    [ticket.id, ticket.priority, ticket.version, prioBusy],
+  );
+
   const openHistory = useCallback(async () => {
     setHistoryOpen(true);
     setEventsLoading(true);
@@ -84,6 +126,18 @@ export function DeskTicketActions({ ticket }: { ticket: TicketDto }) {
 
   return (
     <div className={styles.ticketActions}>
+      <DeskAssignControls ticket={ticket} me={me} admin={admin} />
+      <span className={styles.priorityWrap} title="Priority">
+        <Select
+          label="Priority"
+          labelHidden
+          searchable={false}
+          options={PRIORITY_OPTS}
+          value={ticket.priority}
+          onChange={(v) => void changePriority(v)}
+          loading={prioBusy}
+        />
+      </span>
       {statusActions(ticket.status).map((a) => (
         <Button
           key={a.to}

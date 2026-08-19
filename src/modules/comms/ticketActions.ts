@@ -1,7 +1,11 @@
 import { actorZohoUserIdOf } from '../../repos/commsThreadRepo.js';
 import { commsTicketEventRepo } from '../../repos/commsTicketEventRepo.js';
 import { commsTicketStateRepo } from '../../repos/commsTicketStateRepo.js';
-import type { CommsTicketStatus, MytrionTicket } from '../../db/schema/index.js';
+import type {
+  CommsTicketPriority,
+  CommsTicketStatus,
+  MytrionTicket,
+} from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { publishSafely, publishThreadEvent } from './publish.js';
 
@@ -50,6 +54,53 @@ export async function changeTicketStatus(
         toStatus: opts.toStatus,
       },
       // The queue board so the row moves between Open/Resolved; the open thread updates from the list.
+      { alsoQueue: true },
+    );
+  });
+
+  return updated;
+}
+
+/**
+ * Change a ticket's priority.
+ *
+ * A sibling to `changeTicketStatus`: same optimistic-concurrency contract (null on a stale version → 409),
+ * same journal-then-publish shape, so a re-prioritisation is auditable and the queue board re-sorts live.
+ */
+export async function changeTicketPriority(
+  ctx: TenantContext,
+  ticket: MytrionTicket,
+  opts: { toPriority: CommsTicketPriority; expectedVersion: number },
+): Promise<MytrionTicket | null> {
+  const actor = actorZohoUserIdOf(ctx);
+  const updated = await commsTicketStateRepo.setPriority(ctx, {
+    ticketId: ticket.id,
+    expectedVersion: opts.expectedVersion,
+    toPriority: opts.toPriority,
+  });
+  // Stale version — someone changed it first. The route turns null into a 409 rather than clobbering.
+  if (!updated) return null;
+
+  await commsTicketEventRepo.append(ctx, {
+    ticketId: ticket.id,
+    threadId: ticket.threadId,
+    eventType: 'priority_changed',
+    actorZohoUserId: actor,
+    actorName: ctx.userName ?? null,
+    detail: { from: ticket.priority, to: opts.toPriority },
+  });
+
+  publishSafely('comms.ticket.priority_changed', () => {
+    publishThreadEvent(
+      { id: ticket.threadId, department: ticket.targetDepartment },
+      [],
+      {
+        type: 'comms.ticket.priority_changed',
+        threadId: ticket.threadId,
+        ticketId: ticket.id,
+        number: ticket.number,
+        toPriority: opts.toPriority,
+      },
       { alsoQueue: true },
     );
   });

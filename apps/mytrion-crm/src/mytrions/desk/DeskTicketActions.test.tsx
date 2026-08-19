@@ -11,7 +11,11 @@ import type { TicketDto, TicketEventDto } from '@/api/comms';
 
 const api = vi.hoisted(() => ({
   setTicketStatus: vi.fn(),
+  setTicketPriority: vi.fn(),
   listTicketEvents: vi.fn(),
+  assignTicket: vi.fn(),
+  releaseTicket: vi.fn(),
+  getQueueRoster: vi.fn(),
 }));
 vi.mock('@/api/comms', () => api);
 
@@ -52,15 +56,31 @@ function ticket(over: Partial<TicketDto> = {}): TicketDto {
   };
 }
 
+/** The component now requires the signed-in identity + admin flag; default to a plain agent. */
+function renderActions(t: TicketDto, opts: { me?: string; admin?: boolean } = {}) {
+  return render(<DeskTicketActions ticket={t} me={opts.me ?? '99'} admin={opts.admin ?? false} />);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   api.setTicketStatus.mockResolvedValue({ ticket: ticket({ status: 'resolved', version: 2 }) });
+  api.setTicketPriority.mockResolvedValue({ ticket: ticket({ priority: 'high', version: 2 }) });
+  api.assignTicket.mockResolvedValue({ ticket: ticket({ assignee: { zohoUserId: '99', name: 'Me' } }) });
+  api.releaseTicket.mockResolvedValue({ ticket: ticket({ assignee: null }) });
+  api.getQueueRoster.mockResolvedValue({
+    department: 'customer-service',
+    strategy: 'round_robin',
+    requireOnline: false,
+    roster: [
+      { zohoUserId: '7', name: 'Nodira', roleTitle: null, active: true, acceptsNew: true, maxOpen: null, sortOrder: 0, lastAssignedAt: null, assignedCount: 2 },
+    ],
+  });
   api.listTicketEvents.mockResolvedValue([]);
 });
 
 describe('DeskTicketActions', () => {
   it('offers In progress / Resolve / Close on an open ticket', () => {
-    render(<DeskTicketActions ticket={ticket({ status: 'open' })} />);
+    renderActions(ticket({ status: 'open' }));
     for (const name of ['In progress', 'Resolve', 'Close', 'History']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
@@ -68,7 +88,7 @@ describe('DeskTicketActions', () => {
   });
 
   it('offers Reopen / Close on a resolved ticket', () => {
-    render(<DeskTicketActions ticket={ticket({ status: 'resolved' })} />);
+    renderActions(ticket({ status: 'resolved' }));
     expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Resolve' })).toBeNull();
@@ -76,7 +96,7 @@ describe('DeskTicketActions', () => {
 
   it('resolving carries the ticket version', async () => {
     const user = userEvent.setup();
-    render(<DeskTicketActions ticket={ticket({ status: 'open', version: 5 })} />);
+    renderActions(ticket({ status: 'open', version: 5 }));
     await user.click(screen.getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(api.setTicketStatus).toHaveBeenCalledWith('mtk_1', 'resolved', 5));
   });
@@ -95,7 +115,7 @@ describe('DeskTicketActions', () => {
       },
     ];
     api.listTicketEvents.mockResolvedValue(events);
-    render(<DeskTicketActions ticket={ticket()} />);
+    renderActions(ticket());
 
     await user.click(screen.getByRole('button', { name: 'History' }));
     await waitFor(() => expect(api.listTicketEvents).toHaveBeenCalledWith('mtk_1'));
@@ -106,8 +126,42 @@ describe('DeskTicketActions', () => {
   it('surfaces a server error (e.g. a version conflict)', async () => {
     const user = userEvent.setup();
     api.setTicketStatus.mockRejectedValue(new Error('This ticket changed since you loaded it'));
-    render(<DeskTicketActions ticket={ticket({ status: 'open' })} />);
+    renderActions(ticket({ status: 'open' }));
     await user.click(screen.getByRole('button', { name: 'Resolve' }));
     expect(await screen.findByText(/This ticket changed since you loaded it/)).toBeInTheDocument();
+  });
+
+  it('Claim assigns an unassigned ticket to me (no target)', async () => {
+    const user = userEvent.setup();
+    renderActions(ticket({ assignee: null }));
+    await user.click(screen.getByRole('button', { name: 'Claim' }));
+    await waitFor(() => expect(api.assignTicket).toHaveBeenCalledWith('mtk_1'));
+  });
+
+  it('shows Release to the assignee and hands the ticket back', async () => {
+    const user = userEvent.setup();
+    renderActions(ticket({ assignee: { zohoUserId: '99', name: 'Me' } }), { me: '99' });
+    const release = screen.getByRole('button', { name: 'Release' });
+    await user.click(release);
+    await waitFor(() => expect(api.releaseTicket).toHaveBeenCalledWith('mtk_1'));
+  });
+
+  it('hides Release from a non-assignee agent, but not from an admin', () => {
+    const other = () => ticket({ assignee: { zohoUserId: '7', name: 'Nodira' } });
+    const { unmount } = renderActions(other(), { me: '99', admin: false });
+    expect(screen.queryByRole('button', { name: 'Release' })).toBeNull();
+    unmount();
+    renderActions(other(), { me: '99', admin: true });
+    expect(screen.getByRole('button', { name: 'Release' })).toBeInTheDocument();
+  });
+
+  it('Reassign opens the roster picker and assigns to the chosen colleague', async () => {
+    const user = userEvent.setup();
+    renderActions(ticket({ assignee: { zohoUserId: '99', name: 'Me' } }), { me: '99' });
+    await user.click(screen.getByRole('button', { name: 'Reassign' }));
+    await waitFor(() => expect(api.getQueueRoster).toHaveBeenCalledWith('customer-service'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /Nodira/ }));
+    await waitFor(() => expect(api.assignTicket).toHaveBeenCalledWith('mtk_1', '7'));
   });
 });

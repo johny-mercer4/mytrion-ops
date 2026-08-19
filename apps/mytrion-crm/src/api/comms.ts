@@ -250,6 +250,69 @@ export async function setTicketStatus(
   })) as { ticket: TicketDto };
 }
 
+/**
+ * Change a ticket's priority. `expectedVersion` is mandatory: the server 409s a stale decision rather
+ * than overwriting another agent's re-prioritisation.
+ */
+export async function setTicketPriority(
+  id: string,
+  toPriority: TicketPriority,
+  expectedVersion: number,
+): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/priority`, {
+    body: { toPriority, expectedVersion },
+  })) as { ticket: TicketDto };
+}
+
+/** One seat on a department's assignment roster, with the rotation cursor in plain sight. */
+export interface RosterMemberDto {
+  zohoUserId: string;
+  name: string | null;
+  roleTitle: string | null;
+  active: boolean;
+  acceptsNew: boolean;
+  maxOpen: number | null;
+  sortOrder: number;
+  /** Least-recently-assigned goes next under round-robin. */
+  lastAssignedAt: string | null;
+  assignedCount: number;
+}
+
+export interface QueueRoster {
+  department: string;
+  strategy: string;
+  requireOnline: boolean;
+  roster: RosterMemberDto[];
+}
+
+/** The roster a queue draws from — the candidate pool a reassign picks out of. */
+export async function getQueueRoster(department: string): Promise<QueueRoster> {
+  return (await request(
+    'GET',
+    `/comms/queue/${encodeURIComponent(department)}/roster`,
+  )) as QueueRoster;
+}
+
+/**
+ * Claim a ticket for yourself (omit `toZohoUserId`) or assign it to a colleague. The target must hold a
+ * seat on the ticket's department roster — the same list the round-robin draws from.
+ */
+export async function assignTicket(
+  id: string,
+  toZohoUserId?: string,
+): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/queue/${encodeURIComponent(id)}/assign`, {
+    body: toZohoUserId ? { toZohoUserId } : {},
+  })) as { ticket: TicketDto };
+}
+
+/** Hand a ticket back to the queue. Only the current holder (or an admin) may do it. */
+export async function releaseTicket(id: string): Promise<{ ticket: TicketDto }> {
+  return (await request('POST', `/comms/queue/${encodeURIComponent(id)}/release`, {
+    body: {},
+  })) as { ticket: TicketDto };
+}
+
 export interface CreateTicketInput {
   /** Catalog code. Chooses the queue — there is deliberately no `department` field. */
   typeCode: string;
