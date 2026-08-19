@@ -825,7 +825,7 @@
 
 /* While a file is dragged over the conversation. */
 .composerDrag {
-  outline: 2px dashed var(--accent, var(--hz-accent));
+  outline: 2px dashed var(--accent);
   outline-offset: -4px;
   border-radius: var(--radius-md, 10px);
 }
