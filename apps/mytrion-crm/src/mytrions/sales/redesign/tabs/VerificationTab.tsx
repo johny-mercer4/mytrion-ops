@@ -5,394 +5,512 @@
  * (`automation.verification.case-ingest`) and assigns them to the Deal's owner; this tab is where
  * that agent completes intake and then watches underwriting.
  *
- * The card's red/green state IS `verification_process`: red means Sales still owes intake and
- * Verification cannot start; green means it is with the desk. The count of outstanding items comes
- * from the server's evaluation, so the card and the form can never disagree about what is missing.
+ * SAME QUEUE, SAME SHAPE AS THE DESK. This reads `/verification/applications`, which returns the
+ * same `VerificationCaseRow` the Verification desk's own queue reads, so the surface is the desk's
+ * `applicants` list — the mono identity tile, the status chip, the ten-segment phase meter, the age
+ * — rendered from `applicants.css` and `ds/DataTable` rather than from a second card grid that
+ * happened to describe the same row. A case looks the same on both desks because it IS the same row.
+ *
+ * `data-mytrion="verification"` on the queue root is what brings that stylesheet alive: every `.va-*`
+ * rule is scoped under it. It binds `--badge-tone` and nothing else (see `styles/global.css`), which
+ * no `.va-*` rule and no `ds/Badge` intent reads — the Sales identity badge lives in the shell
+ * header, outside this subtree. Same hosting trick `VerificationProgress` already uses for the spine.
+ *
+ * WHAT SALES DOES NOT SEE. No findings, no phase verdicts, no decision controls, and not the desk's
+ * "Blocked on" sentence — the agent gets `askFor`, which says what THEY owe. The credit agent's name
+ * is the desk's business too; the only owner named here is a Sales colleague whose Deal this is.
  */
-import { useCallback, useState } from 'react';
-import { Icon } from '../icons';
-import { NAV_DESC } from '../salesData';
-import { useCachedLoad } from '../dcCache';
-import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead, Skel } from '../SalesPage';
-import { s } from '../dc';
-import { ApplicationIntake } from '../applicationIntake';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  Avatar,
+  Badge,
+  Button,
+  DataTable,
+  EmptyState,
+  Icon,
+  Input,
+  Pagination,
+  Tabs,
+  type BadgeIntent,
+  type DataColumn,
+  type IconName,
+} from '@/ds';
 import { getImpersonation } from '@/api/impersonation';
 import { getSession } from '@/api/session';
-import { salesOwnerId, salesOwnerName } from '../../../_shared/verificationSalesOwner';
 import { listApplications, type VerificationCaseRow } from '@/api/verificationFlow';
+import { initials as personInitials } from '@/lib/initials';
+import { NAV_DESC } from '../salesData';
+import { useCachedLoad } from '../dcCache';
+import { SalesPage, SalesPageHead } from '../SalesPage';
+import { ApplicationIntake } from '../applicationIntake';
+import {
+  ageDays,
+  caseInitials,
+  caseName,
+  isLocked,
+  money,
+  phaseNumber,
+  routeLabel,
+  salesOwnerLabel,
+  salesOwnerName,
+  statusShort,
+} from '../../../verification/applicants/applicantsModel';
+import {
+  anotherAgentsDeal,
+  applicantLabel,
+  askFor,
+  inSalesScope,
+  salesPhaseLabel,
+  SALES_SCOPES,
+  selectSalesRows,
+  type SalesScope,
+  type SalesSortDir,
+  type SalesSortKey,
+} from '../salesVerificationQueue';
+import '../../../verification/applicants/applicants.css';
 
-const PAGE_SIZE = 24;
+/**
+ * The whole book in one page, filtered in the browser.
+ *
+ * 24 was the old card grid's page and it is not enough here: the scope tabs carry counts, and a count
+ * taken over the first 24 of 40 rows is a number that contradicts the tab it labels. 200 is the
+ * route's own cap (`listQuery` in `verificationApplications.routes.ts`) and two orders of magnitude
+ * above any agent's book.
+ */
+const FETCH_LIMIT = 200;
 
-type Filter = 'all' | 'draft' | 'with_verification' | 'needs_you' | 'decided';
+/** 15 rows, the desk's own page. A comfortable row is 66px, so a page is about one screen. */
+const PAGE_SIZE = 15;
 
-const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: 'draft', label: 'Incomplete' },
-  { id: 'with_verification', label: 'With Verification' },
-  { id: 'needs_you', label: 'Needs you' },
-  { id: 'decided', label: 'Decided' },
-];
+/**
+ * Height reserved for the table while it loads. `DataTable`'s table-mode loading state is a single
+ * message row, so without this the panel stands ~90px tall and then leaps to a full page under the
+ * reader's cursor. Comfortable row 66px + 37px header, measured in Chrome at 1440px.
+ */
+const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 66 + 37}px`;
 
-/** Board column → the words and tone the agent sees. Mirrors `verification_statuses.board_column`. */
-interface ColumnTone {
-  label: string;
-  fg: string;
-  bg: string;
-  bd: string;
-}
-
-const DRAFT_TONE: ColumnTone = {
-  label: 'Incomplete',
-  fg: 'var(--danger)',
-  bg: 'rgba(248,113,113,.12)',
-  bd: 'rgba(248,113,113,.32)',
-};
-
-const COLUMN_TONE: Record<string, ColumnTone> = {
-  draft: DRAFT_TONE,
-  submitted: { label: 'With Verification', fg: 'var(--ok)', bg: 'rgba(52,211,153,.12)', bd: 'rgba(52,211,153,.3)' },
-  in_review: { label: 'In review', fg: 'var(--ok)', bg: 'rgba(52,211,153,.12)', bd: 'rgba(52,211,153,.3)' },
-  needs_you: { label: 'Needs you', fg: 'var(--warn)', bg: 'rgba(251,191,36,.14)', bd: 'rgba(251,191,36,.34)' },
-  approved: { label: 'Approved', fg: 'var(--ok)', bg: 'rgba(52,211,153,.14)', bd: 'rgba(52,211,153,.34)' },
-  declined: { label: 'Declined', fg: 'var(--danger)', bg: 'rgba(248,113,113,.12)', bd: 'rgba(248,113,113,.32)' },
-};
-
-function toneFor(row: VerificationCaseRow): ColumnTone {
-  if (!row.verificationProcess) return DRAFT_TONE;
-  return COLUMN_TONE[row.boardColumn ?? 'submitted'] ?? DRAFT_TONE;
-}
-
-function matchesFilter(row: VerificationCaseRow, filter: Filter): boolean {
-  switch (filter) {
-    case 'draft':
-      return !row.verificationProcess;
-    case 'needs_you':
-      return row.statusCode === 'pending_docs';
-    case 'decided':
-      return Boolean(row.closedAt);
-    case 'with_verification':
-      return row.verificationProcess && !row.closedAt && row.statusCode !== 'pending_docs';
+/** Status → chip treatment. Colour is never the only channel — each carries its own glyph. */
+function statusChip(row: VerificationCaseRow): { intent: BadgeIntent; icon: IconName } {
+  if (isLocked(row)) return { intent: 'danger', icon: 'lock' };
+  switch (row.statusCode) {
+    case 'pending_docs':
+      return { intent: 'warning', icon: 'cloud_upload' };
+    case 'manager_review':
+    case 'additional_verification':
+      return { intent: 'warning', icon: 'gavel' };
+    case 'approved':
+    case 'deposit_prepaid':
+      return { intent: 'success', icon: 'check_circle' };
+    case 'declined':
+    case 'declined_customer':
+    case 'declined_blacklist':
+      return { intent: 'danger', icon: 'block' };
+    case 'routed_wex':
+      return { intent: 'info', icon: 'open_in_new' };
     default:
-      return true;
+      return { intent: 'info', icon: 'bolt' };
   }
 }
 
-function displayName(row: VerificationCaseRow): string {
-  return (
-    row.companyName ||
-    [row.firstName, row.lastName].filter(Boolean).join(' ') ||
-    'Untitled application'
-  );
-}
-
-/**
- * Phase labels for the Sales card. The desk owns the full rail; Sales only needs to know how far
- * along their application is, so this is a short read-only mirror of the fixed 10-phase catalog.
- */
-const PHASE_PROGRESS: Record<string, { order: number; label: string }> = {
-  p1_intake: { order: 1, label: 'Application intake' },
-  p2_identity: { order: 2, label: 'Identity check' },
-  p3_screening: { order: 3, label: 'Internal screening' },
-  p4_authority: { order: 4, label: 'Authority status' },
-  p5_routing: { order: 5, label: 'Review routing' },
-  p6_credit_banking: { order: 6, label: 'Credit & banking' },
-  p7_hard_stops: { order: 7, label: 'Financial checks' },
-  p8_highway: { order: 8, label: 'Operational review' },
-  p9_risk_capacity: { order: 9, label: 'Risk & capacity' },
-  p10_decision: { order: 10, label: 'Final decision' },
+/** The ask line's tone → the `.va-blocked` data attribute that colours it. */
+const ASK_TONE: Record<ReturnType<typeof askFor>['tone'], string> = {
+  danger: 'danger',
+  warn: 'warning',
+  ok: 'plain',
+  none: 'plain',
 };
 
 /**
- * The applicant type in the words both desks now use.
+ * Column tracks, as two sets rather than one with holes.
  *
- * TWO types, not three: "Owner-Operator / Individual" and "Carrier (Company)". `company` was a
- * third value the Zoho poller assigned on its own, and Sales and Verification each read it
- * differently — it is kept here only so the rows that already carry it still render a name
- * instead of a dash. Nothing offers it as a choice any more.
+ * The Sales-owner column only exists on a page that actually contains a colleague's Deal (see the
+ * column's own note), and `layout="fixed"` needs the remaining tracks to add up to 100 either way —
+ * a set that leaves 14% unclaimed hands the slack to whichever column has the longest content.
  */
-function applicantLabel(type: VerificationCaseRow['applicantType']): string {
-  if (type === 'owner_operator') return 'Owner-Operator / Individual';
-  if (type === 'carrier' || type === 'company') return 'Carrier (Company)';
-  return 'Type not set';
-}
+const TRACKS_WITH_OWNER = {
+  name: '19%',
+  status: '15%',
+  phase: '14%',
+  ask: '14%',
+  trucks: '6%',
+  cards: '6%',
+  limit: '7%',
+  age: '5%',
+  // The point of this column is the NAME — at 11% it read "Robert T…", which identifies nobody.
+  owner: '14%',
+} as const;
+
+const TRACKS = {
+  name: '25%',
+  status: '16%',
+  phase: '15%',
+  ask: '18%',
+  trucks: '7%',
+  cards: '7%',
+  limit: '7%',
+  age: '5%',
+  owner: '0',
+} as const;
 
 /**
  * Whose list this is — the View-as target when one is picked, else the signed-in worker.
  *
- * Used for one thing: deciding whether the Sales owner is worth naming on a card. A case reaches an
- * agent three ways — they submitted it, they were ASSIGNED it, or they own the Zoho Deal — so a card
- * in your list can belong to a different Sales agent, and that is when you need the name. Naming
- * yourself on all the others would be noise.
+ * Used for one thing: deciding whether a Sales owner is worth naming. A case reaches an agent three
+ * ways — they submitted it, they were ASSIGNED it, or they own the Zoho Deal — so a row in your list
+ * can belong to a different agent, and that is when you need the name. Naming yourself on every row
+ * would be noise.
  */
 function viewerZohoId(): string | null {
   return getImpersonation()?.zohoUserId ?? getSession()?.worker.zohoUserId ?? null;
 }
 
-/**
- * The one line that tells Sales to act, and its tone.
- *
- * Precedence is the order the agent can act in: what they still owe comes before what the desk
- * asked for, which comes before a decision they can only read. `none` is the quiet case — the desk
- * is working it and there is nothing for Sales to do but wait.
- */
-function askFor(row: VerificationCaseRow): { tone: 'danger' | 'warn' | 'ok' | 'none'; text: string } {
-  const outstanding = row.intakeMissing?.length ?? 0;
-  if (!row.verificationProcess) {
-    return {
-      tone: 'danger',
-      text: outstanding > 0
-        ? `${outstanding} item${outstanding === 1 ? '' : 's'} still needed from you`
-        : 'Not submitted yet',
-    };
-  }
-  if (row.statusCode === 'pending_docs') {
-    return { tone: 'warn', text: 'Verification asked you for documents' };
-  }
-  if (row.closedAt) {
-    const limit = row.approvedLimitAmount ? ` — $${row.approvedLimitAmount}` : '';
-    return { tone: 'ok', text: `${row.statusLabel ?? 'Decided'}${limit}` };
-  }
-  return { tone: 'none', text: 'With Verification — nothing needed from you' };
-}
-
-const ASK_ICON: Record<'danger' | 'warn' | 'ok' | 'none', 'warn' | 'upload' | 'check' | 'clock'> = {
-  danger: 'warn',
-  warn: 'upload',
-  ok: 'check',
-  none: 'clock',
-};
-
-/**
- * The roster's own skeleton, deliberately NOT `SalesBodySkeleton variant="grid"`.
- *
- * Two mismatches made the shared one shift the page. Shape: the grid variant draws a 40px avatar
- * row, two pills and a three-up stat footer, which is not this card. Geometry: its
- * `.ss-verification-page .ss-skel-grid` override only applies inside `.ss-verification-page`,
- * which nothing rendered — so the skeleton fell back to `sales-page.css`'s
- * `minmax(min(100%,320px),1fr)` while the roster used an inline `minmax(min(300px,100%),1fr)`,
- * and the column COUNT changed when the data landed.
- *
- * Now both live inside `.ss-verification-page` and share one grid rule (3 / 2 / 1 columns at
- * 900 and 640), and this mirrors the real card block for block: title row, meter, stage line,
- * ask line, chips. It sits next to `ApplicationCard` so a change to one is visibly a change to
- * the other.
- */
-function RosterSkeleton({ count = 6 }: { count?: number }) {
-  return (
-    <div className="ss-skel-grid" aria-busy="true" aria-label="Loading your applications">
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="ss-verification-card" aria-hidden="true">
-          <div className="ss-verification-card-top">
-            <div className="ss-verification-card-heading">
-              <Skel w="72%" h="15px" />
-              <div style={{ marginTop: 7 }}>
-                <Skel w="46%" h="11px" />
-              </div>
-            </div>
-            <Skel w="84px" h="22px" radius="999px" />
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <Skel w="100%" h="4px" radius="1px" />
-          </div>
-          <div style={{ marginTop: 7 }}>
-            <Skel w="58%" h="11px" />
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <Skel w="100%" h="36px" />
-          </div>
-          <div className="ss-vf-card-foot">
-            <span className="ss-vf-chips">
-              {[0, 1, 2].map((c) => (
-                <Skel key={c} w="100%" h="38px" />
-              ))}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ApplicationCard({
-  row,
-  viewer,
-  onOpen,
-}: {
-  row: VerificationCaseRow;
-  viewer: string | null;
-  onOpen: () => void;
-}) {
-  const tone = toneFor(row);
-  const ask = askFor(row);
-  const stage = PHASE_PROGRESS[row.phaseCode];
-  const stageNo = stage?.order ?? 1;
-  const locked = !row.verificationProcess;
-  /**
-   * The DEAL's owner against the viewer — never the row's assignee.
-   *
-   * The assignee is a snapshot taken at ingest, so REASSIGNING a Deal in Zoho leaves it stale: the
-   * original agent keeps seeing the case (the Sales list matches the assignee too) while the Deal now
-   * belongs to a colleague. Three live cases are in exactly that state. Naming the current Deal owner
-   * is what tells the agent "this moved to Robert" instead of leaving them to work someone else's
-   * application — and comparing the assignee instead is what labelled a credit agent as Sales.
-   * When Zoho has nobody on the Deal there is nobody to name, so the chip stays off.
-   */
-  const dealOwnerId = salesOwnerId(row);
-  const anotherAgentsDeal = Boolean(dealOwnerId) && dealOwnerId !== viewer;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-testid="application-card"
-      className="ss-verification-card"
-      aria-label={`Open application for ${displayName(row)}`}
-      style={s(`border-color:${tone.bd}`)}
-    >
-      <div className="ss-verification-card-top">
-        <div className="ss-verification-card-heading">
-          <span className="ss-verification-card-title">{displayName(row)}</span>
-          <span className="ss-vf-open">{applicantLabel(row.applicantType)}</span>
-        </div>
-        <span
-          className="ss-vf-class"
-          style={s(`color:${tone.fg};background:${tone.bg};border-color:${tone.bd}`)}
-        >
-          {tone.label}
-        </span>
-      </div>
-
-      {/* WHERE IT IS. Ten segments, the same shape the Verification queue draws — Sales sees the
-          progress, never the findings behind it. */}
-      <span className="ss-vf-meter" aria-hidden="true">
-        {Array.from({ length: 10 }, (_, i) => (
-          <span key={i} className="ss-vf-seg" data-on={i < stageNo} data-locked={locked} />
-        ))}
-      </span>
-      <span className="ss-vf-stage-caption">
-        Stage <b>{stageNo}</b> of 10 · {stage?.label ?? 'Application intake'}
-      </span>
-
-      {/* WHAT TO DO ABOUT IT. Always present, so the card never leaves the agent guessing. */}
-      <span className="ss-vf-card-attention" data-tone={ask.tone}>
-        <Icon name={ASK_ICON[ask.tone]} size={14} strokeWidth={2.2} />
-        {ask.text}
-      </span>
-
-      <div className="ss-vf-card-foot">
-        <span className="ss-vf-chips">
-          <Fact label="Trucks" value={row.trucksCount == null ? '—' : String(row.trucksCount)} />
-          <Fact label="Cards" value={row.fuelCardsRequested == null ? '—' : String(row.fuelCardsRequested)} />
-          {row.underwritingRoute === 'wex' ? <Fact label="Route" value="WEX" /> : null}
-          {anotherAgentsDeal ? (
-            <Fact label="Sales owner" value={salesOwnerName(row) ?? ''} />
-          ) : null}
-        </span>
-      </div>
-    </button>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="ss-vf-chip">
-      <span className="ss-vf-chip-lbl">{label}</span>
-      <span className="ss-vf-chip-val">{value}</span>
-    </span>
-  );
-}
-
 export function VerificationTab() {
-  const [filter, setFilter] = useState<Filter>('all');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [scope, setScope] = useState<SalesScope>('all');
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SalesSortKey>('age');
+  const [sortDir, setSortDir] = useState<SalesSortDir>('desc');
+  const [page, setPage] = useState(1);
 
-  const load = useCallback(() => listApplications({ limit: PAGE_SIZE }), []);
-  const { data, loading, error, reload } = useCachedLoad('sales:verification:applications', load);
+  const load = useCallback(() => listApplications({ limit: FETCH_LIMIT }), []);
+  const { data, loading, error, revalidating, reload } = useCachedLoad(
+    'sales:verification:applications',
+    load,
+  );
 
-  const rows = data?.items ?? [];
-  const visible = rows.filter((r) => matchesFilter(r, filter));
+  const rows = useMemo(() => data?.items ?? [], [data]);
   const viewer = viewerZohoId();
+  // One clock for the whole screen: the ages in the table and the sort that orders them must agree,
+  // and a per-cell Date.now() lets them drift mid-render.
+  const now = useMemo(() => Date.now(), [data]);
+
+  const counts = useMemo(() => {
+    const out = {} as Record<SalesScope, number>;
+    for (const s of SALES_SCOPES) out[s.id] = rows.filter((r) => inSalesScope(r, s.id)).length;
+    return out;
+  }, [rows]);
+
+  const visible = useMemo(
+    () => selectSalesRows(rows, { scope, search, sortKey, sortDir, now }),
+    [rows, scope, search, sortKey, sortDir, now],
+  );
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const paged = visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  /**
+   * The owner column exists only when the page holds somebody else's Deal.
+   *
+   * On your own book every cell would read your own name, which is a column of noise — and the
+   * question it answers ("do I have to fill this in, or has it moved to Robert?") only has an answer
+   * worth a track when the answer is sometimes no.
+   */
+  const showOwner = paged.some((row) => anotherAgentsDeal(row, viewer));
+  const track = showOwner ? TRACKS_WITH_OWNER : TRACKS;
+
+  const columns = useMemo<DataColumn<VerificationCaseRow>[]>(() => {
+    const base: DataColumn<VerificationCaseRow>[] = [
+      {
+        id: 'name',
+        header: 'Applicant',
+        rowHeader: true,
+        sortable: true,
+        width: track.name,
+        mobile: 'primary',
+        cell: (row) => (
+          <span className="va-ident">
+            <span className="va-mono" data-locked={isLocked(row)} aria-hidden="true">
+              {caseInitials(row)}
+            </span>
+            <span className="va-ident-text">
+              <span className="va-ident-name">
+                {isLocked(row) ? (
+                  <span className="va-lock" title="Not submitted — intake incomplete">
+                    <Icon name="lock" size="sm" label="Not submitted" />
+                  </span>
+                ) : null}
+                {/* The ellipsis needs its own block: the row above is a flex container (it seats the
+                    lock glyph beside the name), and `text-overflow` does nothing to a flex item. */}
+                <span className="va-ident-label" title={caseName(row)}>
+                  {caseName(row)}
+                </span>
+              </span>
+              <span className="va-ident-sub">
+                {applicantLabel(row.applicantType)}
+                {/* The route is only worth a mention when it LEAVES Octane — "Octane internal" on
+                    every other row is a column of the default. */}
+                {row.underwritingRoute === 'wex' ? ` · ${routeLabel('wex')}` : ''}
+              </span>
+            </span>
+          </span>
+        ),
+        mobileCell: (row) => caseName(row),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        sortable: true,
+        // `Badge` is `white-space: nowrap` by design, so a chip wider than its column paints over the
+        // next cell rather than wrapping. `statusShort` (one word) plus the wrapper's `min-width: 0`
+        // and ellipsis is what keeps the width from being load-bearing.
+        width: track.status,
+        mobile: 'value',
+        cell: (row) => {
+          const chip = statusChip(row);
+          return (
+            <span className="va-status-cell" title={row.statusLabel ?? row.statusCode}>
+              <Badge intent={chip.intent} size="sm" icon={chip.icon}>
+                <span className="va-status-label">{statusShort(row)}</span>
+              </Badge>
+            </span>
+          );
+        },
+      },
+      {
+        id: 'phase',
+        header: 'Phase',
+        sortable: true,
+        width: track.phase,
+        priority: 2,
+        cell: (row) => {
+          const phase = phaseNumber(row.phaseCode);
+          const label = salesPhaseLabel(row.phaseCode);
+          return (
+            <span className="va-phase-cell">
+              <span className="va-segs" aria-hidden="true">
+                {Array.from({ length: 10 }, (_, i) => (
+                  <span key={i} className="va-seg" data-on={i < phase} data-locked={isLocked(row)} />
+                ))}
+              </span>
+              <span className="va-phase-cell-label" title={label.full}>
+                <span className="num" data-locked={isLocked(row)}>
+                  {phase}
+                </span>
+                /10 · {label.short}
+              </span>
+            </span>
+          );
+        },
+      },
+      {
+        id: 'ask',
+        // The desk's column here is "Blocked on" and says what somebody else is waiting for. This one
+        // is addressed to the reader, so it is a second person heading and a second person sentence.
+        header: 'Needs from you',
+        width: track.ask,
+        priority: 3,
+        mobile: 'secondary',
+        cell: (row) => {
+          const ask = askFor(row);
+          return (
+            <span className="va-blocked" data-tone={ASK_TONE[ask.tone]}>
+              {ask.text}
+            </span>
+          );
+        },
+        mobileCell: (row) => askFor(row).text,
+      },
+      {
+        id: 'trucks',
+        header: 'Trucks',
+        numeric: true,
+        sortable: true,
+        width: track.trucks,
+        priority: 3,
+        cell: (row) => row.trucksCount ?? '—',
+      },
+      {
+        id: 'cards',
+        header: 'Cards',
+        numeric: true,
+        sortable: true,
+        width: track.cards,
+        priority: 3,
+        cell: (row) => row.fuelCardsRequested ?? '—',
+      },
+      {
+        id: 'limit',
+        header: 'Limit',
+        numeric: true,
+        sortable: true,
+        width: track.limit,
+        priority: 2,
+        cell: (row) => money(row.approvedLimitAmount ?? row.requestedLimit),
+      },
+      {
+        id: 'age',
+        header: 'Age',
+        numeric: true,
+        sortable: true,
+        width: track.age,
+        cell: (row) => <span className="va-age">{ageDays(row, now)}d</span>,
+      },
+    ];
+
+    if (!showOwner) return base;
+    return [
+      ...base,
+      {
+        id: 'owner',
+        header: 'Sales owner',
+        width: track.owner,
+        priority: 2,
+        mobile: 'secondary',
+        // The NAME, not just a mark: two initials in a circle identifies nobody, and the point of
+        // this column is knowing the application moved to a colleague. Blank on your own rows rather
+        // than repeating your name — the absence IS the answer.
+        cell: (row) =>
+          anotherAgentsDeal(row, viewer) ? (
+            <span className="va-owner" title={salesOwnerLabel(row)}>
+              <Avatar initials={personInitials(salesOwnerName(row) ?? '')} size="xs" />
+              <span className="va-owner-name">{salesOwnerLabel(row)}</span>
+            </span>
+          ) : (
+            ''
+          ),
+        mobileCell: (row) => (anotherAgentsDeal(row, viewer) ? salesOwnerLabel(row) : ''),
+      },
+    ];
+  }, [track, now, showOwner, viewer]);
 
   if (openId) {
     return (
       <SalesPage>
-        <button
-          type="button"
-          onClick={() => {
+        <ApplicationIntake
+          applicationId={openId}
+          onBack={() => {
             setOpenId(null);
             void reload();
           }}
-          className="ss-vf-case-back"
-        >
-          <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
-          Applications
-        </button>
-        <ApplicationIntake applicationId={openId} />
+        />
       </SalesPage>
     );
   }
 
+  const sortLabel = `${(columns.find((c) => c.id === sortKey)?.header ?? 'age')
+    .toString()
+    .toLowerCase()} ${sortDir === 'asc' ? 'ascending' : 'descending'}`;
+
   return (
-    <SalesPage>
-      <SalesPageHead description={NAV_DESC.verification} />
-
-      {/* `.ss-verification-page` wraps the FILTERS + LIST only, not the page head: the head is
-          shared chrome that expects to be a direct child of `.ss-page`. Its one job here is to
-          bring `.ss-verification-page .ss-skel-grid` alive so the skeleton and the loaded roster
-          are governed by the same 3 / 2 / 1 column rule. */}
-      <div className="ss-verification-page">
-      <div role="tablist" aria-label="Filter applications" className="ss-vf-filters">
-        {FILTERS.map((f) => {
-          const active = filter === f.id;
-          const n = rows.filter((r) => matchesFilter(r, f.id)).length;
-          return (
-            <button
-              key={f.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setFilter(f.id)}
-              style={s(
-                `height:34px;padding:0 14px;border-radius:var(--radius-full);font-size:13px;font-weight:700;cursor:pointer;background:${
-                  active ? 'var(--accent)' : 'var(--surface)'
-                };color:${active ? 'var(--on-accent)' : 'var(--text2)'};border:1px solid ${
-                  active ? 'var(--accent)' : 'var(--border)'
-                }`,
-              )}
-            >
-              {f.label}
-              <span style={s('margin-left:7px;opacity:.72')}>{n}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {error ? <SalesErrorNote>Could not load your applications. {String(error)}</SalesErrorNote> : null}
-
-      {/* One loader per surface: `loading` is only true when there is nothing to show. */}
-      {loading ? (
-        <RosterSkeleton />
-      ) : visible.length === 0 ? (
-        <SalesEmpty
-          icon="verification"
-          title={rows.length === 0 ? 'No applications yet' : 'Nothing in this filter'}
-          body={
-            rows.length === 0
-              ? 'Applications are created automatically from your Deals in Zoho — you do not start one here. When a Deal reaches an application stage it appears in this list, red, waiting for you to fill in the details and upload the documents.'
-              : 'Try another filter to see the rest of your applications.'
-          }
-        />
-      ) : (
-        <div className="ss-verification-grid">
-          {visible.map((row) => (
-            <ApplicationCard
-              key={row.id}
-              row={row}
-              viewer={viewer}
-              onOpen={() => setOpenId(row.id)}
+    <SalesPage busy={loading}>
+      <SalesPageHead
+        description={NAV_DESC.verification}
+        /* Direct children of `.ss-page-actions`, which is already the flex row with the gap. A
+           wrapper carrying the desk's `.va-head-actions` gets NO styling here: every `.va-*` rule is
+           a descendant of `[data-mytrion='verification']`, and the page head is outside that root. */
+        actions={
+          <>
+            <Input
+              className="ss-vf-q"
+              type="search"
+              icon="search"
+              placeholder="Company, EIN, MC, DOT…"
+              aria-label="Search your applications"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.currentTarget.value);
+                setPage(1);
+              }}
+              onClear={() => setSearch('')}
             />
-          ))}
-        </div>
-      )}
+            <Button variant="secondary" icon="refresh" loading={revalidating} onClick={() => void reload()}>
+              Refresh
+            </Button>
+          </>
+        }
+      />
+
+      <div className="va-list" data-mytrion="verification">
+        <Tabs
+          items={SALES_SCOPES.map((s) => ({ value: s.id, label: s.label, count: counts[s.id] ?? 0 }))}
+          value={scope}
+          onValueChange={(value) => {
+            setScope(value as SalesScope);
+            setPage(1);
+          }}
+          variant="line"
+          aria-label="Filter applications by state"
+        />
+
+        {error ? (
+          <div className="va-banner" data-tone="danger" role="alert">
+            <span className="va-banner-glyph" aria-hidden="true">
+              <Icon name="error" size="sm" />
+            </span>
+            <span className="va-banner-text">
+              <span className="va-banner-title">Could not load your applications</span>
+              <p className="va-banner-body">{String(error)}</p>
+            </span>
+          </div>
+        ) : null}
+
+        {/* One loader per surface: `loading` is only true when there is nothing to show, and the
+            DataTable owns it. A revalidation keeps the rows and reports on the Refresh button. */}
+        {!loading && rows.length === 0 && !error ? (
+          <EmptyState
+            size="page"
+            icon="inbox"
+            title="No applications yet"
+            description="Applications are created automatically from your Deals in Zoho — you do not start one here. When a Deal reaches an application stage it appears in this list, red, waiting for you to fill in the details and upload the documents."
+          />
+        ) : (
+          <div className="va-panel">
+            <DataTable<VerificationCaseRow>
+              caption="Your credit applications"
+              rows={paged}
+              rowKey={(row) => row.id}
+              columns={columns}
+              layout="fixed"
+              density="comfortable"
+              loading={loading}
+              {...(loading && !data ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } } : {})}
+              sort={{
+                by: sortKey,
+                direction: sortDir === 'asc' ? 'ascending' : 'descending',
+                onSort: (columnId, next) => {
+                  setSortKey(columnId as SalesSortKey);
+                  setSortDir(next === 'ascending' ? 'asc' : 'desc');
+                  setPage(1);
+                },
+              }}
+              onRowActivate={(row) => setOpenId(row.id)}
+              rowState={(row) => ({
+                className: isLocked(row)
+                  ? 'va-row-locked'
+                  : row.closedAt
+                    ? 'va-row-closed'
+                    : row.statusCode === 'pending_docs'
+                      ? 'va-row-blocked'
+                      : '',
+              })}
+              leading={(row) => (
+                <span className="va-mono" data-locked={isLocked(row)} aria-hidden="true">
+                  {caseInitials(row)}
+                </span>
+              )}
+              empty={
+                search.trim() !== ''
+                  ? 'Nothing matches that search.'
+                  : 'Nothing in this filter. Try another.'
+              }
+            />
+
+            <div className="va-foot">
+              {/* ONE summary. `Pagination` renders its own "Showing X–Y of Z" when handed `total` and
+                  `pageSize`, which puts two counts of the same rows side by side. It gets neither. */}
+              <span className="va-foot-count">
+                Showing{' '}
+                <strong className="num">
+                  {visible.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+                  {(currentPage - 1) * PAGE_SIZE + paged.length}
+                </strong>{' '}
+                of <strong className="num">{visible.length}</strong> · sorted by {sortLabel}
+              </span>
+              <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+            </div>
+          </div>
+        )}
       </div>
     </SalesPage>
   );

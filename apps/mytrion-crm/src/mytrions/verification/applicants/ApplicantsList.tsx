@@ -47,6 +47,7 @@ import {
   filtersActive,
   inScope,
   isLocked,
+  money,
   phaseNumber,
   PHASE_SHORT,
   routeLabel,
@@ -109,18 +110,6 @@ function statusChip(row: VerificationCaseRow): { intent: BadgeIntent; icon: Icon
     default:
       return { intent: 'info', icon: 'bolt' };
   }
-}
-
-function money(value: string | null): string {
-  if (value == null) return '—';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '—';
-  return n.toLocaleString(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    currencyDisplay: 'narrowSymbol',
-    maximumFractionDigits: 0,
-  });
 }
 
 export function ApplicantsList({

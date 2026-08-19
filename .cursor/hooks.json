@@ -3,12 +3,12 @@
   "hooks": {
     "preToolUse": [
       {
-        "command": "[ ! -f \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\" ] || node \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\"",
+        "command": "node .cursor/hooks/deny-protected-push.mjs",
+        "matcher": "Shell",
         "timeout": 5
       },
       {
-        "command": "node .cursor/hooks/deny-protected-push.mjs",
-        "matcher": "Shell",
+        "command": "node \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\"",
         "timeout": 5
       }
     ],

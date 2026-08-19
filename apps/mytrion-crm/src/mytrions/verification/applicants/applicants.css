@@ -71,6 +71,12 @@
   border-color: var(--intent-success-bd);
   background: var(--intent-success-bg);
 }
+/* Warning is the SALES side of this vocabulary — "the desk has asked you for documents" is neither a
+   refusal nor a decision. Declared beside its siblings so the three tones stay one rule set. */
+[data-mytrion='verification'] .va-banner[data-tone='warning'] {
+  border-color: var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+}
 [data-mytrion='verification'] .va-banner-glyph {
   display: grid;
   place-items: center;
@@ -88,6 +94,10 @@
   background: var(--intent-success-bg);
   color: var(--success);
 }
+[data-mytrion='verification'] .va-banner[data-tone='warning'] .va-banner-glyph {
+  background: var(--intent-warning-bg);
+  color: var(--warning);
+}
 [data-mytrion='verification'] .va-banner-text {
   min-width: 0;
   display: flex;
@@ -104,6 +114,9 @@
 }
 [data-mytrion='verification'] .va-banner[data-tone='success'] .va-banner-title {
   color: var(--success);
+}
+[data-mytrion='verification'] .va-banner[data-tone='warning'] .va-banner-title {
+  color: var(--warning);
 }
 [data-mytrion='verification'] .va-banner-body {
   margin: 0;

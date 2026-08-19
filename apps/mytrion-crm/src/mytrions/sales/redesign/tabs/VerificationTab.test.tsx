@@ -1,12 +1,13 @@
 /**
  * Sales Verification tab — the agent's own credit applications.
  *
- * Rewritten (2026-08-15) alongside the component: the previous suite covered the credit_platform
- * pipeline cards, a surface that no longer exists. What matters now is that the RED state is legible
- * without relying on colour, and that the outstanding count shown is the SERVER's, never re-derived
- * in the browser.
+ * The surface is now the Verification desk's own queue (`ds/DataTable` over `applicants.css`) rather
+ * than a card grid, so the queries are rows and cells. What is asserted has not changed: the RED
+ * state stays legible without relying on colour, the outstanding count shown is the SERVER's and
+ * never re-derived in the browser, and the desk's own vocabulary for what it is CHECKING stays off
+ * this screen even though the desk's chrome is on it.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VerificationCaseRow } from '@/api/verificationFlow';
 import { VerificationTab } from './VerificationTab';
@@ -87,10 +88,44 @@ function ready(items: VerificationCaseRow[]): void {
   state.current = { data: { items, total: items.length }, loading: false, revalidating: false, error: null, reload: vi.fn() };
 }
 
+/**
+ * Data rows only. `DataTable` resolves to table mode wherever `matchMedia` is absent, so this is a
+ * real `<table>`; the head row and the loading / empty `TableMessageRow` are both excluded by asking
+ * for the `rowheader` that the Applicant column renders as `<th scope="row">`.
+ */
+function dataRows(): HTMLElement[] {
+  const table = screen.queryByRole('table');
+  if (!table) return [];
+  return within(table)
+    .getAllByRole('row')
+    .filter((row) => within(row).queryAllByRole('rowheader').length > 0);
+}
+
 describe('loading and empty', () => {
   it('shows one loader while there is nothing to show', () => {
+    const view = render(<VerificationTab />);
+    expect(dataRows()).toHaveLength(0);
+    // ONE aria-busy owner for the surface: the page. A second inside the table would announce
+    // "busy" twice for one fetch.
+    expect(view.container.querySelectorAll('[aria-busy="true"]')).toHaveLength(1);
+  });
+
+  /**
+   * A refused load must SAY so. Showing "No applications yet" for a 500 tells the agent their book is
+   * empty when it is only unreachable — the empty state is gated on `!error` for exactly this.
+   */
+  it('reports a failed load instead of claiming there are no applications', () => {
+    state.current = {
+      data: null,
+      loading: false,
+      revalidating: false,
+      error: 'Network request failed',
+      reload: vi.fn(),
+    };
     render(<VerificationTab />);
-    expect(screen.queryByTestId('application-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Could not load your applications/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/Network request failed/);
+    expect(screen.queryByText(/No applications yet/i)).not.toBeInTheDocument();
   });
 
   /**
@@ -186,10 +221,11 @@ describe('the green state', () => {
         submittedAt: '2026-08-14T12:00:00.000Z',
       }),
     ]);
-    render(<VerificationTab />);
-    // The chip already says "In review"; the stage line earns its place by saying WHERE it is.
-    expect(screen.getByText(/Stage/)).toBeInTheDocument();
-    expect(screen.getByText(/of 10 · Credit & banking/)).toBeInTheDocument();
+    const view = render(<VerificationTab />);
+    // The chip already says "In review"; the phase cell earns its place by saying WHERE it is.
+    expect(view.container.querySelector('.va-phase-cell-label')?.textContent).toBe(
+      '6/10 · Credit & banking',
+    );
     // And the ask line says there is nothing for Sales to do, rather than leaving them guessing.
     expect(screen.getByText(/nothing needed from you/i)).toBeInTheDocument();
   });
@@ -233,12 +269,12 @@ describe('the green state', () => {
  */
 describe('what the roster tells Sales', () => {
   it('draws the stage as ten segments, the way the Verification queue does', () => {
-    const { container } = render(<VerificationTab />);
+    // The desk's own `.va-seg`, from its own stylesheet — not a second meter that happens to have
+    // ten of something.
     ready([row({ verificationProcess: true, phaseCode: 'p3_screening', intakeMissing: [] })]);
-    container.remove();
     const view = render(<VerificationTab />);
-    expect(view.container.querySelectorAll('.ss-vf-seg')).toHaveLength(10);
-    expect(view.container.querySelectorAll('.ss-vf-seg[data-on="true"]')).toHaveLength(3);
+    expect(view.container.querySelectorAll('.va-seg')).toHaveLength(10);
+    expect(view.container.querySelectorAll('.va-seg[data-on="true"]')).toHaveLength(3);
   });
 
   it('names the applicant type in the two words both desks use', () => {
@@ -254,19 +290,28 @@ describe('what the roster tells Sales', () => {
     expect(screen.getByText('Carrier (Company)')).toBeInTheDocument();
   });
 
+  /**
+   * The chrome is the desk's; the VOCABULARY is not. `PHASE_SHORT` names the check ("Hard stops",
+   * "Highway") and that is the credit desk's business — Sales gets `SALES_PHASE_LABEL`, which names
+   * the stage. Reusing the desk's list is the easy mistake this pins.
+   */
   it('never shows the underwriting detail — no findings, no phase verdicts', () => {
     ready([row({ verificationProcess: true, phaseCode: 'p7_hard_stops', intakeMissing: [] })]);
-    render(<VerificationTab />);
+    const view = render(<VerificationTab />);
+    expect(view.container.querySelector('.va-phase-cell-label')?.textContent).toBe(
+      '7/10 · Financial checks',
+    );
     expect(screen.queryByText(/hard stop/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/finding/i)).not.toBeInTheDocument();
   });
 
-  it('renders the loading state as roster cards, not the generic grid', () => {
-    // The shared `variant="grid"` skeleton drew a different card in a different column width, so
-    // the page re-laid-out when the data landed.
+  it('reserves a full page of height while loading, so the panel does not leap', () => {
+    // `DataTable`'s table-mode loading state is a single message row, so without a reserved height
+    // the panel stands ~90px tall and then jumps to a full page under the reader's cursor.
     const view = render(<VerificationTab />);
-    expect(view.container.querySelector('[aria-label="Loading your applications"]')).toBeTruthy();
-    expect(view.container.querySelectorAll('.ss-verification-card').length).toBeGreaterThan(0);
+    const scroller = view.container.querySelector<HTMLElement>('.va-panel [style*="min-block-size"]');
+    expect(scroller).toBeTruthy();
+    expect(scroller!.style.minBlockSize).toBe('1027px');
   });
 });
 
@@ -274,7 +319,7 @@ describe('routing surfaced on the card', () => {
   it('flags a WEX-routed application', () => {
     ready([row({ underwritingRoute: 'wex', fuelCardsRequested: 25 })]);
     render(<VerificationTab />);
-    expect(screen.getByText('WEX')).toBeInTheDocument();
+    expect(screen.getByText(/WEX route/)).toBeInTheDocument();
   });
 
   it('does not label an internally-underwritten application with a route', () => {
@@ -298,10 +343,10 @@ describe('filters', () => {
       }),
     ]);
     render(<VerificationTab />);
-    expect(screen.getAllByTestId('application-card')).toHaveLength(2);
+    expect(dataRows()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('tab', { name: /Incomplete/ }));
-    expect(screen.getAllByTestId('application-card')).toHaveLength(1);
+    expect(dataRows()).toHaveLength(1);
     expect(screen.getByText('Kaiser Freight LLC')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /With Verification/ }));
@@ -312,26 +357,27 @@ describe('filters', () => {
     ready([row({ verificationProcess: true, statusCode: 'pending_docs', boardColumn: 'needs_you', intakeMissing: [] })]);
     render(<VerificationTab />);
     fireEvent.click(screen.getByRole('tab', { name: /With Verification/ }));
-    expect(screen.queryByTestId('application-card')).not.toBeInTheDocument();
+    expect(dataRows()).toHaveLength(0);
     fireEvent.click(screen.getByRole('tab', { name: /Needs you/ }));
-    expect(screen.getByTestId('application-card')).toBeInTheDocument();
+    expect(dataRows()).toHaveLength(1);
   });
 });
 
 describe('opening an application', () => {
-  it('opens the intake form for the card that was clicked', () => {
+  it('opens the intake form for the row that was clicked', () => {
     ready([row({ id: 'vc_open' })]);
     render(<VerificationTab />);
-    fireEvent.click(screen.getByTestId('application-card'));
+    fireEvent.click(dataRows()[0]!);
     expect(screen.getByTestId('intake')).toHaveTextContent('vc_open');
   });
 
-  it('names the applicant in the card’s accessible label', () => {
+  /** The row is the control, so its accessible name has to carry the applicant. */
+  it('names the applicant on the activatable row', () => {
     ready([row()]);
     render(<VerificationTab />);
-    expect(
-      screen.getByRole('button', { name: /Open application for Kaiser Freight LLC/i }),
-    ).toBeInTheDocument();
+    const rows = dataRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain('Kaiser Freight LLC');
   });
 
   it('falls back to a person’s name when there is no company', () => {

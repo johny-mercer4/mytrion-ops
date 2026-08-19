@@ -7,6 +7,7 @@
  */
 import type { ApplicationDetail, VerificationRailPhase } from '@/api/verificationFlow';
 import { PhaseSpine } from '../../verification/applicants/PhaseSpine';
+import { SALES_PHASE_SHORT } from './salesVerificationQueue';
 import '../../verification/applicants/applicants.css';
 import '../../verification/applicants/applicantsCase.css';
 
@@ -36,6 +37,9 @@ export function VerificationProgress({ detail }: { detail: ApplicationDetail }) 
         passed={passed}
         remaining={remaining}
         notApplicable={notApplicable}
+        /* The desk's own rail, in Sales' words — the phase NUMBERS and states are the desk's, the
+           names are not. See `SALES_PHASE_LABEL`. */
+        labels={SALES_PHASE_SHORT}
       />
     </div>
   );

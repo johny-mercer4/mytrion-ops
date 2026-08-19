@@ -4,6 +4,10 @@
  * Verification CaseView uses it to jump phases. Sales intake reuses the same markup and CSS so
  * the agent sees the desk's own progress, not a third vertical list. `onPick` is optional: omit
  * it and the steps are not buttons.
+ *
+ * `labels` is optional and defaults to the desk's `PHASE_SHORT`. Sales passes its own map, because
+ * "Hard stops" / "Highway" / "Risk tier" name the CHECK rather than the stage, and what is being
+ * looked for is the credit desk's business — see `SALES_PHASE_LABEL`.
  */
 import { Icon } from '@/ds';
 import type { VerificationRailPhase } from '@/api/verificationFlow';
@@ -16,6 +20,7 @@ export function PhaseSpine({
   remaining,
   notApplicable,
   onPick,
+  labels = PHASE_SHORT,
 }: {
   rail: readonly VerificationRailPhase[];
   activeCode: string;
@@ -23,6 +28,7 @@ export function PhaseSpine({
   remaining: number;
   notApplicable: number;
   onPick?: (code: string) => void;
+  labels?: Record<string, string>;
 }) {
   const lastPassed = rail.reduce((acc, p, i) => (p.status === 'passed' ? i : acc), -1);
   const pct = rail.length <= 1 ? 0 : Math.max(0, (lastPassed / (rail.length - 1)) * 100);
@@ -70,7 +76,7 @@ export function PhaseSpine({
                   )}
                 </span>
                 <span className="va-step-text">
-                  <span className="va-step-label">{PHASE_SHORT[p.code] ?? p.label}</span>
+                  <span className="va-step-label">{labels[p.code] ?? p.label}</span>
                   <span className="va-step-state">{PHASE_STATE_LABEL[state]}</span>
                 </span>
               </>

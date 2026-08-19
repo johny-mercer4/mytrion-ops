@@ -32,7 +32,7 @@ Two gates, one predicate (`isSectionParked` in `salesData.ts`):
 | **Dashboard** (`dash`) | Sales · Company · Debtors · Power BI | `dashboard.agent_sales` / `dashboard.company` / `dashboard.debtors`; Power BI is an iframe | 5-min **localStorage** cache keyed by effective Zoho id (`dashCache`). Debtors = Billing floors: PENDING / PARTIALLY_PAID, remaining **≥ $1**, age **≥ 2 days**, hard = **15+**. Do not truncate the sales dash payload. |
 | **My Tasks** (`tasks`) | Agent kanban over manager assignments | `GET /sales/tasks`, `PATCH /sales/tasks/:id/status` → `mytrion_worker_tasks` | PATCH needs **`version`**. 50/page, cap 100. Badge = open tasks never opened in the detail modal. |
 | **Call Hub** (`callHub`) | Merged Mytrion + Zoho call history | `GET /sales/call-hub/calls` | Identity from View-as, **not** a query spoof. 25/page, cap 50. UI filters All / Mytrion / Zoho (no Gong tab). Softphone is global, not this tab. |
-| **Verification** (`verification`) | Admin-only: complete intake, watch underwriting | `GET /verification/applications` (first **24**, client-side filters); writes `/verification/applications/:id*` | **Not** Verification Mytrion (`/verification/flow/*` is the other desk). Apps are created by the Deal poller (`automation.verification.case-ingest`), not this tab. `POST /verification/applications` is **admin-only backfill**. Red/green **is** `verification_process`. Completeness is **server** verdict — the browser must not invent a gate. |
+| **Verification** (`verification`) | Admin-only: complete intake, watch underwriting | `GET /verification/applications` (one **200**-row page, client-side scope/search/sort); writes `/verification/applications/:id*` | **Not** Verification Mytrion (`/verification/flow/*` is the other desk). Apps are created by the Deal poller (`automation.verification.case-ingest`), not this tab. `POST /verification/applications` is **admin-only backfill**. Red/green **is** `verification_process`. Completeness is **server** verdict — the browser must not invent a gate. The **only** Sales surface on `ds/*` + the desk's `.va-*` — see UI below. |
 
 ## Data sources — which writes where
 
@@ -61,7 +61,7 @@ Pagination is mandatory on list routes. Do not add unbounded “load all” clie
 | Carriers search | **50** | catalog max **100** |
 | Retention my/pool | one shot **200** | route max 200 (ops list 2000 is not this UI) |
 | Money codes | **25** | max **200** |
-| Verification apps (Sales tab) | first **24** only | max **200**; filters are **client-side** |
+| Verification apps (Sales tab) | one shot **200**, 15/page in the table | route max **200**; scope, search and sort are **client-side** |
 | Leads / Deals COQL | whole owner book | **2000** |
 | Clients roster | whole owner book | one DWH query — do not add a second loyalty round-trip |
 | Client activity | load-more **20** | growing limit |
@@ -77,6 +77,7 @@ Caches: `dedupedFetch` (inbox 30s, in-flight share); `useCachedLoad` / `_shared/
 | --- | --- |
 | Nav / parking | `apps/mytrion-crm/src/mytrions/sales/redesign/salesData.ts` · `soonTabs.ts` |
 | UI | `apps/mytrion-crm/src/mytrions/sales/**` · shell `redesign/Shell.tsx` |
+| Verification tab | queue `redesign/tabs/VerificationTab.tsx` + `redesign/salesVerificationQueue.ts` · case `redesign/applicationIntake.tsx` + `redesign/applicationCaseHead.tsx` |
 | CRM API | `apps/mytrion-crm/src/api/{dataCenter,inbox,callHub,salesKpi,desk,touchpoints,verificationFlow,carrierUsers}.ts` |
 | Routes | `src/routes/v1/{dataCenter,inboxMessages,callHub,salesKpi,desk,retention,verificationApplications,verificationWriteback,rejectionReports,salesInvoices,salesCardReports}.routes.ts` |
 | Touchpoints | `src/modules/touchpoints/catalog/**` (`AUTO_LIST` ids ↔ runners) |
@@ -85,6 +86,23 @@ Caches: `dedupedFetch` (inbox 30s, in-flight share); `useCachedLoad` / `_shared/
 ## UI
 
 Horizon tokens (`ss-horizon.css`, `.ss-card-h`). Shared page chrome is `SalesPage` / `sales-page.css` — the top bar is the **only** section name; tabs do not repeat it. One `ss-fu` mount. Accent buttons use `var(--on-accent)`, not `#fff`. Modals: `max-height: 100%`, not `vh`. Dates/workday: **`America/New_York`**. **Do not restyle** `MytrionShell` sidebar/header.
+
+**The Verification tab is the one exception, deliberately.** It is the Sales door onto the same
+`verification_cases` row the Verification desk underwrites, so it wears the desk's surface: `ds/DataTable`
++ `ds/Tabs` + `ds/Pagination` for the queue, the `.va-case*` / `.va-phase*` / `.va-spine*` shell for the
+case, both from `mytrions/verification/applicants/applicants{,Case}.css`. Those rules are scoped
+`[data-mytrion='verification']`, so the queue root and the case root carry that attribute — it binds
+`--badge-tone` and nothing else, which no `.va-*` rule reads. Consequences worth knowing:
+
+- **`SalesPageHead` is outside that root**, so `.va-search` / `.va-head-actions` do not apply to the head
+  — its controls are direct children of `.ss-page-actions` and the field is sized by `.ss-vf-q`.
+- **The intake FORM stays Sales'** (`applicationFields` / `applicationDocs` / `applicationIntakeFields`):
+  it carries drag-and-drop, per-slot progress, pre-upload refusals and paste. Only Sales mounts those —
+  the "mounted in both Mytrions" note in their headers is stale, the desk's `CaseIntakePane` rolls its own.
+- **Vocabulary is NOT shared.** The desk's `PHASE_SHORT` ("Hard stops", "Highway", "Risk tier") names the
+  CHECK; Sales uses `SALES_PHASE_LABEL` in `salesVerificationQueue.ts` and passes its `short` map to
+  `PhaseSpine`'s `labels` prop. Likewise `blockedOn` (the desk's) vs `askFor` (second person, Sales').
+- The spine is **read-only** — no `onPick`, no phase panes, no decision bar, no findings.
 
 ## Keep in sync
 
