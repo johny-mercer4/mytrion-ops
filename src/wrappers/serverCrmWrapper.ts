@@ -58,6 +58,15 @@ export interface CarrierBalance {
   [k: string]: unknown;
 }
 
+/** C-17 money-code window. servercrm sends money as `number | numeric-string | null`. */
+export interface MoneyCodePreview {
+  eligible?: boolean;
+  available?: number | string | null;
+  drawn?: number | string | null;
+  moneycode_reasons?: string[];
+  [k: string]: unknown;
+}
+
 export const serverCrmWrapper = {
   /** Real-time carrier limit + EFS balance (servercrm calls live EFS internally). */
   getCarrierBalance(carrierId: string) {
@@ -119,10 +128,11 @@ export const serverCrmWrapper = {
   },
 
   /** C-17 step 1 — the drawable money-code window for a carrier: `{ eligible, available, drawn,
-   * moneycode_reasons[] … }`. servercrm computes the limit (a % of the latest invoice); the caller
-   * must treat this as the ONLY source of truth and never invent a limit client-side. */
+   * moneycode_reasons[] … }`. servercrm computes the limit (a % of the latest invoice); no CLIENT
+   * may invent a limit. The one server-side exception is prepay carriers, who have no invoice and
+   * so always come back at 0 here — see `modules/carrier/carrierBalance.withPrepayDrawWindow`. */
   getMoneyCodePreview(carrierId: string) {
-    return crmGet(`/api/agent/dwh/money-code/${encodeURIComponent(carrierId)}`);
+    return crmGet<MoneyCodePreview>(`/api/agent/dwh/money-code/${encodeURIComponent(carrierId)}`);
   },
 
   /** C-17 step 2 — draw against the window. Mirrors the agent widget's body exactly

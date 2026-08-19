@@ -7,6 +7,11 @@
  *   3) APPEND Edit_History audit rows (Who_Edited is session-authoritative),
  *   4) update the Application,
  *   5) mirror changed fields to the linked Deal via DEAL_FIELD_MAP (best-effort).
+ *
+ * Loves_Verification is NOT writable from here — it's read-only in this module (the CS
+ * Applications/Clients list shows it, drained from the linked Deal — applicationsList.ts's
+ * applyDeal). Changing it is out of scope for CS Applications; that'll come from the Maintenance/
+ * Love's-API integration instead (2026-08-18 decision).
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
@@ -43,7 +48,6 @@ const DEAL_FIELD_MAP: Readonly<Record<string, string>> = Object.freeze({
   Billing_Form_Y_N: 'Billing_Verification',
   Cards_Requested: 'Cards_Requested',
   Payment_Type_Billing: 'Payment_Type_Billing',
-  Loves_Verification: 'Loves_Verification',
   Zip_Code: 'Zip_Code',
 });
 
@@ -87,7 +91,6 @@ const EDITABLE_FIELDS: Readonly<Record<string, FieldKind>> = {
   WEX_Status: 'text',
   Type_of_Business: 'text',
   Payment_Type_Billing: 'text',
-  Loves_Verification: 'text',
   Billing_Cycle: 'text',
   Billing_Form_Y_N: 'text',
   Credit_Score: 'number',
@@ -109,6 +112,31 @@ const editableByLower = new Map(
 
 function reject(message: string): never {
   throw new AppError(message, { statusCode: 400, code: 'VALIDATION_ERROR', expose: true });
+}
+
+/**
+ * Fields that must be non-blank on the RESULTING record before a save can go through (QA
+ * feedback, Dina Carter 2026-08-07: client profiles routinely missing these). Checked against
+ * the incoming change where one was made, falling back to what's already on file — so an edit
+ * to an unrelated field (e.g. a note) still forces a pre-existing gap to be filled before it
+ * saves. Mirrors the modal's own client-side check (ApplicationModal.tsx) as a server-side
+ * backstop; keep both in sync if this list changes.
+ */
+const REQUIRED_ON_SAVE: ReadonlyArray<{ field: string; label: string }> = [
+  { field: 'First_Name', label: 'First Name' },
+  { field: 'Last_Name', label: 'Last Name' },
+  { field: 'City', label: 'City' },
+  { field: 'Zip_Code', label: 'Zip Code' },
+];
+
+function findMissingRequiredFields(
+  full: Record<string, unknown>,
+  validated: Record<string, unknown>,
+): string[] {
+  return REQUIRED_ON_SAVE.filter(({ field }) => {
+    const value = field in validated ? validated[field] : full[field];
+    return value == null || String(value).trim() === '';
+  }).map(({ label }) => label);
 }
 
 /** Per-field validation mirroring the widget's saveModal rules. Returns the write value. */
@@ -179,6 +207,7 @@ export async function saveApplication(
   ctx: TenantContext,
   appId: string,
   changes: Record<string, unknown>,
+  opts: { enforceRequiredFields?: boolean } = {},
 ): Promise<SaveApplicationResult> {
   const entries = Object.entries(changes);
   if (entries.length === 0) reject('No changes supplied');
@@ -195,6 +224,18 @@ export async function saveApplication(
   // 2) Full record: Edit_History must be APPENDED and the Deal id discovered ----------
   const full = await zohoCrmRecords.getRecord('Applications', appId);
   if (!full) throw new NotFoundError(`Application ${appId} not found`);
+
+  // enforceRequiredFields defaults to true — the modal save and the Love's bulk push both
+  // want the hard block. The onboarding tick-box route opts out: a checkbox toggle isn't the
+  // "company profile" screen the gap was reported on, and blocking it too would freeze
+  // onboarding work on every already-incomplete legacy record instead of just gating new saves
+  // of the profile itself.
+  if (opts.enforceRequiredFields !== false) {
+    const missing = findMissingRequiredFields(full, validated);
+    if (missing.length > 0) {
+      reject(`Cannot save — missing required field(s): ${missing.join(', ')}`);
+    }
+  }
 
   // 3) Exact-casing resolution against live metadata (silent-no-op guard) --------------
   const resolved = await resolveWritePayload('Applications', validated);

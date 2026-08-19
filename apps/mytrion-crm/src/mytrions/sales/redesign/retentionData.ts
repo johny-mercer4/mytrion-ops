@@ -3,6 +3,7 @@
  * Identity is server-injected; admin "view as" flows through transport x-act-as headers.
  */
 import { callTouchpoint } from '@/api/touchpoints';
+import { formatPhone } from '@/lib/phone';
 import type {
   RetentionCaseDetailResult,
   RetentionCaseEventRow,
@@ -365,18 +366,13 @@ export function channelLabel(channel: string | null | undefined): string {
   return CHANNEL_OPTIONS.find((c) => c.id === channel)?.label ?? channel;
 }
 
-/** US display: +1 (773) 909-6150 — falls back to raw when not 10/11 digits. */
+/**
+ * US display: (773) 909-6150 — falls back to raw when not 10/11 digits.
+ * Delegates to the shared formatter (`@/lib/phone`) so this reads the same as every other module —
+ * this used to print a "+1 " prefix that nothing else in the app did.
+ */
 export function formatUsPhone(raw: string | null | undefined): string {
-  if (!raw?.trim()) return '';
-  const digits = raw.replace(/\D/g, '');
-  const ten =
-    digits.length === 11 && digits.startsWith('1')
-      ? digits.slice(1)
-      : digits.length === 10
-        ? digits
-        : null;
-  if (!ten) return raw.trim();
-  return `+1 (${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+  return formatPhone(raw);
 }
 
 /** Dissatisfaction reasons with short explanations for the status wizard. */

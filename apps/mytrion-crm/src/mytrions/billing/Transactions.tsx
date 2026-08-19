@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
+import { broadcastMapping, deleteTransaction, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
 import { canWriteMytrion } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
@@ -78,9 +78,114 @@ function pageNumber(d: PageData, fallback: number): number {
   return p > 0 ? p : fallback;
 }
 
+/** How long an armed row-delete button waits for the confirm click before disarming itself. Shared
+ *  between the JS timer and the CSS countdown-ring animation (via a custom property) so the two
+ *  can never drift out of sync. */
+const TX_ROW_DELETE_ARM_MS = 4000;
+const TX_ROW_DELETE_RING_R = 10;
+const TX_ROW_DELETE_RING_CIRCUMFERENCE = 2 * Math.PI * TX_ROW_DELETE_RING_R;
+
+/**
+ * Inline delete for an eligible row, without opening the detail modal — the modal's own Delete flow
+ * (TransactionModal) stays as the alternate path for anyone already in there. Two clicks: the icon
+ * arms itself (auto-disarms after TX_ROW_DELETE_ARM_MS, so a stray click can't leave it primed
+ * forever — a shrinking ring around the icon shows the window instead of leaving it a guess), the
+ * second click deletes. Both clicks stopPropagation — the row itself opens the modal on click, and
+ * a delete click must never also do that.
+ *
+ * The 20px visual box stays small so the row doesn't get heavier, but the real tap target is 44px
+ * via `.tx-row-delete-btn::before` (an overhanging hit area, not a grown control) — see the
+ * modern-web-guidance skill's touch-target rule.
+ */
+function RowDeleteButton({
+  txId,
+  onDeleted,
+  notify,
+}: {
+  txId: string;
+  onDeleted: () => void;
+  notify: (kind: ToastKind, message: string) => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!armed) return undefined;
+    const t = window.setTimeout(() => setArmed(false), TX_ROW_DELETE_ARM_MS);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+
+  async function confirmDelete(): Promise<void> {
+    setDeleting(true);
+    try {
+      await deleteTransaction(txId);
+      notify('success', 'Transaction deleted');
+      onDeleted();
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Could not delete transaction');
+    } finally {
+      setDeleting(false);
+      setArmed(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={armed ? 'tx-row-delete-btn tx-row-delete-armed' : 'tx-row-delete-btn'}
+      disabled={deleting}
+      title={armed ? 'Click again to confirm delete' : 'Delete this manually-entered Chase transaction'}
+      aria-label={armed ? 'Confirm delete transaction' : 'Delete this manually-entered Chase transaction'}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (armed) void confirmDelete();
+        else setArmed(true);
+      }}
+    >
+      {armed && !deleting ? (
+        <svg
+          className="tx-row-delete-ring"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          style={{ '--tx-row-delete-arm-ms': `${TX_ROW_DELETE_ARM_MS}ms` } as CSSProperties}
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r={TX_ROW_DELETE_RING_R}
+            strokeDasharray={TX_ROW_DELETE_RING_CIRCUMFERENCE}
+            style={{ '--tx-row-delete-ring-circumference': TX_ROW_DELETE_RING_CIRCUMFERENCE } as CSSProperties}
+          />
+        </svg>
+      ) : null}
+      {/* key swaps the element on state change, so the pop-in animation replays each time rather
+          than trying to CSS-transition between two different path shapes. */}
+      <svg
+        key={armed ? 'confirm' : 'delete'}
+        className="tx-row-delete-icon-pop"
+        width="12"
+        height="12"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        {armed ? (
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+        ) : (
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 6L18 18M6 18L18 6" />
+        )}
+      </svg>
+    </button>
+  );
+}
+
 export function Transactions() {
   const user = useUserContext();
   const canWrite = canWriteMytrion(user, 'billing');
+  // Admins always have this; a specific person can additionally be granted it (Admin > Delete
+  // Access) — see modules/billing/paymentDeleteAccess.ts. Shared with both the modal's Delete
+  // button and the inline row button below so the two surfaces can never disagree.
+  const canDeleteChase = user.allDepartmentAccess === true || user.canDeleteChaseTransactions === true;
 
   // Source + mapped filters are applied SERVER-SIDE: a filter must reach records beyond the loaded
   // page(s) — e.g. older Chase txns that aren't in the newest 200 yet. Changing either refetches
@@ -674,6 +779,13 @@ export function Transactions() {
                               Unmapped
                             </span>
                           )}
+                          {canWrite && canDeleteChase && tx.source === 'chase' && !tx.isInvoiceMapped ? (
+                            <RowDeleteButton
+                              txId={tx.recordId}
+                              onDeleted={() => firstPage.refresh()}
+                              notify={notify}
+                            />
+                          ) : null}
                         </div>
                         <div className="tx-amount-col">
                           <span className="tx-amount-value">{fmtCurrency(tx.amount)}</span>
@@ -720,8 +832,13 @@ export function Transactions() {
           tx={openTx}
           currentUserName={user.userName}
           canWrite={canWrite}
+          canDeleteChase={canDeleteChase}
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
+          onDeleted={() => {
+            setOpenId(null);
+            firstPage.refresh();
+          }}
           onToast={notify}
         />
       ) : null}

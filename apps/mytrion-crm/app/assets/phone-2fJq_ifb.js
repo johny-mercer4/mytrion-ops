@@ -1,0 +1,1 @@
+function n(t){if(!(t!=null&&t.trim()))return"";const e=t.replace(/\D/g,""),i=e.length===11&&e.startsWith("1")?e.slice(1):e.length===10?e:null;return i?`(${i.slice(0,3)}) ${i.slice(3,6)}-${i.slice(6)}`:t.trim()}export{n as f};

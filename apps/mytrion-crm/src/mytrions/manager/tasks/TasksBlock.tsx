@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { AlertTriangle, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { Select } from '@/ds';
 import type {
   TaskTypeDto,
   WorkerTaskDto,
@@ -335,21 +336,22 @@ export function TasksBlock({
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
-            <label className="mg-tk-select">
+            <div className="mg-tk-select">
               <Users size={14} aria-hidden />
-              <select
-                aria-label="Filter by agent"
-                value={assigneeFilter}
-                onChange={(event) => setAssigneeFilter(event.target.value)}
-              >
-                <option value="">All agents</option>
-                {workers.map((worker) => (
-                  <option key={worker.zohoUserId} value={worker.zohoUserId}>
-                    {worker.displayName ?? worker.zohoUserId}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select
+                label="Filter by agent"
+                labelHidden
+                size="sm"
+                placeholder="All agents"
+                clearable
+                options={workers.map((worker) => ({
+                  value: worker.zohoUserId,
+                  label: worker.displayName ?? worker.zohoUserId,
+                }))}
+                value={assigneeFilter || null}
+                onChange={(value) => setAssigneeFilter(value ?? '')}
+              />
+            </div>
             <label className="mg-tk-select">
               <select
                 aria-label="Filter by priority"

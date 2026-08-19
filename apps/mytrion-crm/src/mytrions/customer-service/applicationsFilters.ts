@@ -14,7 +14,6 @@ export const SORT_OPTIONS: { id: SortKey; label: string }[] = [
 ];
 
 export interface AppFilters {
-  company: string;
   /** Both YYYY-MM-DD (from <input type="date">), inclusive range. */
   dateFrom: string;
   dateTo: string;
@@ -23,15 +22,19 @@ export interface AppFilters {
   agent: string;
   /** Empty set = no WEX Status filter. Multi-select — QA asked for "wex statuses", plural. */
   wex: Set<string>;
+  /** '' = no filter; otherwise 'Approved' | 'Not Approved' | the backend's Pending sentinel — the
+   *  worklist for QA feedback (Dina Carter, 2026-08-07): filter Clients to Pending to find every
+   *  record that graduated to a Carrier_ID without a Love's decision yet. */
+  loves: string;
 }
 
 export function emptyFilters(): AppFilters {
-  return { company: '', dateFrom: '', dateTo: '', stage: '', biz: '', agent: '', wex: new Set() };
+  return { dateFrom: '', dateTo: '', stage: '', biz: '', agent: '', wex: new Set(), loves: '' };
 }
 
 export function activeFilterCount(f: AppFilters): number {
   return (
-    [f.company, f.dateFrom || f.dateTo, f.stage, f.biz, f.agent].filter(Boolean).length +
+    [f.dateFrom || f.dateTo, f.stage, f.biz, f.agent, f.loves].filter(Boolean).length +
     (f.wex.size > 0 ? 1 : 0)
   );
 }
@@ -39,13 +42,13 @@ export function activeFilterCount(f: AppFilters): number {
 export interface ApplicationsQueryParams {
   sortKey: SortKey;
   sortDir: SortDir;
-  company: string;
   dateFrom: string;
   dateTo: string;
   stage: string;
   biz: string;
   agent: string;
   wex: string[];
+  loves: string;
 }
 
 /**
@@ -57,13 +60,13 @@ export function filtersToParams(f: AppFilters, sortKey: SortKey, sortDir: SortDi
   return {
     sortKey,
     sortDir,
-    company: f.company,
     dateFrom: f.dateFrom,
     dateTo: f.dateTo,
     stage: f.stage,
     biz: f.biz,
     agent: f.agent,
     wex: [...f.wex].sort(),
+    loves: f.loves,
   };
 }
 

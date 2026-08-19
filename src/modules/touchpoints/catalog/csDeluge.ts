@@ -54,13 +54,13 @@ export const csDelugeTouchpoints: Touchpoint[] = [
       perPage: limit(500, 200),
       sortKey: z.enum(['date', 'appId', 'carrierId']).default('date'),
       sortDir: z.enum(['asc', 'desc']).default('desc'),
-      company: z.string().max(200).default(''),
       dateFrom: z.union([ymdDate, z.literal('')]).default(''),
       dateTo: z.union([ymdDate, z.literal('')]).default(''),
       stage: z.string().max(160).default(''),
       biz: z.string().max(160).default(''),
       agent: z.string().max(160).default(''),
       wex: z.array(z.string().max(120)).max(20).default([]),
+      loves: z.string().max(40).default(''),
       // Not an x-cache-refresh header — LocalTouchpoint handlers don't see request headers — so a
       // forced refresh (Refresh button / just-saved reload) is threaded through as a param instead.
       fresh: z.boolean().default(false),

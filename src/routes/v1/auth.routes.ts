@@ -11,6 +11,7 @@ import { systemContext } from '../../modules/auth/authService.js';
 import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
 import { managesAnyone } from '../../modules/hr/attendance/teamScope.js';
+import { canDeleteChaseTransactionsFact } from '../../modules/billing/paymentDeleteAccess.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import { workerProfileRepo } from '../../repos/workerProfileRepo.js';
 import { requireContext } from './helpers.js';
@@ -234,6 +235,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
            * boundary.
            */
           leadsTeam: await leadsTeamFor(session.worker.zohoUserId),
+          /** Same "fact, not a grant" convention as leadsTeam above — real gate is
+           *  canDeletePaymentTransaction, re-checked on the actual delete route. */
+          canDeleteChaseTransactions: await canDeleteChaseTransactionsFact(session.worker.zohoUserId),
         },
       };
     } catch (err) {
@@ -282,6 +286,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           viewAsUserIds: access.viewAsUserIds,
           viewAsTargets: await viewAsTargets(access.viewAsUserIds),
           leadsTeam: await leadsTeamFor(zohoUserId),
+          canDeleteChaseTransactions: await canDeleteChaseTransactionsFact(zohoUserId),
         },
       };
     }
