@@ -364,6 +364,17 @@
   --success: #34d399;
   --warning: #fbbf4d;
   --danger: var(--error);
+  /* A SIGNAL red, not an error-text red. --danger is var(--error), which is tuned to be readable
+     as body copy — in this (dark) theme that makes it #ffb4ab, a pale salmon whose chroma (30) is
+     actually LOWER than --orange's (40). Anything ranking danger next to a warning therefore reads
+     as two shades of the same pastel: measured ΔE between them was 19.9. Sales feedback on the
+     Desk ticket-priority control ("High looks too similar to Medium") is exactly that. This is the
+     saturated end of the same hue for badges/chips that must separate at a glance — ΔE 51 against
+     --orange, 5.67:1 on --surface-base. Not a replacement for --danger: text and destructive
+     surfaces keep the readable one.
+     #ff4d4f had G=77 — warm/pinkish cast too close to Medium's orange. #ff1a2e drops green to 26
+     for a purer, more distinctly red signal while keeping the same lightness. */
+  --danger-vivid: #ff1a2e;
 
   /* ── Intent — the role layer over status. A component asks for "danger background", not for
      "13% of the error colour". One scale, derived, so every intent tracks its status hue. ─────── */
@@ -700,6 +711,11 @@
      identical value is how two themes quietly drift apart. */
   --success: #0d6f43;
   --warning: #805305;
+  /* Stepped down for a pale field like its neighbours, and still the vivid end of the hue.
+     #d61f26 (4.56:1) was already close to the AA floor and carried an orange cast from G=31.
+     #c8000e removes the green channel entirely for a purer saturated red: ~5.7:1 on --surface-base,
+     ΔE > 40 vs --orange (#9e4b18). */
+  --danger-vivid: #c8000e;
 
   /* Categorical hues, stepped down for a pale field — the dark set is too light to read on white.
      --red/--green/--yellow/--light-blue/--rocket/--black inherit through their :root indirection. */

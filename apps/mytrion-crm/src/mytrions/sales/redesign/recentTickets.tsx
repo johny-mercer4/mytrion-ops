@@ -14,7 +14,7 @@ import { Icon } from './icons';
 import { useSales } from './ctx';
 import { useLoad, relTime } from './live';
 import { Skel } from './SalesPage';
-import { DROP_PANEL } from './createTicketShared';
+import { DROP_PANEL, PRIORITY_TONES as TONE } from './createTicketShared';
 import {
   listMyDeskTickets,
   NO_PRIORITY,
@@ -34,13 +34,6 @@ const ROW =
  *  OS: unthemed, and in this shell it lands detached from the control. */
 const TRIGGER =
   'display:flex;align-items:center;justify-content:space-between;gap:8px;width:126px;height:36px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-size:13px;font-weight:700;cursor:pointer';
-
-const TONE: Record<PriorityValue, string> = {
-  [NO_PRIORITY]: 'var(--muted)',
-  Low: 'var(--ok)',
-  Medium: 'var(--orange)',
-  High: 'var(--danger)',
-};
 
 /** Desk's own value is '-None-'; agents read "None". */
 function label(p: PriorityValue): string {

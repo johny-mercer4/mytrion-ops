@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import {
   ArrowRight,
   BriefcaseBusiness,
+  FileText,
+  Loader2,
   Mail,
   Pencil,
   Plus,
   Search,
   ShieldCheck,
   Trash2,
+  Upload,
   UserRoundCheck,
   UsersRound,
 } from 'lucide-react';
@@ -15,10 +18,13 @@ import { canWriteMytrion, isAdmin } from '../../access/resolveAccess';
 import {
   convertRecruitCandidate,
   createRecruitCandidate,
+  deleteCandidateResume,
   deleteRecruitCandidate,
+  getCandidateResumeLink,
   listRecruitCandidates,
   listRecruitJobs,
   updateRecruitCandidate,
+  uploadCandidateResume,
   type RecruitCandidateDto,
   type RecruitCandidateStage,
   type RecruitJobDto,
@@ -111,6 +117,8 @@ export function RecruitCandidates() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  /** Candidate id whose resume is uploading / being removed — disables that row's control. */
+  const [resumeBusyId, setResumeBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -184,6 +192,45 @@ export function RecruitCandidates() {
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const uploadResume = async (candidate: RecruitCandidateDto, file: File): Promise<void> => {
+    setResumeBusyId(candidate.id);
+    setError('');
+    setSuccess('');
+    try {
+      await uploadCandidateResume(candidate.id, file);
+      setSuccess(`Resume uploaded for ${candidate.firstName} ${candidate.lastName}.`);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setResumeBusyId(null);
+    }
+  };
+
+  const viewResume = async (candidate: RecruitCandidateDto): Promise<void> => {
+    setError('');
+    try {
+      const { url } = await getCandidateResumeLink(candidate.id);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const removeResume = async (candidate: RecruitCandidateDto): Promise<void> => {
+    if (!window.confirm(`Remove the resume for ${candidate.firstName} ${candidate.lastName}?`)) return;
+    setResumeBusyId(candidate.id);
+    setError('');
+    try {
+      await deleteCandidateResume(candidate.id);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setResumeBusyId(null);
     }
   };
 
@@ -294,6 +341,56 @@ export function RecruitCandidates() {
                   <span>·</span>{candidate.departmentName}
                 </p>
                 {candidate.email ? <small><Mail size={13} />{candidate.email}</small> : null}
+                <div className="recruit-resume">
+                  {candidate.resume ? (
+                    <button
+                      type="button"
+                      className="recruit-resume-link"
+                      onClick={() => void viewResume(candidate)}
+                    >
+                      <FileText size={13} />
+                      {candidate.resume.fileName ?? 'Résumé'}
+                    </button>
+                  ) : (
+                    <span className="recruit-resume-none"><FileText size={13} />No résumé</span>
+                  )}
+                  {canWrite && !candidate.convertedEmployeeId ? (
+                    <>
+                      <label
+                        className="recruit-resume-action"
+                        title={candidate.resume ? 'Replace résumé' : 'Upload résumé'}
+                      >
+                        {resumeBusyId === candidate.id ? (
+                          <Loader2 size={13} className="recruit-spin" />
+                        ) : (
+                          <Upload size={13} />
+                        )}
+                        {candidate.resume ? 'Replace' : 'Upload'}
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.rtf,.txt,application/pdf"
+                          hidden
+                          disabled={resumeBusyId === candidate.id}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (file) void uploadResume(candidate, file);
+                          }}
+                        />
+                      </label>
+                      {candidate.resume ? (
+                        <button
+                          type="button"
+                          className="recruit-resume-action"
+                          onClick={() => void removeResume(candidate)}
+                          disabled={resumeBusyId === candidate.id}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
               </div>
               <div className="recruit-candidate-actions">
                 {canWrite && !candidate.convertedEmployeeId ? (
