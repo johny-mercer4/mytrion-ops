@@ -3,7 +3,7 @@
  * Admin → Escalation Routing); these pin that it renders the catalog and degrades to a clear error.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import type { CommsCatalog } from '@/api/comms';
 
 const api = vi.hoisted(() => ({ getCommsCatalog: vi.fn() }));

@@ -222,3 +222,40 @@
   justify-content: flex-end;
   gap: 0.5rem;
 }
+
+/* ── Escalation ladder actions (in the conversation header) ───────────────── */
+
+.escActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.escLevel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--tone-rose);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
+.escStatus {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.escStatus[data-status='resolved'] {
+  color: var(--tone-emerald);
+}
+
+.escStatus[data-status='rejected'],
+.escStatus[data-status='expired'] {
+  color: var(--tone-rose);
+}

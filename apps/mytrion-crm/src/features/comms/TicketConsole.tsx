@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   getTicket,
   listTickets,
@@ -62,6 +62,11 @@ export interface TicketConsoleProps {
   focusTicketId?: string | null;
   /** Called once the focus has been honoured, so a re-render does not keep re-selecting it. */
   onFocusConsumed?: () => void;
+  /**
+   * Extra content for the open conversation's header, given the selected ticket. Optional and
+   * unused by most mounts; Desk uses it to render the escalation ladder actions on an escalation.
+   */
+  chatActions?: (ticket: TicketDto) => ReactNode;
 }
 
 type StatusFilter = 'open' | 'all' | 'mine';
@@ -78,6 +83,7 @@ export function TicketConsole({
   emptyHint,
   focusTicketId,
   onFocusConsumed,
+  chatActions,
 }: TicketConsoleProps) {
   const [tickets, setTickets] = useState<TicketDto[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -543,6 +549,7 @@ export function TicketConsole({
                     )}
                   </span>
                 </div>
+                {chatActions ? chatActions(selected) : null}
               </div>
             }
           />
