@@ -234,6 +234,11 @@ export const recruitRepo = {
         currentCompany: recruitCandidates.currentCompany,
         currentTitle: recruitCandidates.currentTitle,
         notes: recruitCandidates.notes,
+        resumeFileKey: recruitCandidates.resumeFileKey,
+        resumeFileName: recruitCandidates.resumeFileName,
+        resumeContentType: recruitCandidates.resumeContentType,
+        resumeStorageProvider: recruitCandidates.resumeStorageProvider,
+        resumeUploadedAt: recruitCandidates.resumeUploadedAt,
         appliedAt: recruitCandidates.appliedAt,
         convertedEmployeeId: recruitCandidates.convertedEmployeeId,
         convertedAt: recruitCandidates.convertedAt,
@@ -312,6 +317,43 @@ export const recruitRepo = {
       .where(
         and(eq(recruitCandidates.tenantId, ctx.tenantId), eq(recruitCandidates.id, id)),
       )
+      .returning();
+    return firstOrUndefined(rows);
+  },
+
+  async setCandidateResume(
+    ctx: TenantContext,
+    id: string,
+    resume: { fileKey: string; fileName: string; contentType: string; storageProvider: string },
+  ) {
+    const rows = await db
+      .update(recruitCandidates)
+      .set({
+        resumeFileKey: resume.fileKey,
+        resumeFileName: resume.fileName,
+        resumeContentType: resume.contentType,
+        resumeStorageProvider: resume.storageProvider,
+        resumeUploadedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(recruitCandidates.tenantId, ctx.tenantId), eq(recruitCandidates.id, id)))
+      .returning();
+    return firstOrUndefined(rows);
+  },
+
+  /** Detach the resume metadata. The Dropbox bytes are deleted by the route before this runs. */
+  async clearCandidateResume(ctx: TenantContext, id: string) {
+    const rows = await db
+      .update(recruitCandidates)
+      .set({
+        resumeFileKey: null,
+        resumeFileName: null,
+        resumeContentType: null,
+        resumeStorageProvider: null,
+        resumeUploadedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(recruitCandidates.tenantId, ctx.tenantId), eq(recruitCandidates.id, id)))
       .returning();
     return firstOrUndefined(rows);
   },

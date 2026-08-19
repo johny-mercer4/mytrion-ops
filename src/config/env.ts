@@ -576,6 +576,9 @@ const EnvSchema = z.object({
   /** Employee photos and HR documents — their own folder, never mixed into `/comms`. */
   DROPBOX_HR_ROOT_PATH: z.string().default('/hr'),
   HR_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_hr']).default('dropbox_hr'),
+  /** Candidate resumes — their own Recruit folder (per-candidate subfolders), never mixed into `/hr`. */
+  DROPBOX_RECRUIT_ROOT_PATH: z.string().default('/recruit'),
+  RECRUIT_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_recruit']).default('dropbox_recruit'),
   // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
   // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
   // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.
