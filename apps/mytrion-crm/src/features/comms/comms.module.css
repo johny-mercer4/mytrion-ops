@@ -1154,3 +1154,106 @@
   accent-color: var(--accent);
   cursor: pointer;
 }
+
+/* ── Saved views (opt-in, client-side filter presets) ─────────────────────── */
+
+.viewsBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.viewsBtn:hover {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+.viewsList {
+  list-style: none;
+  margin: 0.4rem 0 0.9rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.viewsItem {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.viewsApply {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.viewsApply:hover {
+  border-color: var(--accent);
+}
+
+.viewsName {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.viewsMeta {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.viewsDelete {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.viewsDelete:hover {
+  color: var(--tone-rose);
+  background: var(--surface);
+}
+
+.viewsEmpty {
+  margin: 0.4rem 0 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.viewsSave {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.viewsSave > :first-child {
+  flex: 1 1 auto;
+}

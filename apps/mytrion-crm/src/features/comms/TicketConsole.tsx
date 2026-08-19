@@ -12,6 +12,7 @@ import {
 import { ApiError } from '@/api/transport';
 import { CheckCheck, ChevronLeft, Inbox, MessageSquare, RefreshCw, Search, Ticket, TriangleAlert, X } from 'lucide-react';
 import { ChatThread } from './ChatThread';
+import { SavedViews } from './SavedViews';
 import { useCommsSocket, type CommsFrame } from './useCommsSocket';
 import {
   isOpen,
@@ -76,6 +77,10 @@ export interface TicketConsoleProps {
    * leave it off — they move through the ladder, not a queue action.
    */
   enableBulk?: boolean;
+  /** Opt-in saved views (client-side named filter presets). Needs a `viewsKey` namespace. */
+  enableSavedViews?: boolean;
+  /** localStorage namespace for saved views, e.g. `desk:tickets`. Keeps tabs' presets separate. */
+  viewsKey?: string;
 }
 
 type StatusFilter = 'open' | 'all' | 'mine';
@@ -95,6 +100,8 @@ export function TicketConsole({
   onFocusConsumed,
   chatActions,
   enableBulk = false,
+  enableSavedViews = false,
+  viewsKey,
 }: TicketConsoleProps) {
   const [tickets, setTickets] = useState<TicketDto[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -370,6 +377,16 @@ export function TicketConsole({
                 </button>
               ))}
             </div>
+            {enableSavedViews && viewsKey ? (
+              <SavedViews
+                viewsKey={viewsKey}
+                current={{ filter, term }}
+                onApply={(v) => {
+                  setFilter(v.filter as StatusFilter);
+                  setTerm(v.term);
+                }}
+              />
+            ) : null}
             {/* The count keeps its line while loading — it used to blank, so the header jumped by a
                 row on every filter change and every background refresh. */}
             <span className={c.count}>
