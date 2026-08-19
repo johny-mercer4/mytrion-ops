@@ -96,3 +96,37 @@ describe('document merge', () => {
     expect(after.map((d) => d.id).sort()).toEqual(['inflight', 'keep']);
   });
 });
+
+/**
+ * `bankingSource` is the one field that changes WHICH other requirement applies, and the server's
+ * verdict is always one save behind. Without this the agent picks Plaid, watches the statement slots
+ * leave the form, and Ready to Submit still asks for "Last 3 bank statements (0 of 3 uploaded)".
+ */
+describe('banking requirements follow the unsaved choice', () => {
+  const statements = {
+    field: 'bankStatements',
+    label: 'Last 3 bank statements (0 of 3 uploaded)',
+    section: 'banking' as const,
+  };
+  const plaid = { field: 'plaidConnected', label: 'Plaid bank connection', section: 'banking' as const };
+
+  it('drops the statement ask once the form says Plaid', () => {
+    expect(visibleMissingItems([statements], { bankingSource: 'plaid' })).toEqual([]);
+  });
+
+  it('drops the Plaid ask once the form says statements', () => {
+    expect(visibleMissingItems([plaid], { bankingSource: 'statements' })).toEqual([]);
+  });
+
+  it('keeps the statement ask while the form still says statements', () => {
+    expect(visibleMissingItems([statements], { bankingSource: 'statements' })).toEqual([statements]);
+    // …and when the field has not been touched at all, statements is the default.
+    expect(visibleMissingItems([statements], {})).toEqual([statements]);
+  });
+
+  /** It only hides a STALE banking ask. Everything else still comes through untouched. */
+  it('never hides a non-banking requirement', () => {
+    const ein = { field: 'ein', label: 'EIN', section: 'business' as const };
+    expect(visibleMissingItems([ein, statements], { bankingSource: 'plaid' })).toEqual([ein]);
+  });
+});

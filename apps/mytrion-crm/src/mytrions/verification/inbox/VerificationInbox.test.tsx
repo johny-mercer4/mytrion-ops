@@ -127,18 +127,17 @@ describe('VerificationInbox', () => {
     );
   });
 
-  it('refetches on a verification socket event, and ignores everyone else’s', async () => {
+  /**
+   * The tag-filtered refetch MOVED, it did not go away — `verificationNotify.test.tsx` owns it now.
+   * This tab holding the subscription was the bug: `ModuleShell` unmounts inactive tabs, so it only
+   * listened while it was the open tab, and a case arriving while the agent worked the queue was
+   * announced to nobody. What is asserted here is that the tab no longer opens a socket of its own.
+   */
+  it('opens no socket of its own — the module root holds the one subscription', async () => {
     listInboxMessages.mockResolvedValue(page([msg({ id: 'i1' })]));
     render(<VerificationInbox />);
     await waitFor(() => expect(listInboxMessages).toHaveBeenCalledTimes(1));
-    expect(onInboxEvent).toBeTypeOf('function');
-
-    onInboxEvent?.({ tag: 'retention', type: 'retention.claim_request' });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(listInboxMessages).toHaveBeenCalledTimes(1);
-
-    onInboxEvent?.({ tag: 'verification', type: 'verification.application.created' });
-    await waitFor(() => expect(listInboxMessages).toHaveBeenCalledTimes(2));
+    expect(onInboxEvent).toBeUndefined();
   });
 
   it('hands the linked case up rather than navigating itself', async () => {

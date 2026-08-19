@@ -64,11 +64,33 @@ export function fieldVisiblyMissing(
   return serverMissing.has(field) && value.trim().length === 0;
 }
 
+/**
+ * Banking items the form's CURRENT answer has made moot.
+ *
+ * The server's verdict is from the last save, and `bankingSource` is the one field that changes WHICH
+ * other requirement applies: switch to Plaid and the three statements stop being asked for; switch
+ * back and the Plaid connection does. Without this the agent picks "Plaid bank connection", watches
+ * the statement slots vanish from the form, and Ready to Submit still demands "Last 3 bank statements
+ * (0 of 3 uploaded)" — a requirement for a thing that is no longer on screen.
+ *
+ * It only ever HIDES a stale requirement; the gate that decides Submit stays the server's
+ * (`detail.intake.complete`), so this can never let an incomplete application through. What it does
+ * is let `GateBanner`'s `awaitingSave` state fire, which is the honest reading: the browser has
+ * nothing left to list and the server has not been told yet.
+ */
+function bankingItemIsStale(field: string, form: Record<string, string>): boolean {
+  const source = form.bankingSource ?? 'statements';
+  if (field === 'bankStatements') return source === 'plaid';
+  if (field === 'plaidConnected') return source !== 'plaid';
+  return false;
+}
+
 export function visibleMissingItems(
   missing: readonly VerificationMissingItem[],
   form: Record<string, string>,
 ): VerificationMissingItem[] {
   return missing.filter((item) => {
+    if (bankingItemIsStale(item.field, form)) return false;
     if (!FORM_BACKED_FIELDS.has(item.field)) return true;
     return String(form[item.field] ?? '').trim().length === 0;
   });

@@ -378,13 +378,15 @@ export function ApplicationCaseAside({
         </div>
       ) : null}
 
-      {prefill?.match && prefill.suggestions.length > 0 ? (
+      {/* Gone once submitted. It proposes edits to fields that are read-only from here, so leaving it
+          on a handed-over case is a panel of buttons that do nothing. */}
+      {!locked && prefill?.match && prefill.suggestions.length > 0 ? (
         <div className="va-aside-block" data-divided="true">
           <PrefillPanel
             result={prefill}
             applicantType={applicantType}
             applied={applied}
-            locked={locked || busy}
+            locked={busy}
             onApply={onApplySuggestion}
           />
         </div>
