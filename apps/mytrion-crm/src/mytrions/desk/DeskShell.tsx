@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { BarChart3, Plus, Settings, Ticket, TriangleAlert } from 'lucide-react';
+import { BarChart3, Circle, Plus, Settings, Ticket, TriangleAlert } from 'lucide-react';
 import { TicketConsole } from '@/features/comms/TicketConsole';
-import { getCommsCatalog, type DepartmentOptionDto, type TicketDto } from '@/api/comms';
+import {
+  getCommsCatalog,
+  getMyAvailability,
+  type AgentAvailability,
+  type AvailabilityDto,
+  type DepartmentOptionDto,
+  type TicketDto,
+} from '@/api/comms';
 import { isAdmin } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
 import { DeskAnalytics } from './DeskAnalytics';
+import { DeskAvailability } from './DeskAvailability';
 import { DeskCompose, type DeskComposeResult } from './DeskCompose';
 import { DeskEscalationActions } from './DeskEscalationActions';
 import { DeskTicketActions } from './DeskTicketActions';
@@ -15,6 +23,17 @@ import type { DeskTabKey } from './deskTabs';
 
 /** Derived — see the note in access/tabRegistry.ts. */
 export type DeskView = DeskTabKey;
+
+const AVAIL_LABEL: Record<AgentAvailability, string> = {
+  available: 'Available',
+  away: 'Away',
+  do_not_assign: 'Do not assign',
+};
+const AVAIL_TONE: Record<AgentAvailability, string> = {
+  available: 'var(--tone-emerald)',
+  away: 'var(--tone-amber)',
+  do_not_assign: 'var(--tone-rose)',
+};
 
 /**
  * Mytrion Desk — the support workspace over the existing `comms` backend, for Customer Service,
@@ -32,6 +51,9 @@ export function DeskShell() {
   const [focusId, setFocusId] = useState<string | null>(null);
   /** Departments used for the ticket type filter + escalation hand-off. Loaded once. */
   const [departments, setDepartments] = useState<DepartmentOptionDto[]>([]);
+  /** The agent's own availability (work mode) — governs whether the round-robin routes to them. */
+  const [availability, setAvailability] = useState<AvailabilityDto | null>(null);
+  const [availOpen, setAvailOpen] = useState(false);
   const open = (next: DeskView): void => setView(next);
 
   useEffect(() => {
@@ -39,6 +61,11 @@ export function DeskShell() {
     void getCommsCatalog()
       .then((c) => {
         if (!cancelled) setDepartments(c.departments);
+      })
+      .catch(() => undefined);
+    void getMyAvailability()
+      .then((a) => {
+        if (!cancelled) setAvailability(a);
       })
       .catch(() => undefined);
     return () => {
@@ -108,18 +135,29 @@ export function DeskShell() {
     },
   ];
 
-  const footerNav: NavItem[] = admin
-    ? [
-        {
-          key: 'settings',
-          label: 'Routing',
-          icon: <Settings size={19} />,
-          tone: 'var(--tone-orange)',
-          active: view === 'settings',
-          onClick: () => open('settings'),
-        },
-      ]
-    : [];
+  const availValue = availability?.availability ?? null;
+  const footerNav: NavItem[] = [
+    {
+      key: 'availability',
+      label: availValue ? AVAIL_LABEL[availValue] : 'Availability',
+      icon: <Circle size={13} fill="currentColor" />,
+      tone: availValue ? AVAIL_TONE[availValue] : 'var(--text-muted)',
+      onClick: () => setAvailOpen(true),
+      keywords: ['status', 'away', 'work mode', 'do not assign', 'presence'],
+    },
+    ...(admin
+      ? [
+          {
+            key: 'settings',
+            label: 'Routing',
+            icon: <Settings size={19} />,
+            tone: 'var(--tone-orange)',
+            active: view === 'settings',
+            onClick: () => open('settings'),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <>
@@ -164,6 +202,12 @@ export function DeskShell() {
       </MytrionShell>
 
       <DeskCompose open={composeOpen} onClose={() => setComposeOpen(false)} onCreated={onCreated} />
+      <DeskAvailability
+        open={availOpen}
+        current={availability}
+        onClose={() => setAvailOpen(false)}
+        onChanged={setAvailability}
+      />
     </>
   );
 }

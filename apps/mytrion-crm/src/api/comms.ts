@@ -250,6 +250,34 @@ export async function setTicketStatus(
   })) as { ticket: TicketDto };
 }
 
+export type AgentAvailability = 'available' | 'away' | 'do_not_assign';
+
+/** The signed-in agent's declared availability — governs whether the round-robin routes to them. */
+export interface AvailabilityDto {
+  zohoUserId: string;
+  availability: AgentAvailability;
+  availabilityNote: string | null;
+  /** True when the SERVER parked them (dropped socket), not a choice they made. */
+  autoAway: boolean;
+  autoAwayReason: string | null;
+  changedAt: string;
+}
+
+export async function getMyAvailability(): Promise<AvailabilityDto> {
+  const res = (await request('GET', '/comms/me/availability')) as { availability: AvailabilityDto };
+  return res.availability;
+}
+
+export async function setMyAvailability(
+  availability: AgentAvailability,
+  note?: string,
+): Promise<AvailabilityDto> {
+  const res = (await request('POST', '/comms/me/availability', {
+    body: { availability, ...(note ? { note } : {}) },
+  })) as { availability: AvailabilityDto };
+  return res.availability;
+}
+
 /** Read-only aggregates behind the Desk Analytics & SLA tab — see commsAnalyticsRepo. */
 export interface CommsAnalyticsDto {
   window: { sinceDays: number; since: string };

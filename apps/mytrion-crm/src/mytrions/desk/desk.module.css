@@ -479,6 +479,79 @@
   color: var(--text-muted);
 }
 
+/* ── Availability (work mode) picker ──────────────────────────────────────── */
+
+.availList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.9rem;
+}
+
+.availItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.availItem:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.availItem[data-current] {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.availItem:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.availDot {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.availDot[data-status='available'] {
+  background: var(--tone-emerald);
+}
+.availDot[data-status='away'] {
+  background: var(--tone-amber);
+}
+.availDot[data-status='do_not_assign'] {
+  background: var(--tone-rose);
+}
+
+.availText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.availLabel {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.availHint {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
 /* ── Analytics & SLA dashboard ────────────────────────────────────────────── */
 
 .aHead {
