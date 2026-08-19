@@ -559,23 +559,23 @@ const EnvSchema = z.object({
   // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
   // serve every tenant without their files interleaving.
   DROPBOX_ROOT_PATH: z.string().default('/comms'),
-  // Which provider a NEW Maintenance attachment lands on. Separate from COMMS_STORAGE_PROVIDER because
-  // Maintenance attachments are a distinct table (maintenance_case_attachments), not file_assets.
+  // Provider for a NEW Maintenance attachment — separate from COMMS (its own table, not file_assets).
   MAINTENANCE_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_maintenance']).default('s3'),
   // Maintenance gets its OWN Dropbox folder, not DROPBOX_ROOT_PATH (CS feedback 2026-08-06: don't dump
   // every service into one shared folder) — same app key/secret/refresh token, different root prefix.
   DROPBOX_MAINTENANCE_ROOT_PATH: z.string().default('/maintenance'),
-  // Which provider a NEW Verification applicant document lands on. Defaults to Dropbox, unlike comms
-  // and Maintenance: verification_case_documents is a new table with no pre-existing S3 rows, so there
-  // are no reads a Dropbox default could repoint at bytes that are not there.
+  // Which provider a NEW Verification applicant document lands on. Safe to default to Dropbox (unlike
+  // comms/Maintenance): verification_case_documents is a new table with no pre-existing S3 rows to repoint.
   VERIFICATION_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_verification']).default('dropbox_verification'),
-  // Verification's own Dropbox folder — bank statements, SSN cards, licences, lease agreements. Kept
-  // separate so the later LLM underwriting review has one addressable root, and so applicant PII never
-  // lands in the comms or Maintenance folder.
+  // Verification's own Dropbox folder for applicant PII (bank statements, SSN cards, licences) — kept out
+  // of the comms/Maintenance roots, and one addressable root for the later LLM underwriting review.
   DROPBOX_VERIFICATION_ROOT_PATH: z.string().default('/verification'),
   /** Employee photos and HR documents — their own folder, never mixed into `/comms`. */
   DROPBOX_HR_ROOT_PATH: z.string().default('/hr'),
   HR_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_hr']).default('dropbox_hr'),
+  /** Candidate resumes — their own Recruit folder (per-candidate subfolders), never mixed into `/hr`. */
+  DROPBOX_RECRUIT_ROOT_PATH: z.string().default('/recruit'),
+  RECRUIT_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_recruit']).default('dropbox_recruit'),
   // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
   // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
   // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.

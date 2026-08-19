@@ -128,6 +128,10 @@ export const dropboxVerificationStorage: ObjectStorage = makeDropboxStorage(
  */
 export const dropboxHrStorage: ObjectStorage = makeDropboxStorage(env.DROPBOX_HR_ROOT_PATH);
 
+/** Candidate resumes — its own Recruit root, never `/hr` or `/comms`. Per-candidate subfolders live
+ *  under it (`/recruit/candidates/<id>/<file>`), so a candidate's documents are one addressable folder. */
+export const dropboxRecruitStorage: ObjectStorage = makeDropboxStorage(env.DROPBOX_RECRUIT_ROOT_PATH);
+
 /** Byte size without downloading — used to reconcile a stored size against Dropbox. */
 export async function dropboxSize(key: string, rootPath: string = env.DROPBOX_ROOT_PATH): Promise<number> {
   const meta = await dropboxMetadata(keyToDropboxPath(key, rootPath));

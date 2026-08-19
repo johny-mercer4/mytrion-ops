@@ -1,4 +1,4 @@
-import { request } from './transport';
+import { request, requestMultipart } from './transport';
 
 export type RecruitJobStatus = 'draft' | 'open' | 'paused' | 'closed';
 export type RecruitEmploymentType = 'full_time' | 'part_time' | 'contract' | 'internship';
@@ -62,6 +62,12 @@ export interface RecruitCandidateDto {
   convertedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Resume metadata (bytes live in Dropbox). Null until one is uploaded. */
+  resume: {
+    fileName: string | null;
+    contentType: string | null;
+    uploadedAt: string | null;
+  } | null;
 }
 
 export interface RecruitCandidateInput {
@@ -159,6 +165,36 @@ export async function convertRecruitCandidate(
     `/recruit/candidates/${encodeURIComponent(id)}/convert`,
     { body },
   )) as { candidateId: string; employeeId: string };
+}
+
+/** Upload a resume for a candidate → a new per-candidate folder in the Recruit Dropbox root. */
+export async function uploadCandidateResume(
+  id: string,
+  file: File,
+): Promise<RecruitCandidateDto> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return (await requestMultipart(
+    `/recruit/candidates/${encodeURIComponent(id)}/resume`,
+    form,
+  )) as RecruitCandidateDto;
+}
+
+/** A short-lived viewable link to the candidate's resume (minted on demand; Dropbox links expire). */
+export async function getCandidateResumeLink(
+  id: string,
+): Promise<{ url: string; expiresAt: string; fileName: string | null }> {
+  return (await request(
+    'GET',
+    `/recruit/candidates/${encodeURIComponent(id)}/resume/link`,
+  )) as { url: string; expiresAt: string; fileName: string | null };
+}
+
+export async function deleteCandidateResume(id: string): Promise<RecruitCandidateDto> {
+  return (await request(
+    'DELETE',
+    `/recruit/candidates/${encodeURIComponent(id)}/resume`,
+  )) as RecruitCandidateDto;
 }
 
 export async function getRecruitSettings(signal?: AbortSignal): Promise<RecruitSettingsDto> {
