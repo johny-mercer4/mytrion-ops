@@ -182,3 +182,43 @@
 .flag[data-on='true'] svg {
   color: var(--tone-emerald);
 }
+
+/* ── Compose modal (New ticket / escalation) ─────────────────────────────── */
+
+.composeForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (width < 640px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.composeFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
