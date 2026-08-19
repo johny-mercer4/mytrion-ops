@@ -25,6 +25,7 @@ export type CommsEventType =
   | 'comms.thread.message'
   | 'comms.thread.attachment'
   | 'comms.thread.read'
+  | 'comms.thread.mention'
   | 'comms.ticket.created'
   | 'comms.ticket.assigned'
   | 'comms.ticket.status_changed'
