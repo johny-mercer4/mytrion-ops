@@ -84,6 +84,14 @@ const decisionBody = z.object({
     .optional(),
 });
 
+/**
+ * A reason, REQUIRED. Reopening withdraws a decision somebody else recorded, so `min(3)` rather than
+ * `min(1)`: a single character satisfies "required" and tells the next reviewer nothing.
+ */
+const reopenBody = z.object({
+  reason: z.string().trim().min(3).max(2000),
+});
+
 const verdictBody = z.object({
   verdict: z.enum(VERIFICATION_SCREENING_VERDICTS),
   note: z.string().trim().max(2000).optional(),
@@ -386,6 +394,32 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
         resourceType: 'verification_case',
         resourceId: id,
         detail: { phase, outcome: body.outcome, statusCode: detail.case.statusCode },
+      });
+      return detail;
+    },
+  );
+
+  /**
+   * Reopen a phase — the desk's way back. Sibling of `/decision`, and the reason it is a POST with a
+   * body rather than a DELETE on the decision: the REASON is required and belongs in the request, not
+   * in a query string that ends up in an access log.
+   */
+  app.post<{ Params: { id: string; phase: string } }>(
+    '/verification/flow/cases/:id/phases/:phase/reopen',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id, phase } = phaseParams.parse(request.params);
+      const body = reopenBody.parse(request.body ?? {});
+      const detail = await deskService.reopenPhase(ctx, id, phase, body);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.phase_reopened',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        // The reason is on the case timeline as the event note; it is audited here too because this
+        // withdraws a decision somebody else recorded.
+        detail: { phase, reason: body.reason, statusCode: detail.case.statusCode },
       });
       return detail;
     },

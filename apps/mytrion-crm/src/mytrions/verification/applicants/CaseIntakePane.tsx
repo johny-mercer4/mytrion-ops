@@ -11,7 +11,7 @@ import { Button, Input, Select } from '@/ds';
 import type { VerificationApplicantType, VerificationDeskDetail } from '@/api/verificationFlow';
 import { APPLICANT_LABEL, routeLabel, routeOf } from './applicantsModel';
 
-type FieldKind = 'text' | 'numeric' | 'type' | 'banking';
+type FieldKind = 'text' | 'numeric' | 'type' | 'banking' | 'plaid';
 
 const INTAKE_FIELDS: ReadonlyArray<{ k: string; label: string; kind: FieldKind }> = [
   { k: 'applicantType', label: 'Applicant type', kind: 'type' },
@@ -33,6 +33,14 @@ const INTAKE_FIELDS: ReadonlyArray<{ k: string; label: string; kind: FieldKind }
   { k: 'fuelCardsRequested', label: 'Cards requested', kind: 'numeric' },
   { k: 'requestedLimit', label: 'Requested limit', kind: 'numeric' },
   { k: 'bankingSource', label: 'How is banking supplied?', kind: 'banking' },
+  /**
+   * The desk's own field, and the only place in the app that can set it.
+   *
+   * Sales picks Plaid and submits — the connection is the APPLICANT's to make and this desk's to
+   * confirm, so intake is not blocked on it (see `intake.ts`). Without a control here the column was
+   * writable by nothing, which is what made "Plaid bank connection" a dead end.
+   */
+  { k: 'plaidConnected', label: 'Plaid connected', kind: 'plaid' },
 ];
 
 const TYPE_OPTIONS = [
@@ -43,6 +51,11 @@ const TYPE_OPTIONS = [
 const BANKING_OPTIONS = [
   { value: 'statements', label: 'Bank statements' },
   { value: 'plaid', label: 'Plaid bank connection' },
+];
+
+const PLAID_OPTIONS = [
+  { value: 'false', label: 'Not connected' },
+  { value: 'true', label: 'Connected' },
 ];
 
 const DOC_MISSING: Record<string, string> = {
@@ -103,11 +116,14 @@ export function IntakePane({
       const meta = INTAKE_FIELDS.find((f) => f.k === k);
       const trimmed = v.trim();
       if (trimmed === '') {
-        body[k] = null;
+        // `plaid` is a boolean: empty means Not connected, not "unset the column".
+        body[k] = meta?.kind === 'plaid' ? false : null;
         continue;
       }
       if (meta?.kind === 'numeric') body[k] = Number(trimmed);
       else if (meta?.kind === 'type') body[k] = typeValue(trimmed);
+      // A boolean column, and `patchBody` types it as one — sending the string would 400.
+      else if (meta?.kind === 'plaid') body[k] = trimmed === 'true';
       else body[k] = trimmed;
     }
     await onSave(body);
@@ -150,6 +166,23 @@ export function IntakePane({
                   {...(invalid ? { message: 'Missing' } : {})}
                   options={TYPE_OPTIONS}
                   onChange={(v) => setField(f.k, v ?? 'carrier')}
+                />
+              </div>
+            );
+          }
+          if (f.kind === 'plaid') {
+            // Only shown on the Plaid path: a "Plaid connected" field on a statements case is a
+            // control for a question nobody asked.
+            if ((valueOf('bankingSource') || 'statements') !== 'plaid') return null;
+            return (
+              <div className="va-field" key={f.k}>
+                <Select
+                  label={f.label}
+                  value={value === 'true' ? 'true' : 'false'}
+                  searchable={false}
+                  disabled={disabled}
+                  options={PLAID_OPTIONS}
+                  onChange={(v) => setField(f.k, v ?? 'false')}
                 />
               </div>
             );

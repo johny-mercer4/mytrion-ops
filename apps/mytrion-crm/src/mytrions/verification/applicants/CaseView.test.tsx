@@ -12,6 +12,7 @@ const patchDeskIntake = vi.fn();
 const uploadDeskDocuments = vi.fn();
 const decidePhase = vi.fn();
 const requestDocuments = vi.fn();
+const reopenPhase = vi.fn();
 vi.mock('@/api/verificationFlow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFlow')>();
   return {
@@ -22,6 +23,7 @@ vi.mock('@/api/verificationFlow', async (importOriginal) => {
     uploadDeskDocuments,
     decidePhase,
     requestDocuments,
+    reopenPhase,
   };
 });
 
@@ -749,6 +751,82 @@ describe('CaseView Phase 6 credit and banking', () => {
       expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {
         phaseCode: 'p6_credit_banking',
         items: [{ docType: 'bank_statement', label: 'Bank statements (last 3 months)' }],
+      }),
+    );
+  });
+});
+
+/**
+ * REOPENING A PHASE — the desk's way back, and the rules about where the control appears.
+ *
+ * The rail only ever moved forward, so a phase signed off on the wrong reading had no remedy short of a
+ * database edit. The control is deliberately narrow: there must be a verdict to withdraw, and the case
+ * must still be open. The server enforces the same three guards (`verification-desk-reopen.test.ts`);
+ * this is the half that decides whether the agent is offered the button at all.
+ */
+describe('reopening a phase', () => {
+  const railOf = (status: VerificationRailPhase['status']) => [
+    phase({ code: 'p1_intake', label: 'Application Intake', order: 1, status: 'passed' }),
+    phase({ code: 'p2_identity', label: 'Identity', order: 2, status }),
+    phase({ code: 'p3_screening', label: 'Screening', order: 3, status: 'not_started' }),
+  ];
+
+  beforeEach(() => {
+    reopenPhase.mockReset();
+    getPolicy.mockResolvedValue({ wexCardCutoff: 20 });
+  });
+
+  it('offers Reopen on a phase this case has passed', async () => {
+    getDeskCase.mockResolvedValue({ ...desk(), rail: railOf('passed') });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    expect(await screen.findByRole('button', { name: 'Reopen' })).toBeInTheDocument();
+  });
+
+  it('offers nothing on a phase with no verdict to withdraw', async () => {
+    getDeskCase.mockResolvedValue({ ...desk(), rail: railOf('not_started') });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('heading', { name: 'Identity' });
+    expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument();
+  });
+
+  it('offers nothing once the case is decided', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, statusCode: 'approved', closedAt: '2026-08-19T09:00:00.000Z' },
+      rail: railOf('passed'),
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('heading', { name: 'Identity' });
+    expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The dialog exists BECAUSE a reason is required — and it has to say what reopening costs, because
+   * everything downstream is un-decided too. A bare confirm would hide both.
+   */
+  it('requires a reason, and says what it costs before taking one', async () => {
+    getDeskCase.mockResolvedValue({ ...desk(), rail: railOf('passed') });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reopen' }));
+
+    expect(screen.getByRole('heading', { name: /Reopen Identity/ })).toBeInTheDocument();
+    // One applicable phase sits after Identity in this rail.
+    expect(screen.getByText(/1 phase after it/)).toBeInTheDocument();
+    expect(screen.getByText(/Findings already recorded stay/)).toBeInTheDocument();
+
+    const confirm = screen.getByRole('button', { name: 'Reopen phase' });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Why is it being reopened?'), {
+      target: { value: 'Licence belonged to a different person' },
+    });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(reopenPhase).toHaveBeenCalledWith('vc_ridgevale01', 'p2_identity', {
+        reason: 'Licence belonged to a different person',
       }),
     );
   });

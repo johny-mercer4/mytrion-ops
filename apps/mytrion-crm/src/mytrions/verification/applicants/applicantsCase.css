@@ -399,6 +399,14 @@
 [data-mytrion='verification'] .va-phase-titles {
   min-width: 0;
 }
+/* The state chip and the Reopen control, as one right-hand group. `flex: none` so the pair keeps its
+   width and the titles beside it take the slack — a wrapping title is fine, a wrapping chip is not. */
+[data-mytrion='verification'] .va-phase-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
 [data-mytrion='verification'] .va-phase-kicker {
   color: var(--accent);
 }

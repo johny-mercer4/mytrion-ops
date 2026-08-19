@@ -31,6 +31,7 @@ import {
   getDeskCase,
   getPolicy,
   patchDeskIntake,
+  reopenPhase,
   requestDocuments,
   uploadDeskDocuments,
   type VerificationDeskDetail,
@@ -70,6 +71,7 @@ import {
   type CreditBankingMarks,
 } from './caseCreditBanking';
 import { CaseDecideBar } from './CaseDecideBar';
+import { CaseReopenButton } from './CaseReopen';
 import { deskReviewOrder } from './caseRouting';
 import { PhaseBody } from './PhaseBody';
 import { PhaseSpine } from './PhaseSpine';
@@ -497,9 +499,28 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             <h2 className="va-phase-title">{active.label}</h2>
             <p className="va-phase-desc">{active.description}</p>
           </div>
-          <Badge intent={stateChip.intent} icon={stateChip.icon}>
-            {PHASE_STATE_LABEL[state]}
-          </Badge>
+          <div className="va-phase-actions">
+            <Badge intent={stateChip.intent} icon={stateChip.icon}>
+              {PHASE_STATE_LABEL[state]}
+            </Badge>
+            {/*
+              THE WAY BACK, and only where there is something to withdraw: a phase this case has
+              actually decided, on a case that is still open. `canAct` already means "green and not
+              decided"; a skipped phase never had a verdict, and a not-started one has nothing to undo.
+            */}
+            {canAct && active.applies && (active.status === 'passed' || movedPast) ? (
+              <CaseReopenButton
+                phaseLabel={active.label}
+                laterPhases={
+                  detail.rail.filter((p) => p.order > active.order && p.applies).length
+                }
+                busy={pending === 'reopen'}
+                onReopen={(reason) =>
+                  void run('reopen', () => reopenPhase(caseId, active.code, { reason }))
+                }
+              />
+            ) : null}
+          </div>
         </header>
 
         <div className="va-phase-body">

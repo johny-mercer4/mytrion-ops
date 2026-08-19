@@ -19,4 +19,6 @@ export type CaseActionKey =
   | 'pass'
   | 'manager'
   | 'deposit'
-  | 'decline';
+  | 'decline'
+  /** Withdrawing a phase decision — its own key, so only the Reopen control reports. */
+  | 'reopen';

@@ -528,6 +528,23 @@ export async function patchDeskIntake(
   })) as VerificationDeskDetail;
 }
 
+/**
+ * Reopen a phase — the desk's way back through the rail.
+ *
+ * `reason` is required by the route (min 3 chars): this withdraws a decision somebody else recorded,
+ * and it lands on the case timeline as the `phase_reopened` note. Every phase after the reopened one is
+ * un-decided server-side; the response is the fresh detail, so the caller never refetches.
+ */
+export async function reopenPhase(
+  id: string,
+  phase: string,
+  body: { reason: string },
+): Promise<VerificationDeskDetail> {
+  return (await request('POST', `/verification/flow/cases/${id}/phases/${phase}/reopen`, {
+    body,
+  })) as VerificationDeskDetail;
+}
+
 export async function decidePhase(
   id: string,
   phase: string,

@@ -44,6 +44,7 @@ import { informCollectionsOfBlacklist } from './notify.js';
 import {
   buildRail,
   isPhaseCode,
+  PHASE_CATALOG,
   phaseApplies,
   phaseByCode,
   skipReason,
@@ -266,6 +267,76 @@ export const deskService = {
    * Record a phase decision. Refuses to act on a phase this applicant skips — otherwise a carrier-only
    * phase could be "passed" for an owner-operator and the rail would claim authority was verified.
    */
+  /**
+   * Send the case BACK to a phase and re-open it for a fresh decision.
+   *
+   * "Return to a previous stage, refix" — the desk's own words, and the thing a forward-only machine
+   * could not do. A phase signed off on the wrong reading, or on facts a correction has since changed,
+   * had no remedy short of a database edit.
+   *
+   * THREE GUARDS, and they are the whole policy:
+   *  - `loadWorkable` refuses a case still with Sales, and refuses a DECIDED one. Un-approving a live
+   *    credit line is a separate, admin-gated act with its own audit trail; it is not this.
+   *  - the phase must exist AND apply to this applicant. Reopening a phase that was skipped because it
+   *    does not apply would park the case on a step it can never clear.
+   *  - a REASON is required. This withdraws work somebody else recorded, so the timeline has to say why
+   *    — `reopenTo` writes it onto the `phase_reopened` event as the note.
+   *
+   * Everything downstream is un-decided too (see `verificationCaseAssetRepo.reopenPhase`): a later
+   * sign-off made on facts this phase is reconsidering is not a sign-off worth keeping.
+   */
+  async reopenPhase(
+    ctx: TenantContext,
+    caseId: string,
+    phaseCode: string,
+    input: { reason: string },
+  ) {
+    return withFlowSchemaGuard(async () => {
+      const row = await loadWorkable(ctx, caseId);
+      if (!isPhaseCode(phaseCode)) {
+        throw new NotFoundError(`Unknown verification phase: ${phaseCode}`);
+      }
+      const descriptor = phaseByCode(phaseCode);
+      if (descriptor && !phaseApplies(descriptor, row.applicantType)) {
+        throw new AppError(
+          `${descriptor.label} does not apply to this applicant, so there is nothing to reopen.`,
+          { statusCode: 409, code: 'VERIFICATION_PHASE_NOT_APPLICABLE', expose: true },
+        );
+      }
+      const reason = input.reason.trim();
+      if (!reason) {
+        throw new AppError('Say why the phase is being reopened — it withdraws a recorded decision.', {
+          statusCode: 422,
+          code: 'VERIFICATION_REOPEN_REASON_REQUIRED',
+          expose: true,
+        });
+      }
+
+      /**
+       * Phase ORDER is the catalog's, so the repo never re-derives the ten-phase sequence. `skipped`
+       * rows are left alone: they were never decided, and resetting one to not-started would make a
+       * phase that does not apply look outstanding.
+       */
+      const after = PHASE_CATALOG.filter(
+        (d) => d.order > (descriptor?.order ?? 0) && phaseApplies(d, row.applicantType),
+      ).map((d) => d.code);
+
+      await verificationCaseAssetRepo.reopenPhase(ctx, caseId, {
+        phaseCode,
+        codesAfter: after,
+      });
+      await verificationFlowRepo.reopenTo(ctx, caseId, {
+        phaseCode,
+        statusCode: VERIFICATION_STATUS.inReview,
+        reason,
+        ...(zohoFromCtx(ctx) ? { actorZohoUserId: zohoFromCtx(ctx) } : {}),
+        ...(ctx.userName ? { actorName: ctx.userName } : {}),
+      });
+
+      return this.detail(ctx, caseId);
+    });
+  },
+
   async decidePhase(
     ctx: TenantContext,
     caseId: string,

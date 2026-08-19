@@ -416,6 +416,65 @@ export const verificationFlowRepo = {
    * THE transition. Moves the case, stamps the phase row the decision was made on, and writes the
    * event — one call, so none of the three can happen without the others.
    */
+  /**
+   * Move a case BACK to a phase, withdrawing the decision that carried it forward.
+   *
+   * Deliberately not a flag on `applyTransition`: that method exists to RECORD a decision, and it
+   * hardcodes `decidedAt: now` on the phase row it writes. A reopen has to clear those fields, so
+   * folding it in would mean every forward caller carrying a concept it never uses. The phase rows
+   * themselves are `verificationCaseAssetRepo.reopenPhase`'s — this is the case row and the event.
+   *
+   * `outcomeCode` / `decidedAt` / `decidedBy` / `closedAt` are all cleared: a case that has re-entered
+   * phase 3 has no outcome, and leaving a stale `decidedAt` on it is what makes a reopened file still
+   * read as decided in every list that sorts on it.
+   */
+  async reopenTo(
+    ctx: TenantContext,
+    id: string,
+    input: {
+      phaseCode: string;
+      statusCode: string;
+      reason: string;
+      actorZohoUserId?: string | undefined;
+      actorName?: string | undefined;
+    },
+  ): Promise<VerificationCase | undefined> {
+    const before = await this.findById(ctx, id);
+    if (!before) return undefined;
+
+    const now = new Date();
+    const rows = await db
+      .update(verificationCases)
+      .set({
+        phaseCode: input.phaseCode,
+        statusCode: input.statusCode,
+        phaseChangedAt: now,
+        closedAt: null,
+        outcomeCode: null,
+        decidedAt: null,
+        decidedBy: null,
+        updatedAt: now,
+      })
+      .where(and(tenant(ctx), eq(verificationCases.id, id)))
+      .returning();
+    const row = firstOrUndefined(rows);
+    if (!row) return undefined;
+
+    await appendEvent(ctx, {
+      caseId: id,
+      fromPhase: before.phaseCode,
+      toPhase: row.phaseCode,
+      fromStatus: before.statusCode,
+      toStatus: row.statusCode,
+      eventType: 'phase_reopened',
+      actorZohoUserId: input.actorZohoUserId ?? null,
+      actorName: input.actorName ?? null,
+      notes: input.reason,
+    });
+
+    return row;
+  },
+
   async applyTransition(
     ctx: TenantContext,
     id: string,

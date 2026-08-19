@@ -195,13 +195,35 @@ describe('banking — three statements OR Plaid', () => {
     expect(verdict.complete).toBe(true);
   });
 
-  it('does not accept Plaid selected but not connected', () => {
+  /**
+   * PLAID IS NOT SALES' TO SATISFY, so choosing it completes their side of banking.
+   *
+   * This used to demand `plaidConnected` at intake, and no surface anywhere could set that column —
+   * so an agent who picked Plaid watched the statement slots leave the form and then found a
+   * requirement with nothing to click. Submit could never unlock. The applicant makes the connection
+   * and the desk confirms it in Credit & banking, which is also the phase that will not pass until its
+   * own banking checks are marked.
+   */
+  it('does not block intake on a Plaid connection the desk confirms', () => {
     const verdict = evaluateIntakeCompleteness(
       { ...CARRIER, bankingSource: 'plaid', plaidConnected: false },
       PRINCIPAL,
       [],
     );
-    expect(missingFieldKeys(verdict)).toContain('plaidConnected');
+    expect(missingFieldKeys(verdict)).not.toContain('plaidConnected');
+    expect(missingFieldKeys(verdict)).not.toContain('bankStatements');
+    expect(verdict.complete).toBe(true);
+  });
+
+  /** And statements are still demanded when that is the answer the agent picked. */
+  it('still demands three statements on the statements path', () => {
+    const verdict = evaluateIntakeCompleteness(
+      { ...CARRIER, bankingSource: 'statements', plaidConnected: false },
+      PRINCIPAL,
+      [],
+    );
+    expect(missingFieldKeys(verdict)).toContain('bankStatements');
+    expect(verdict.complete).toBe(false);
   });
 
   it('counts only received statements — a requested one is the ask, not the answer', () => {

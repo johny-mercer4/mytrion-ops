@@ -170,17 +170,23 @@ function identityDocumentRequirements(
 /**
  * Banking: three statements OR a Plaid connection. Only `status='received'` bank-statement documents
  * count — a `requested` row is the ask, not the answer.
+ *
+ * PLAID IS NOT SALES' TO SATISFY. This used to return `plaidConnected` as an outstanding intake item,
+ * which made the option a dead end: no surface anywhere could set that column, so an agent who picked
+ * Plaid watched the statement slots leave the form and then found a requirement with nothing to click.
+ * Submit never unlocked.
+ *
+ * The connection is made by the APPLICANT and confirmed by the Verification desk during Credit &
+ * banking, so choosing it completes Sales' side of banking. The desk sees `bankingSource = plaid` with
+ * `plaidConnected = false` on the case it is underwriting, and Phase 6 does not pass until its own
+ * banking checks are marked — which is where the confirmation belongs. Blocking intake on a field only
+ * the other desk can write is how the requirement became unsatisfiable.
  */
 function bankingRequirements(
   c: IntakeCandidate,
   documents: readonly Pick<VerificationCaseDocument, 'docType' | 'status'>[],
 ): MissingItem[] {
-  if (c.bankingSource === 'plaid') {
-    if (!c.plaidConnected) {
-      return [{ field: 'plaidConnected', label: 'Plaid bank connection', section: 'banking' }];
-    }
-    return [];
-  }
+  if (c.bankingSource === 'plaid') return [];
   const statements = documents.filter(
     (d) => d.docType === 'bank_statement' && d.status === 'received',
   ).length;
