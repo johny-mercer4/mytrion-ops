@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { subscribeRingCentral } from '@/components/ringcentral/ringcentralEvents';
 import { getImpersonation } from '@/api/impersonation';
-import { updateLead, type LeadEditFields } from '@/api/dataCenter';
+import { getLeadBlueprint, updateLead, type LeadEditFields } from '@/api/dataCenter';
 import { s } from './dc';
 import { Icon } from './icons';
 import { readDcCache } from './dcCache';
@@ -59,6 +59,32 @@ function LeadCallWizard({
   const [reason, setReason] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [blueprintAllowed, setBlueprintAllowed] = useState<Set<string> | null>(null);
+  const [blueprintLoading, setBlueprintLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    getLeadBlueprint(call.leadId, call.actAsId)
+      .then((blueprint) => {
+        if (!active) return;
+        if (blueprint !== null) {
+          setBlueprintAllowed(new Set(
+            blueprint.transitions
+              .filter((t) => t.type === 'manual' && t.criteriaMatched)
+              .map((t) => t.nextValue),
+          ));
+        }
+        setBlueprintLoading(false);
+      })
+      .catch(() => {
+        if (active) setBlueprintLoading(false);
+      });
+    return () => { active = false; };
+  }, [call.leadId, call.actAsId]);
+
+  const statusOptions = blueprintAllowed === null
+    ? OUTCOME_OPTIONS
+    : OUTCOME_OPTIONS.filter((o) => blueprintAllowed.has(o.value));
 
   const reasonSpec = reasonFieldFor(status);
   const valid = status !== '' && (!reasonSpec || reason !== '');
@@ -138,17 +164,21 @@ function LeadCallWizard({
         </div>
 
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:18px 22px;display:flex;flex-direction:column;gap:14px')}>
-          {/* Status picker — blueprint-allowed statuses from the lead's current status */}
+          {/* Status picker — Blueprint-allowed outcomes only (fetched live so stale options never appear) */}
           <div>
             <div style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Lead status</div>
-            <LeadStatusPicker
-              options={OUTCOME_OPTIONS}
-              value={status}
-              onChange={(v) => {
-                setStatus(v);
-                setReason(''); // reset the dependent reason when the status changes
-              }}
-            />
+            {blueprintLoading ? (
+              <div style={s('font-size:13px;color:var(--muted)')}>Loading available statuses…</div>
+            ) : (
+              <LeadStatusPicker
+                options={statusOptions}
+                value={status}
+                onChange={(v) => {
+                  setStatus(v);
+                  setReason(''); // reset the dependent reason when the status changes
+                }}
+              />
+            )}
           </div>
 
           {/* Dependent reason (only for Unqualified / Not Interested) */}

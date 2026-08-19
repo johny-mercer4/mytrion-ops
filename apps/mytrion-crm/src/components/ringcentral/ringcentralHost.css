@@ -32,6 +32,20 @@ body[data-cs-modal-open] .rc-phone-stack {
 }
 
 /*
+ * Lead/Deal detail modals (DetailSheet) portal to document.body with backdrop-filter, which buries
+ * the RC widget behind the scrim at z-index 2100 (--z-modal). Raise the widget above the modal
+ * while the sheet is open so agents can see and use the softphone alongside the record. DetailSheet
+ * sets the attribute on mount and removes it on unmount.
+ */
+body[data-dc-modal-open] #rc-widget,
+body[data-dc-modal-open] #rc-widget-adapter-frame,
+body[data-dc-modal-open] iframe#rc-widget-adapter-frame,
+body[data-dc-modal-open] iframe[id*='rc-widget'],
+body[data-dc-modal-open] iframe[src*='ringcentral-embeddable'] {
+  z-index: 2200 !important;
+}
+
+/*
  * Keep the vendor's docked pill off the mobile tab bar.
  *
  * Embeddable positions `#rc-widget-adapter-frame` itself, bottom-right, with an INLINE style — so
