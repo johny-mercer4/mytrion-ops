@@ -37,6 +37,13 @@ const FIELD_BOX =
 const FIELD = `${FIELD_BOX};border:1px solid var(--border)`;
 /** A field the server says is outstanding gets a visible edge, not just a colour. */
 const FIELD_MISSING = `${FIELD_BOX};border:1px solid var(--danger);box-shadow:0 0 0 1px var(--danger)`;
+/**
+ * Handed over. A read-only field must LOOK unavailable — `readOnly` alone renders identically to an
+ * editable input, so an agent types into it, nothing happens, and the form looks broken rather than
+ * finished. Flat surface, dimmed text, default cursor; still selectable, because copying an EIN out
+ * of a submitted application is a thing agents do all day.
+ */
+const FIELD_READONLY = `${FIELD_BOX};border:1px solid var(--border-subtle);background:var(--alt);color:var(--text2);cursor:default`;
 
 export function Section({
   title,
@@ -71,12 +78,14 @@ export function Field({
   inputMode,
   maxLength,
   hint,
+  readOnly,
 }: {
   label: string;
   name: string;
   value: string;
   onChange: (v: string) => void;
   missing?: boolean | undefined;
+  readOnly?: boolean | undefined;
   type?: string | undefined;
   placeholder?: string | undefined;
   inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'email' | undefined;
@@ -88,19 +97,22 @@ export function Field({
     <div style={s('display:flex;flex-direction:column')}>
       <label htmlFor={id} style={s(LABEL)}>
         {label}
-        {missing ? <span style={s('color:var(--danger);margin-left:6px')}> needed</span> : null}
+        {missing && !readOnly ? (
+          <span style={s('color:var(--danger);margin-left:6px')}> needed</span>
+        ) : null}
       </label>
       <input
         id={id}
         name={name}
         type={type}
         value={value}
-        placeholder={placeholder ?? ''}
+        placeholder={readOnly ? '—' : (placeholder ?? '')}
         maxLength={maxLength ?? undefined}
         inputMode={inputMode ?? 'text'}
-        aria-invalid={missing ? true : undefined}
+        readOnly={readOnly ?? false}
+        aria-invalid={missing && !readOnly ? true : undefined}
         onChange={(e) => onChange(e.currentTarget.value)}
-        style={s(missing ? FIELD_MISSING : FIELD)}
+        style={s(readOnly ? FIELD_READONLY : missing ? FIELD_MISSING : FIELD)}
       />
       {hint ? (
         <span style={s('margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.45')}>{hint}</span>
@@ -116,6 +128,7 @@ export function SelectField({
   onChange,
   options,
   missing,
+  readOnly,
 }: {
   label: string;
   name: string;
@@ -123,21 +136,27 @@ export function SelectField({
   onChange: (v: string) => void;
   options: ReadonlyArray<{ value: string; label: string }>;
   missing?: boolean | undefined;
+  readOnly?: boolean | undefined;
 }) {
   const id = `app-${name}`;
   return (
     <div style={s('display:flex;flex-direction:column')}>
       <label htmlFor={id} style={s(LABEL)}>
         {label}
-        {missing ? <span style={s('color:var(--danger);margin-left:6px')}> needed</span> : null}
+        {missing && !readOnly ? (
+          <span style={s('color:var(--danger);margin-left:6px')}> needed</span>
+        ) : null}
       </label>
       <select
         id={id}
         name={name}
         value={value}
-        aria-invalid={missing ? true : undefined}
+        /* `disabled`, not `readOnly` — a select has no read-only state, and a disabled one still
+           shows its chosen option, which is all a handed-over application needs it to do. */
+        disabled={readOnly ?? false}
+        aria-invalid={missing && !readOnly ? true : undefined}
         onChange={(e) => onChange(e.currentTarget.value)}
-        style={s(missing ? FIELD_MISSING : FIELD)}
+        style={s(readOnly ? FIELD_READONLY : missing ? FIELD_MISSING : FIELD)}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -321,21 +340,17 @@ export function GateBanner({
 }
 
 /**
- * The intake form, before it arrives.
+ * The FORM, before it arrives — the applicant-type branch only.
  *
- * REPLACES the sentence "Loading application…" centred in 28px of padding. That told the agent
- * nothing about how much was coming and reflowed the whole page when it landed — and on this form it
- * lands slowly: opening an application costs several statements against a database in Oregon plus a
- * warehouse lookup.
+ * Mirrors the real blocks in the real order (field sections, then the document slots, then the
+ * actions) so nothing jumps when the data replaces it. Mounted while the type write is in flight,
+ * where only the form BELOW the picker is still to come; the case's own cold load is a different
+ * shape and draws the four `.va-*` panels instead — see `applicationIntake`.
  *
- * Mirrors the real blocks in the real order — the gate banner, the ten-phase progress rail, then the
- * field sections and the document slots — so nothing jumps when the data replaces it. `compact` is
- * the applicant-type branch, where only the form BELOW the picker is still to come.
- *
- * ONE `aria-busy` region for the whole surface. Everything inside is `aria-hidden`, so a screen
- * reader hears "Loading application" once rather than reading out forty empty boxes.
+ * ONE `aria-busy` region. Everything inside is `aria-hidden`, so a screen reader hears "Loading
+ * application" once rather than reading out forty empty boxes.
  */
-export function IntakeSkeleton({ compact = false }: { compact?: boolean }) {
+export function IntakeSkeleton() {
   return (
     <div
       style={s('display:grid;gap:20px')}
@@ -344,19 +359,6 @@ export function IntakeSkeleton({ compact = false }: { compact?: boolean }) {
       role="status"
     >
       <div aria-hidden="true" style={s('display:grid;gap:20px')}>
-        {compact ? null : (
-          <>
-            {/* Gate banner. */}
-            <Skel w="100%" h="62px" radius="var(--radius-md)" />
-            {/* The ten-phase rail. */}
-            <div style={s('display:grid;gap:10px;padding:16px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--surface)')}>
-              <Skel w="34%" h="12px" />
-              <Skel w="100%" h="6px" radius="999px" />
-              <Skel w="52%" h="11px" />
-            </div>
-          </>
-        )}
-
         {[0, 1].map((section) => (
           <div key={section} style={s('display:grid;gap:14px')}>
             <div style={s('display:grid;gap:6px')}>

@@ -158,6 +158,25 @@ beforeEach(() => {
   api.getApplicationPrefill.mockResolvedValue({ match: null, suggestions: [] });
 });
 
+/**
+ * Drive the applicant-type `ds/Select`.
+ *
+ * It is an `<input role="combobox" readOnly>` over a popup listbox, not a native `<select>` — so its
+ * `value` is the option's LABEL and it is changed by opening it and clicking an option, never by
+ * `fireEvent.change`. The native control it replaced painted the OS popup in the middle of the case
+ * header; see the note in `applicationCaseHead.tsx`.
+ */
+function typeSelect(): HTMLInputElement {
+  return screen.getByRole('combobox', { name: 'Applicant type' }) as HTMLInputElement;
+}
+
+function pickType(label: string): void {
+  // `pointerDown` on the shell is the disclosure toggle (`onShellPointerDown`), not a click on the
+  // input — jsdom fires no pointer events from `click`, so the popup would never open.
+  fireEvent.pointerDown(typeSelect().closest('[data-focus-shell]')!);
+  fireEvent.click(screen.getByRole('option', { name: label }));
+}
+
 describe('required-field red', () => {
   it('clears the error treatment once a required field has a value, and restores it when emptied', async () => {
     api.getApplication.mockResolvedValue(detail());
@@ -316,7 +335,7 @@ describe('type and progress are single', () => {
     api.getApplication.mockResolvedValue(detail());
     render(<ApplicationIntake applicationId="vc_case" />);
     await screen.findByRole('textbox', { name: /EIN/ });
-    expect(screen.getByRole('combobox', { name: 'Applicant type' })).toHaveValue('carrier');
+    expect(typeSelect()).toHaveValue('Carrier (Company)');
     expect(screen.queryByRole('radiogroup', { name: 'Applicant type' })).not.toBeInTheDocument();
     expect(screen.queryByText('What is this document?')).not.toBeInTheDocument();
   });
@@ -350,9 +369,7 @@ describe('type can change without wiping work', () => {
     fireEvent.change(company, { target: { value: 'Kaiser Freight LLC' } });
     expect(screen.getByText('policy.pdf')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Applicant type' }), {
-      target: { value: 'owner_operator' },
-    });
+    pickType('Owner-Operator / Individual');
     await waitFor(() => expect(api.patchApplication).toHaveBeenCalledTimes(1));
     expect(api.patchApplication).toHaveBeenCalledWith('vc_case', {
       applicantType: 'owner_operator',
@@ -365,9 +382,7 @@ describe('type can change without wiping work', () => {
     api.patchApplication.mockResolvedValueOnce(
       detail({ case: { ...loaded.case, applicantType: 'carrier' }, documents: loaded.documents }),
     );
-    fireEvent.change(screen.getByRole('combobox', { name: 'Applicant type' }), {
-      target: { value: 'carrier' },
-    });
+    pickType('Carrier (Company)');
     await waitFor(() => expect(api.patchApplication).toHaveBeenCalledTimes(2));
     expect(screen.getByRole('textbox', { name: /EIN/ })).toHaveValue('12-3456789');
     expect(screen.getByRole('textbox', { name: /Full legal company name/ })).toHaveValue(
@@ -396,7 +411,7 @@ describe('type can change without wiping work', () => {
     render(<ApplicationIntake applicationId="vc_case" />);
     await screen.findByRole('textbox', { name: /EIN/ });
     fireEvent.click(screen.getAllByRole('button', { name: 'Use' })[0]!);
-    expect(screen.getByRole('combobox', { name: 'Applicant type' })).toHaveValue('carrier');
+    expect(typeSelect()).toHaveValue('Carrier (Company)');
     expect(api.patchApplication).not.toHaveBeenCalled();
     expect(screen.getByRole('textbox', { name: /USDOT/ })).toHaveValue('4530242');
   });
@@ -428,5 +443,160 @@ describe('type can change without wiping work', () => {
     expect(screen.getByText('matched on phone number')).toBeInTheDocument();
     expect(screen.queryByText(/authority authorized/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/authorized for property/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * SUBMIT IS THE HANDOVER.
+ *
+ * The gate used to spare `pending_docs`, so the whole form reopened whenever the desk asked for a
+ * file — an agent could retype the requested limit on a case a credit agent was already reading, and
+ * the server refused the write only after they had done it. `assertSalesMayEdit` now closes at submit
+ * and `assertSalesMayAttach` keeps uploads open; this is the browser half of that pair.
+ */
+describe('after submit, Sales cannot override the details', () => {
+  const submitted = (statusCode: string) =>
+    detail({
+      case: {
+        ...detail().case,
+        verificationProcess: true,
+        statusCode,
+        statusLabel: statusCode === 'pending_docs' ? 'Pending docs' : 'In review',
+        intakeMissing: [],
+      },
+      intake: { complete: true, missing: [] },
+    });
+
+  /**
+   * EVERY field, counted — not three named ones.
+   *
+   * The first pass at this threaded `readOnly` onto each `Field` by hand and missed "Licence state",
+   * the one field with no `missing` prop to sit beside. A spot-check on EIN and the limit passed and
+   * the gap shipped; a sweep over the whole form is what actually holds.
+   */
+  it('makes every typed field read-only, with none missed', async () => {
+    api.getApplication.mockResolvedValue(
+      detail({
+        case: {
+          ...detail().case,
+          applicantType: 'owner_operator',
+          verificationProcess: true,
+          statusCode: 'in_review',
+          intakeMissing: [],
+        },
+        intake: { complete: true, missing: [] },
+      }),
+    );
+    const view = render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /First name/ });
+    const writable = [...view.container.querySelectorAll('input')].filter(
+      (i) => !i.readOnly && i.type !== 'file',
+    );
+    expect(writable.map((i) => i.id)).toEqual([]);
+    // …and the same for the owner-operator flow's sibling, the carrier form.
+    expect(view.container.querySelectorAll('select:not([disabled])')).toHaveLength(0);
+  });
+
+  it('makes the carrier form’s fields read-only too', async () => {
+    api.getApplication.mockResolvedValue(submitted('in_review'));
+    const view = render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    expect(
+      [...view.container.querySelectorAll('input')].filter((i) => !i.readOnly && i.type !== 'file'),
+    ).toHaveLength(0);
+  });
+
+  /** Read-only ALSO in Pending Documents — the ask there is a file, not a second pass at the form. */
+  it('keeps the fields read-only when Verification asks for a document', async () => {
+    api.getApplication.mockResolvedValue(submitted('pending_docs'));
+    render(<ApplicationIntake applicationId="vc_case" />);
+    expect(await screen.findByRole('textbox', { name: /EIN/ })).toHaveAttribute('readonly');
+  });
+
+  /** But the document slots still take a file — that IS Pending Documents. */
+  it('still lets the agent attach the document that was asked for', async () => {
+    api.getApplication.mockResolvedValue(submitted('pending_docs'));
+    render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    const pickers = screen.getAllByText('Choose file');
+    expect(pickers.length).toBeGreaterThan(0);
+  });
+
+  it('drops the Save and Submit bar entirely', async () => {
+    api.getApplication.mockResolvedValue(submitted('in_review'));
+    render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    expect(screen.queryByRole('button', { name: /Save application/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Submit to Verification/ })).not.toBeInTheDocument();
+  });
+
+  /** The type is a fact once submitted, not a disabled combobox the agent keeps trying to use. */
+  it('shows the applicant type as text rather than a control', async () => {
+    api.getApplication.mockResolvedValue(submitted('in_review'));
+    render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    expect(screen.queryByRole('combobox', { name: 'Applicant type' })).not.toBeInTheDocument();
+    expect(screen.getByText('Carrier (Company)')).toBeInTheDocument();
+  });
+
+  it('says who can correct it instead of leaving the agent stuck', async () => {
+    api.getApplication.mockResolvedValue(submitted('in_review'));
+    render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    expect(screen.getByText(/ring the Verification desk/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * The drop target is the other door onto the same write.
+ *
+ * `Replace` and `Remove` vanish when the case is locked, but every slot row also accepts a drop — so a
+ * drop on a slot that already held a file uploaded a second copy of it under the desk. Empty and
+ * requested slots still take one; that is what Pending Documents asks for.
+ */
+describe('a handed-over slot takes nothing', () => {
+  const withStatements = (received: number) =>
+    detail({
+      case: {
+        ...detail().case,
+        verificationProcess: true,
+        statusCode: 'pending_docs',
+        intakeMissing: [],
+      },
+      intake: { complete: true, missing: [] },
+      documents: Array.from({ length: received }, (_, i) => ({
+        id: `doc_s${i}`,
+        docType: 'bank_statement' as const,
+        label: `Statement ${i + 1}`,
+        status: 'received' as const,
+        requestedInPhase: null,
+        fileName: `statement-${i + 1}.pdf`,
+        mime: 'application/pdf',
+        sizeBytes: 1024,
+        uploadedByName: 'Test Agent',
+        requestedAt: null,
+        createdAt: '2026-08-15T09:00:00.000Z',
+      })),
+    });
+
+  it('offers a picker on the empty slots only', async () => {
+    api.getApplication.mockResolvedValue(withStatements(1));
+    render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    // Three statement slots, one filled: two pickers, and the filled row offers neither
+    // Replace nor Remove.
+    expect(screen.getAllByText('Choose file')).toHaveLength(2);
+    expect(screen.queryByText('Replace')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove statement-1\.pdf/ })).not.toBeInTheDocument();
+  });
+
+  it('disables the file input behind a slot that is already filled', async () => {
+    api.getApplication.mockResolvedValue(withStatements(3));
+    const view = render(<ApplicationIntake applicationId="vc_case" />);
+    await screen.findByRole('textbox', { name: /EIN/ });
+    const inputs = [...view.container.querySelectorAll<HTMLInputElement>('input[type=file]')];
+    expect(inputs.length).toBeGreaterThan(0);
+    expect(inputs.every((i) => i.disabled)).toBe(true);
+    expect(screen.queryByText('Choose file')).not.toBeInTheDocument();
   });
 });

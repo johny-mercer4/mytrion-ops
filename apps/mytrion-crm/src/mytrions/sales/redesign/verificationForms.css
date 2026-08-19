@@ -382,6 +382,38 @@
   }
 }
 
+/* 0b. THE SCOPE WRAPPER. A plain ancestor for the `[data-mytrion='verification']` attribute (see
+       `verificationDeskScope.tsx`) — but `min-width: 0` is load-bearing: it is a flex item of
+       `.ss-page`, and without it the table's own horizontal scroller cannot shrink below its
+       content and pushes the whole column wide. */
+.ss-root .ss-vf-desk-surface {
+  min-width: 0;
+}
+
+/* 0c. THE APPLICANT-TYPE FIELD, in the case header's meta line. `ds/Select` sizes to its container,
+       and in a flex line that is its content — so the longer of the two labels, "Owner-Operator /
+       Individual", was ellipsised at ~150px. A track wide enough for it, and the read-only form
+       beside it set to match so the header does not reflow at submit. */
+.ss-root .ss-vf-type-select {
+  /* `flex: none`, because `.va-case-meta-line` is a flex row: without it the field shrinks to its
+     content share and ellipsises the longer label again at every width below about 1100px. The row
+     wraps instead, which is what `flex-wrap` on the meta line is for. */
+  flex: none;
+  inline-size: 232px;
+  max-inline-size: 100%;
+}
+.ss-root .ss-vf-type-fact {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+/* The meta line holds a date, a separator and a 232px field; below the density line that is wider
+   than the column it sits in, so it wraps rather than squeezing the field. */
+[data-mytrion='verification'] .va-case-meta-line {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* 1. THE CRUMB BAR WITH NO HEADER UNDER IT. The breadcrumb lives inside `.va-case-head`, which the
       loading, failed and choose-a-type states have no data to draw — so the back control stands on
       its own and must not keep the panel's divider and inset padding. */

@@ -93,6 +93,7 @@ export function DocSlot({
   label,
   doc,
   locked,
+  canAttach,
   missing,
   uploading,
   removing,
@@ -103,7 +104,13 @@ export function DocSlot({
 }: {
   label: string;
   doc: SlotDoc | null;
+  /** The application is handed over: no Replace, no Remove. */
   locked: boolean;
+  /**
+   * A file may still be ADDED. Defaults to `!locked`, and diverges in exactly one state: after
+   * submit, when the desk has asked for a document. Adding is not overriding.
+   */
+  canAttach?: boolean | undefined;
   missing: boolean;
   /** THIS slot's upload, not the form's. */
   uploading: boolean;
@@ -117,7 +124,17 @@ export function DocSlot({
   const [refused, setRefused] = useState<string | null>(null);
   const inputId = `stmt-${label.replace(/\s+/g, '-').toLowerCase()}`;
   const busy = uploading || removing;
-  const disabled = locked || busy;
+  const mayAttach = canAttach ?? !locked;
+  /**
+   * A HANDED-OVER slot that already holds a file takes nothing.
+   *
+   * `Replace` and `Remove` disappear when the case is locked, but the row is also a drop target — so a
+   * drop on a filled slot after submit uploaded a second copy of that document under the desk, which
+   * is the same override by a different door. Empty and requested slots still take a file: that is
+   * what Pending Documents asks for.
+   */
+  const mayTake = mayAttach && (!locked || doc == null);
+  const disabled = !mayTake || busy;
 
   /** The server's own refusals, said before the upload rather than after it. */
   const take = (file: File | null | undefined): void => {
@@ -226,13 +243,17 @@ export function DocSlot({
             <Icon name="upload" size={15} color={missing ? 'var(--danger)' : 'var(--muted)'} />
             <span style={s('flex:1;min-width:0;font-size:12px;color:var(--muted)')}>
               {missing ? 'Needed' : 'Not uploaded'}
-              <span style={s('display:block;font-size:11px;color:var(--faint);margin-top:1px')}>
-                Drop a file here, or
-              </span>
+              {mayTake ? (
+                <span style={s('display:block;font-size:11px;color:var(--faint);margin-top:1px')}>
+                  Drop a file here, or
+                </span>
+              ) : null}
             </span>
-            <label htmlFor={inputId} className="ss-slot-act" data-tone="accent" data-lg="true">
-              Choose file
-            </label>
+            {mayTake ? (
+              <label htmlFor={inputId} className="ss-slot-act" data-tone="accent" data-lg="true">
+                Choose file
+              </label>
+            ) : null}
           </>
         )}
 
@@ -265,6 +286,7 @@ export function DocumentsSection({
   documents,
   leftoverType,
   locked,
+  canAttach,
   uploading,
   removingId,
   error,
@@ -275,7 +297,10 @@ export function DocumentsSection({
   /** Own list — never the case-data form blob. Already filtered to non-slot types. */
   documents: readonly VerificationDocument[];
   leftoverType: VerificationDocType;
+  /** Handed over: no Remove. */
   locked: boolean;
+  /** A file may still be added. Defaults to `!locked` — see `DocSlot`. */
+  canAttach?: boolean | undefined;
   uploading: boolean;
   /** WHICH row is being removed, so only that row reports. */
   removingId: string | null;
@@ -288,9 +313,10 @@ export function DocumentsSection({
   const [refused, setRefused] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const mayAttach = canAttach ?? !locked;
   const requested = documents.filter((d) => d.status === 'requested');
   const received = documents.filter((d) => d.status === 'received');
-  const showLeftoverUpload = !locked && requested.length > 0;
+  const showLeftoverUpload = mayAttach && requested.length > 0;
 
   /**
    * ALL files are checked before ANY is sent.
@@ -301,7 +327,7 @@ export function DocumentsSection({
    * outcome an agent can act on.
    */
   const take = (list: FileList | null | undefined): void => {
-    if (locked) return;
+    if (!mayAttach) return;
     const files = Array.from(list ?? []);
     if (files.length === 0) return;
     const reason = firstRejection(files);
@@ -315,7 +341,7 @@ export function DocumentsSection({
 
   /** Paste while the section can accept files. Uploads in flight do not drop the listener. */
   useEffect(() => {
-    if (locked) return;
+    if (!mayAttach) return;
     const onPaste = (e: ClipboardEvent): void => {
       const items = e.clipboardData?.files;
       if (!items || items.length === 0) return;
@@ -325,7 +351,7 @@ export function DocumentsSection({
     document.addEventListener('paste', onPaste);
     return () => document.removeEventListener('paste', onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locked, leftoverType]);
+  }, [mayAttach, leftoverType]);
 
   return (
     <Section title="Other documents">
@@ -447,7 +473,7 @@ export function DocumentsSection({
               type="file"
               multiple
               accept={DOC_ACCEPT}
-              disabled={locked}
+              disabled={!mayAttach}
               aria-label="Choose documents to upload"
               className="ss-file-hidden"
               onChange={(e) => {

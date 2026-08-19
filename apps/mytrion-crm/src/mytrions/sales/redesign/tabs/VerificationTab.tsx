@@ -43,6 +43,7 @@ import { NAV_DESC } from '../salesData';
 import { useCachedLoad } from '../dcCache';
 import { SalesPage, SalesPageHead } from '../SalesPage';
 import { ApplicationIntake } from '../applicationIntake';
+import { VerificationDeskSurface } from '../verificationDeskScope';
 import {
   ageDays,
   caseInitials,
@@ -81,13 +82,6 @@ const FETCH_LIMIT = 200;
 
 /** 15 rows, the desk's own page. A comfortable row is 66px, so a page is about one screen. */
 const PAGE_SIZE = 15;
-
-/**
- * Height reserved for the table while it loads. `DataTable`'s table-mode loading state is a single
- * message row, so without this the panel stands ~90px tall and then leaps to a full page under the
- * reader's cursor. Comfortable row 66px + 37px header, measured in Chrome at 1440px.
- */
-const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 66 + 37}px`;
 
 /** Status → chip treatment. Colour is never the only channel — each carries its own glyph. */
 function statusChip(row: VerificationCaseRow): { intent: BadgeIntent; icon: IconName } {
@@ -179,6 +173,7 @@ export function VerificationTab() {
   );
 
   const rows = useMemo(() => data?.items ?? [], [data]);
+  const total = data?.total ?? 0;
   const viewer = viewerZohoId();
   // One clock for the whole screen: the ages in the table and the sort that orders them must agree,
   // and a per-cell Date.now() lets them drift mid-render.
@@ -421,7 +416,8 @@ export function VerificationTab() {
         }
       />
 
-      <div className="va-list" data-mytrion="verification">
+      <VerificationDeskSurface>
+        <div className="va-list">
         <Tabs
           items={SALES_SCOPES.map((s) => ({ value: s.id, label: s.label, count: counts[s.id] ?? 0 }))}
           value={scope}
@@ -464,7 +460,7 @@ export function VerificationTab() {
               layout="fixed"
               density="comfortable"
               loading={loading}
-              {...(loading && !data ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } } : {})}
+              skeletonRows={PAGE_SIZE}
               sort={{
                 by: sortKey,
                 direction: sortDir === 'asc' ? 'ascending' : 'descending',
@@ -498,20 +494,39 @@ export function VerificationTab() {
 
             <div className="va-foot">
               {/* ONE summary. `Pagination` renders its own "Showing X–Y of Z" when handed `total` and
-                  `pageSize`, which puts two counts of the same rows side by side. It gets neither. */}
+                  `pageSize`, which puts two counts of the same rows side by side. It gets neither.
+                  And no count at all while the rows are still coming: "Showing 0–0 of 0" over a panel
+                  of skeletons is a real figure asserting the agent has no applications. */}
               <span className="va-foot-count">
-                Showing{' '}
-                <strong className="num">
-                  {visible.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
-                  {(currentPage - 1) * PAGE_SIZE + paged.length}
-                </strong>{' '}
-                of <strong className="num">{visible.length}</strong> · sorted by {sortLabel}
+                {loading ? (
+                  'Loading your applications…'
+                ) : (
+                  <>
+                    Showing{' '}
+                    <strong className="num">
+                      {visible.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+                      {(currentPage - 1) * PAGE_SIZE + paged.length}
+                    </strong>{' '}
+                    of <strong className="num">{visible.length}</strong> · sorted by {sortLabel}
+                    {/* NO SILENT CAP. The route tops out at 200 rows, so a book bigger than that
+                        would quietly lose the tail and the count above would look complete. */}
+                    {total > rows.length ? (
+                      <>
+                        {' '}· showing the {rows.length} most recently updated of{' '}
+                        <strong className="num">{total}</strong>
+                      </>
+                    ) : null}
+                  </>
+                )}
               </span>
-              <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+              {loading ? null : (
+                <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+              )}
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </VerificationDeskSurface>
     </SalesPage>
   );
 }

@@ -14,10 +14,21 @@
  * The credit agent working the case is deliberately absent. So is every finding. The only person
  * named here is a Sales colleague, and only when the Deal is theirs rather than the reader's.
  */
-import { Avatar, Badge, Button, Icon, type BadgeIntent, type IconName } from '@/ds';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Icon,
+  Select,
+  Skeleton,
+  SkeletonRegion,
+  type BadgeIntent,
+  type IconName,
+} from '@/ds';
 import { initials as personInitials } from '@/lib/initials';
-import { GateBanner } from './applicationFields';
-import { PrefillPanel } from './applicationIntakePanels';
+import { ApplicantTypePicker, GateBanner, IntakeSkeleton } from './applicationFields';
+import { ErrorNote, PrefillPanel } from './applicationIntakePanels';
+import { VerificationDeskSurface } from './verificationDeskScope';
 import type {
   ApplicationDetail,
   PrefillResult,
@@ -33,6 +44,7 @@ import {
 } from '../../verification/applicants/applicantsModel';
 import {
   APPLICANT_TYPE_OPTIONS,
+  applicantTypeLabel,
   applicantTypeSelectValue,
   type CaseSurface,
 } from './applicationIntakeState';
@@ -177,27 +189,36 @@ export function ApplicationCaseHead({
               </span>
             ) : null}
             <span className="va-meta-sep" aria-hidden="true" />
-            {/* The one editable thing in the header, because it decides which form the agent fills.
-                A select rather than a label: the Zoho poller leaves the type unset whenever the Deal
-                does not state one, and this is where a human who has spoken to the applicant says. */}
-            <select
-              aria-label="Applicant type"
-              className="va-type-select"
-              value={applicantTypeSelectValue(c.applicantType)}
-              disabled={typeLocked || typeBusy}
-              aria-busy={typeBusy || undefined}
-              onChange={(e) => {
-                const next = e.currentTarget.value as VerificationApplicantType;
-                if (next === applicantTypeSelectValue(c.applicantType)) return;
-                onChangeType(next);
-              }}
-            >
-              {APPLICANT_TYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            {/*
+              WHILE IT IS A DECISION, a control; once submitted, a fact.
+              The Zoho poller leaves the type unset whenever the Deal states neither authority nor
+              sole-proprietor, so this is where a human who has spoken to the applicant answers — and
+              it decides which form they then fill. `ds/Select` rather than a bare `<select>`: the
+              native control paints the OS popup (system font, system-blue highlight) in the middle of
+              a designed header and cannot report the write it is making.
+              After submit it is a plain line of text — a disabled combobox in a header is a control
+              the agent keeps trying to use.
+            */}
+            {typeLocked ? (
+              <span className="ss-vf-type-fact">{applicantTypeLabel(c.applicantType)}</span>
+            ) : (
+              <Select
+                className="ss-vf-type-select"
+                label="Applicant type"
+                labelHidden
+                size="sm"
+                searchable={false}
+                loading={typeBusy}
+                disabled={typeBusy}
+                value={applicantTypeSelectValue(c.applicantType)}
+                options={APPLICANT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                onChange={(v) => {
+                  const next = (v ?? 'carrier') as VerificationApplicantType;
+                  if (next === applicantTypeSelectValue(c.applicantType)) return;
+                  onChangeType(next);
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -342,17 +363,17 @@ export function ApplicationCaseAside({
       {surface === 'needs_more' ? (
         <div className="va-aside-block" data-divided="true">
           <p className="va-aside-note">
-            Verification asked for more documents. Attach them in the form and they go straight to the
-            desk — there is nothing to submit again.
+            Verification asked for a document. Attach it in the form and it goes straight to the desk —
+            there is nothing to submit again, and the details you sent stay as they are.
           </p>
         </div>
       ) : null}
 
-      {locked ? (
+      {locked && surface !== 'needs_more' ? (
         <div className="va-aside-block" data-divided="true">
           <p className="va-aside-note">
-            Read-only while Verification is underwriting. If something on the application is wrong,
-            ring the desk — they can correct it from their side.
+            Read-only from here. If something on the application is wrong, ring the Verification desk —
+            correcting a submitted file is theirs to do, and they will see the change immediately.
           </p>
         </div>
       ) : null}
@@ -369,5 +390,123 @@ export function ApplicationCaseAside({
         </div>
       ) : null}
     </aside>
+  );
+}
+
+/**
+ * The three states BEFORE there is a case to draw a header for — loading, a failed open, and the
+ * applicant type nobody has answered yet.
+ *
+ * They live here rather than in `applicationIntake` for the file cap, and they belong here anyway:
+ * each is the case's own chrome standing in for itself, and each needs the crumb bar, which is
+ * normally inside `.va-case-head`. Without it the agent is stranded on a screen with no way back.
+ */
+function BackOnly({ onBack }: { onBack: (() => void) | undefined }) {
+  if (!onBack) return null;
+  return (
+    <div className="va-crumbs va-crumbs-bare">
+      <Button variant="secondary" size="sm" icon="chevron_left" onClick={onBack}>
+        All applications
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The CASE's shape, not the form's.
+ *
+ * `IntakeSkeleton` mirrors the surface this screen used to be — a gate banner, a rail and rows of
+ * fields on a bare page — so under the `.va-case` shell it drew the wrong thing and then the page
+ * relaid out around it. Four panels at the heights the real ones stand at: head, banner, spine,
+ * phase. Same `SkeletonRegion` + `Skeleton` the Verification desk's own `CaseView` uses, so the two
+ * desks' loading states are the same object too.
+ *
+ * ONE `aria-busy` region for the whole surface — `SkeletonRegion` owns it and everything inside is
+ * `aria-hidden`, so a reader hears "Loading the application" once.
+ */
+export function ApplicationCaseLoading({ onBack }: { onBack: (() => void) | undefined }) {
+  return (
+    <VerificationDeskSurface>
+      <div className="va-case">
+        <BackOnly onBack={onBack} />
+        {/* `SkeletonRegion` is `display: contents`, so these four panels are laid out by the
+            `.va-case` flex column above and inherit its gap — nothing to style here. */}
+        <SkeletonRegion busy label="Loading the application">
+          <Skeleton variant="rect" height="176px" radius="panel" />
+          <Skeleton variant="rect" height="72px" radius="panel" />
+          <Skeleton variant="rect" height="132px" radius="panel" />
+          <Skeleton variant="rect" height="460px" radius="panel" />
+        </SkeletonRegion>
+      </div>
+    </VerificationDeskSurface>
+  );
+}
+
+export function ApplicationCaseLoadError({
+  message,
+  onBack,
+}: {
+  message: string;
+  onBack: (() => void) | undefined;
+}) {
+  return (
+    <VerificationDeskSurface>
+      <div className="va-case">
+        <BackOnly onBack={onBack} />
+        <div className="va-banner" data-tone="danger" role="alert">
+          <span className="va-banner-glyph" aria-hidden="true">
+            <Icon name="error" size="sm" />
+          </span>
+          <span className="va-banner-text">
+            <span className="va-banner-title">Could not open this application</span>
+            <p className="va-banner-body">{message}</p>
+          </span>
+        </div>
+      </div>
+    </VerificationDeskSurface>
+  );
+}
+
+/**
+ * The applicant type, when the Zoho poller could not decide it.
+ *
+ * A `.va-phase` section rather than a bare picker, so the one question on the screen arrives inside
+ * the same panel the form will occupy — the agent answers it and the panel fills, instead of the page
+ * changing shape underneath them.
+ */
+export function ApplicationCaseTypeGate({
+  onBack,
+  pending,
+  error,
+  onChoose,
+}: {
+  onBack: (() => void) | undefined;
+  pending: boolean;
+  error: string | null;
+  onChoose: (type: 'owner_operator' | 'carrier') => void;
+}) {
+  return (
+    <VerificationDeskSurface>
+      <div className="va-case">
+        <BackOnly onBack={onBack} />
+        <section className="va-phase">
+          <header className="va-phase-head">
+            <div className="va-phase-titles">
+              <span className="t-eyebrow va-phase-kicker">Before anything else</span>
+              <h2 className="va-phase-title">Who is applying?</h2>
+              <p className="va-phase-desc">
+                This decides which details Verification needs. The Deal in Zoho did not say, so it is
+                yours to answer.
+              </p>
+            </div>
+          </header>
+          <div className="va-phase-main">
+            <ApplicantTypePicker value="" pending={pending} onChange={onChoose} />
+            {pending ? <IntakeSkeleton /> : null}
+            {error ? <ErrorNote message={error} /> : null}
+          </div>
+        </section>
+      </div>
+    </VerificationDeskSurface>
   );
 }

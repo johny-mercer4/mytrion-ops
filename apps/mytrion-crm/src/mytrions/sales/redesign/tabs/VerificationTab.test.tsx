@@ -305,13 +305,21 @@ describe('what the roster tells Sales', () => {
     expect(screen.queryByText(/finding/i)).not.toBeInTheDocument();
   });
 
-  it('reserves a full page of height while loading, so the panel does not leap', () => {
-    // `DataTable`'s table-mode loading state is a single message row, so without a reserved height
-    // the panel stands ~90px tall and then jumps to a full page under the reader's cursor.
+  /**
+   * A PAGE of skeleton rows, which is what reserves the height.
+   *
+   * Table mode used to draw a single shimmer bar, so the panel stood ~90px tall and then leapt to a
+   * full page when the rows landed — under the reader's cursor. Callers were hand-reserving that with
+   * `scrollerStyle`, which is the caller paying for a gap in `ds/DataTable`; the rows do it now.
+   */
+  it('draws a full page of skeleton rows while loading, so the panel does not leap', () => {
     const view = render(<VerificationTab />);
-    const scroller = view.container.querySelector<HTMLElement>('.va-panel [style*="min-block-size"]');
-    expect(scroller).toBeTruthy();
-    expect(scroller!.style.minBlockSize).toBe('1027px');
+    const skeletons = view.container.querySelectorAll('.va-panel tbody tr[aria-hidden="true"]');
+    expect(skeletons).toHaveLength(15);
+    // One cell per column, so the skeleton has the real geometry rather than one full-width bar.
+    expect(skeletons[0]!.querySelectorAll('td').length).toBeGreaterThan(5);
+    // And exactly one announcement for the whole body.
+    expect(view.container.querySelectorAll('.va-panel tbody')[0]!.textContent).toBe('Loading…');
   });
 });
 

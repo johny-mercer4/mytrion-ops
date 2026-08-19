@@ -1,9 +1,13 @@
 /**
  * The desk's own ten-phase spine, read-only on Sales.
  *
- * This is `PhaseSpine` — the same component CaseView renders — hosted under
- * `data-mytrion="verification"` so its CSS tokens apply. A third rail would drift the moment
+ * This is `PhaseSpine` — the same component CaseView renders. A third rail would drift the moment
  * the desk changed a label.
+ *
+ * The `[data-mytrion='verification']` scope its stylesheet needs comes from the ancestor
+ * `VerificationDeskSurface` the case root is wrapped in, so there is nothing to declare here. It used
+ * to carry `className="va-case"` to borrow the root's flex column — which nested a second `.va-case`
+ * inside the first and re-declared its gap around a single panel.
  */
 import type { ApplicationDetail, VerificationRailPhase } from '@/api/verificationFlow';
 import { PhaseSpine } from '../../verification/applicants/PhaseSpine';
@@ -30,7 +34,7 @@ export function VerificationProgress({ detail }: { detail: ApplicationDetail }) 
   const remaining = phases.length - passed - notApplicable;
 
   return (
-    <div data-mytrion="verification" className="va-case ss-vf-spine-host">
+    <div className="ss-vf-spine-host">
       <PhaseSpine
         rail={phases}
         activeCode={activeCodeOf(phases, detail.case.phaseCode)}

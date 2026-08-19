@@ -32,7 +32,7 @@ Two gates, one predicate (`isSectionParked` in `salesData.ts`):
 | **Dashboard** (`dash`) | Sales · Company · Debtors · Power BI | `dashboard.agent_sales` / `dashboard.company` / `dashboard.debtors`; Power BI is an iframe | 5-min **localStorage** cache keyed by effective Zoho id (`dashCache`). Debtors = Billing floors: PENDING / PARTIALLY_PAID, remaining **≥ $1**, age **≥ 2 days**, hard = **15+**. Do not truncate the sales dash payload. |
 | **My Tasks** (`tasks`) | Agent kanban over manager assignments | `GET /sales/tasks`, `PATCH /sales/tasks/:id/status` → `mytrion_worker_tasks` | PATCH needs **`version`**. 50/page, cap 100. Badge = open tasks never opened in the detail modal. |
 | **Call Hub** (`callHub`) | Merged Mytrion + Zoho call history | `GET /sales/call-hub/calls` | Identity from View-as, **not** a query spoof. 25/page, cap 50. UI filters All / Mytrion / Zoho (no Gong tab). Softphone is global, not this tab. |
-| **Verification** (`verification`) | Admin-only: complete intake, watch underwriting | `GET /verification/applications` (one **200**-row page, client-side scope/search/sort); writes `/verification/applications/:id*` | **Not** Verification Mytrion (`/verification/flow/*` is the other desk). Apps are created by the Deal poller (`automation.verification.case-ingest`), not this tab. `POST /verification/applications` is **admin-only backfill**. Red/green **is** `verification_process`. Completeness is **server** verdict — the browser must not invent a gate. The **only** Sales surface on `ds/*` + the desk's `.va-*` — see UI below. |
+| **Verification** (`verification`) | Admin-only: complete intake, watch underwriting | `GET /verification/applications` (one **200**-row page, client-side scope/search/sort); writes `/verification/applications/:id*` | **Not** Verification Mytrion (`/verification/flow/*` is the other desk). Apps are created by the Deal poller (`automation.verification.case-ingest`), not this tab. `POST /verification/applications` is **admin-only backfill**. Red/green **is** `verification_process`. Completeness is **server** verdict — the browser must not invent a gate. **Submit is the handover** — two gates, see below. The **only** Sales surface on `ds/*` + the desk's `.va-*` — see UI below. |
 
 ## Data sources — which writes where
 
@@ -47,6 +47,27 @@ Two gates, one predicate (`isSectionParked` in `salesData.ts`):
 | **servercrm** | Carrier search, many Auto touchpoints | Same (Deluge / EFS proxies) |
 
 Finder/collection cron and the Verification underwriting desk are **not** this Mytrion. Mini-app invite / password-reset writes use `requireMytrionWrite('sales')`.
+
+## Verification writes — two gates, and submit is the handover
+
+`applicationService` has THREE assertions, not one. Reaching for the wrong one is how Sales came to be
+able to rewrite a case a credit agent was already reading.
+
+| Gate | Closes when | Used by |
+| --- | --- | --- |
+| `assertSalesOwns` | never (ownership + exists only) | the other two |
+| `assertSalesMayEdit` | `verification_process = true` — i.e. at **submit** | `PATCH /applications/:id`, principals add/remove, document **delete**, `submit` |
+| `assertSalesMayAttach` | `closed_at` is set — i.e. at the **decision** | `POST /applications/:id/documents` |
+
+- **Adding is not overriding.** Pending Documents is the desk asking for a missing PDF; the agent
+  uploads it and the form stays exactly as submitted. That is the ONLY state where the two gates differ.
+- `intake_submitted` and `pending_docs` used to be editable on the one gate. They are not: the
+  requested limit, card count, EIN and principals must not move under a reviewer.
+- A correction after submit is the **desk's** (`assertDeskMayCorrect`, same columns, its own door), so
+  the refusal names them. `VERIFICATION_LOCKED` / 409.
+- The browser mirrors it: `locked = submitted` (fields `readOnly`, no Save/Submit bar, type shown as
+  text) and `canAttach = !closed` (`DocSlot` / `DocumentsSection` take a `canAttach` prop that defaults
+  to `!locked`).
 
 ## Fetching
 
@@ -94,8 +115,15 @@ case, both from `mytrions/verification/applicants/applicants{,Case}.css`. Those 
 `[data-mytrion='verification']`, so the queue root and the case root carry that attribute — it binds
 `--badge-tone` and nothing else, which no `.va-*` rule reads. Consequences worth knowing:
 
+- **The attribute goes on an ANCESTOR, never on `.va-case` / `.va-list` itself** — every rule is a
+  descendant selector, so an attribute on the root element matches none of them and the roots silently
+  lose `display: flex`, their `gap`, the `--va-r-*` radius aliases (every panel paints square) and
+  their 900/640 media rules. `VerificationDeskSurface` is the one-line wrapper that gets this right.
 - **`SalesPageHead` is outside that root**, so `.va-search` / `.va-head-actions` do not apply to the head
   — its controls are direct children of `.ss-page-actions` and the field is sized by `.ss-vf-q`.
+- **Loading states are the desk's too**: the queue is `ds/DataTable`'s own `skeletonRows` (table mode
+  now emits real placeholder rows, so no caller reserves height with `scrollerStyle`), and the case is
+  `SkeletonRegion` + four `Skeleton` panels — NOT `IntakeSkeleton`, which draws the old bare-page form.
 - **The intake FORM stays Sales'** (`applicationFields` / `applicationDocs` / `applicationIntakeFields`):
   it carries drag-and-drop, per-slot progress, pre-upload refusals and paste. Only Sales mounts those —
   the "mounted in both Mytrions" note in their headers is stale, the desk's `CaseIntakePane` rolls its own.

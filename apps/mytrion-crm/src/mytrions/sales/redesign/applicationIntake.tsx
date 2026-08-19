@@ -23,15 +23,17 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/ds';
-import { Icon } from './icons';
+import { VerificationDeskSurface } from './verificationDeskScope';
 import {
   ApplicationCaseAside,
   ApplicationCaseBanner,
   ApplicationCaseHead,
+  ApplicationCaseLoadError,
+  ApplicationCaseLoading,
+  ApplicationCaseTypeGate,
 } from './applicationCaseHead';
 import { VerificationProgress } from './VerificationProgress';
 import { useSales } from './ctx';
-import { ApplicantTypePicker, IntakeSkeleton } from './applicationFields';
 import { DocumentsSection, isSlottedDocType } from './applicationDocs';
 import { ErrorNote } from './applicationIntakePanels';
 import { ApplicationIntakeFields, STATEMENT_LABELS } from './applicationIntakeFields';
@@ -157,7 +159,19 @@ export function ApplicationIntake({
   const serverMissing = useMemo(() => missingSet(detail), [detail]);
   const complete = detail?.intake.complete ?? false;
   const submitted = Boolean(detail?.case.verificationProcess);
-  const locked = submitted && detail?.case.statusCode !== 'pending_docs';
+  /**
+   * SUBMIT IS THE HANDOVER. `locked` used to spare `pending_docs`, which reopened the whole form
+   * whenever the desk asked for a file — so an agent could retype the requested limit on a case a
+   * credit agent was already reading, and the server would refuse the write after the fact. It is
+   * now simply "submitted", matching `assertSalesMayEdit` on the server.
+   */
+  const locked = submitted;
+  const closed = Boolean(detail?.case.closedAt);
+  /**
+   * Adding a file is not overriding anything, so it stays open until the case is decided — that IS
+   * Pending Documents. Mirrors `assertSalesMayAttach`.
+   */
+  const canAttach = !closed;
   const surface = detail ? caseSurface(detail) : 'intake';
   const flagged = (field: string) => fieldVisiblyMissing(serverMissing, field, form[field] ?? '');
 
@@ -344,66 +358,18 @@ export function ApplicationIntake({
    * failed and choose-a-type states — which have no header — would otherwise strand the agent on a
    * screen with no way out.
    */
-  const backOnly = onBack ? (
-    <div className="va-crumbs va-crumbs-bare">
-      <Button variant="secondary" size="sm" icon="chevron_left" onClick={onBack}>
-        All applications
-      </Button>
-    </div>
-  ) : null;
-
-  if (loading) {
-    return (
-      <div className="va-case" data-mytrion="verification">
-        {backOnly}
-        <IntakeSkeleton />
-      </div>
-    );
-  }
-
+  if (loading) return <ApplicationCaseLoading onBack={onBack} />;
   if (error?.scope === 'load') {
-    return (
-      <div className="va-case" data-mytrion="verification">
-        {backOnly}
-        <div className="va-banner" data-tone="danger" role="alert">
-          <span className="va-banner-glyph" aria-hidden="true">
-            <Icon name="warn" size={15} strokeWidth={2.2} />
-          </span>
-          <span className="va-banner-text">
-            <span className="va-banner-title">Could not open this application</span>
-            <p className="va-banner-body">{error.message}</p>
-          </span>
-        </div>
-      </div>
-    );
+    return <ApplicationCaseLoadError message={error.message} onBack={onBack} />;
   }
-
   if (!applicantType) {
     return (
-      <div className="va-case" data-mytrion="verification">
-        {backOnly}
-        <section className="va-phase">
-          <header className="va-phase-head">
-            <div className="va-phase-titles">
-              <span className="t-eyebrow va-phase-kicker">Before anything else</span>
-              <h2 className="va-phase-title">Who is applying?</h2>
-              <p className="va-phase-desc">
-                This decides which details Verification needs. The Deal in Zoho did not say, so it is
-                yours to answer.
-              </p>
-            </div>
-          </header>
-          <div className="va-phase-main">
-            <ApplicantTypePicker
-              value=""
-              pending={pending === 'type'}
-              onChange={(v) => void choose(v)}
-            />
-            {pending === 'type' ? <IntakeSkeleton compact /> : null}
-            {error ? <ErrorNote message={error.message} /> : null}
-          </div>
-        </section>
-      </div>
+      <ApplicationCaseTypeGate
+        onBack={onBack}
+        pending={pending === 'type'}
+        error={error?.message ?? null}
+        onChoose={(v) => void choose(v)}
+      />
     );
   }
 
@@ -422,19 +388,21 @@ export function ApplicationIntake({
   /**
    * What this section IS, in the agent's terms — the desk's `va-phase-desc` slot.
    *
-   * Three states, because the same form means three different things: yours to finish, yours to
-   * add to, or a record you can only read. Deliberately NOT a second "Verification cannot start
-   * until this is complete" — the banner two hundred pixels above already says that, and a note
-   * that restates the alarm it sits under is a line the agent learns to skip.
+   * Three states, because the same form means three different things: yours to finish, submitted
+   * with a file still to add, or a record you can only read. Deliberately NOT a second "Verification
+   * cannot start until this is complete" — the banner two hundred pixels above already says that, and
+   * a note that restates the alarm it sits under is a line the agent learns to skip.
    */
-  const paneNote = locked
-    ? 'Saved and with Verification. The pipeline above is how far it has got — nothing here is editable while underwriting runs.'
-    : submitted
-      ? 'Verification has asked for more. Attach what they need; everything else stays as submitted.'
-      : 'Everything Verification underwrites comes from here. Save as you go — nothing reaches the desk until you submit.';
+  const paneNote =
+    surface === 'needs_more'
+      ? 'Submitted. Verification has asked for a document — attach it below; the details stay as you sent them.'
+      : locked
+        ? 'Submitted and with Verification. The pipeline above is how far it has got; the details below are read-only.'
+        : 'Everything Verification underwrites comes from here. Save as you go — nothing reaches the desk until you submit.';
 
   return (
-    <div className="va-case" data-mytrion="verification">
+    <VerificationDeskSurface>
+      <div className="va-case">
       <ApplicationCaseHead
         detail={detail!}
         surface={surface}
@@ -473,6 +441,7 @@ export function ApplicationIntake({
                 serverMissing={serverMissing}
                 applicantType={applicantType}
                 locked={locked}
+                canAttach={canAttach}
                 exclusiveBusy={exclusiveBusy}
                 pendingPrincipal={pending === 'principal'}
                 principalError={error?.scope === 'principal' ? error.message : null}
@@ -515,6 +484,7 @@ export function ApplicationIntake({
                   documents={leftoverDocs}
                   leftoverType={leftoverType}
                   locked={locked}
+                  canAttach={canAttach}
                   uploading={[...fileOps].some((op) => op.startsWith('upload:'))}
                   removingId={
                     [...fileOps].find((op) => op.startsWith('doc:'))?.slice('doc:'.length) ?? null
@@ -589,6 +559,7 @@ export function ApplicationIntake({
           />
         </div>
       </section>
-    </div>
+      </div>
+    </VerificationDeskSurface>
   );
 }
