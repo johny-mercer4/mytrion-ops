@@ -330,40 +330,72 @@ export const applicationService = {
   },
 
   /**
-   * Non-admin Sales agents may only touch their own applications, and only while the desk has not
-   * taken over. Once Verification is working a case, Sales edits would move ground under a reviewer.
+   * Ownership only: the row exists and this Sales agent may touch it at all.
+   *
+   * Split out because the two Sales write gates below share the ownership rule and differ only on
+   * WHEN they close — one read of the row serves both.
    */
-  async assertSalesMayEdit(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+  async assertSalesOwns(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
     const row = await verificationFlowRepo.findById(ctx, caseId);
     if (!row) throw new NotFoundError('Application not found');
+    if (isAdmin(ctx)) return row;
 
-    if (!isAdmin(ctx)) {
-      const self = zohoFromCtx(ctx);
-      // Same three routes as the list query — a cron-created application reaches its agent via
-      // `zohoOwnerId`, and an agent who can see a row but not edit it is a dead end.
-      const owns =
-        row.submittedByZohoUserId === self ||
-        row.ownerZohoUserId === self ||
-        row.zohoOwnerId === self;
-      if (!owns) {
-        throw new AppError('You can only edit applications you raised.', {
-          statusCode: 403,
-          code: 'VERIFICATION_NOT_YOUR_APPLICATION',
-          expose: true,
-        });
-      }
+    const self = zohoFromCtx(ctx);
+    // Same three routes as the list query — a cron-created application reaches its agent via
+    // `zohoOwnerId`, and an agent who can see a row but not edit it is a dead end.
+    const owns =
+      row.submittedByZohoUserId === self ||
+      row.ownerZohoUserId === self ||
+      row.zohoOwnerId === self;
+    if (!owns) {
+      throw new AppError('You can only edit applications you raised.', {
+        statusCode: 403,
+        code: 'VERIFICATION_NOT_YOUR_APPLICATION',
+        expose: true,
+      });
     }
+    return row;
+  },
 
-    // Pending Documents is the one open state where Sales SHOULD write — the desk asked them to.
-    const editable =
-      !row.verificationProcess ||
-      row.statusCode === VERIFICATION_STATUS.intakeSubmitted ||
-      row.statusCode === VERIFICATION_STATUS.pendingDocs;
-    if (!editable) {
+  /**
+   * Sales may change the APPLICATION DATA only until they submit it. Submit is the handover.
+   *
+   * `intake_submitted` and `pending_docs` used to be editable here too, and both were wrong for the
+   * same reason: the figures a reviewer is underwriting — the requested limit, the card count, the
+   * EIN, the principals — must not move under them, and a case in Pending Documents is one where the
+   * desk has already read the file and asked for a missing PDF. What Sales owes there is the
+   * document, which goes through `assertSalesMayAttach`, not a second pass over the form.
+   *
+   * A correction after submit is the DESK's to make (`assertDeskMayCorrect`, same columns, its own
+   * door) — which is also who Sales rings, so the refusal names them.
+   */
+  async assertSalesMayEdit(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+    const row = await this.assertSalesOwns(ctx, caseId);
+    if (row.verificationProcess) {
       throw new AppError(
-        'This application is being underwritten by Verification and can no longer be edited from Sales.',
+        'This application has been submitted to Verification and can no longer be changed from Sales. Ask the Verification desk to correct it.',
         { statusCode: 409, code: 'VERIFICATION_LOCKED', expose: true },
       );
+    }
+    return row;
+  },
+
+  /**
+   * Sales may ATTACH a document for as long as the case is open — adding is not overriding.
+   *
+   * This is the whole point of Pending Documents: the desk asks for the third bank statement and the
+   * agent uploads it without a form pass. Removing one is not covered here (see the delete route,
+   * which stays on `assertSalesMayEdit`): pulling a file the desk is reading is exactly the kind of
+   * change under a reviewer that submit is supposed to end.
+   */
+  async assertSalesMayAttach(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+    const row = await this.assertSalesOwns(ctx, caseId);
+    if (row.closedAt) {
+      throw new AppError('This application has already been decided and can no longer be changed.', {
+        statusCode: 409,
+        code: 'VERIFICATION_CASE_CLOSED',
+        expose: true,
+      });
     }
     return row;
   },

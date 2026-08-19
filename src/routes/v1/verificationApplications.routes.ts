@@ -313,7 +313,9 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
     async (request, reply) => {
       const ctx = requireSales(request);
       const { id } = idParams.parse(request.params);
-      await applicationService.assertSalesMayEdit(ctx, id);
+      // ATTACH, not edit: adding a file is allowed for as long as the case is open, which is what
+      // makes Pending Documents work. Changing the form after submit is not — see the two gates.
+      await applicationService.assertSalesMayAttach(ctx, id);
 
       const files: Array<{ name: string; mime: string; buffer: Buffer }> = [];
       const fields: Record<string, string> = {};

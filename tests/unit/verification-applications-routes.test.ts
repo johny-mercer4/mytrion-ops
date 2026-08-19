@@ -45,6 +45,7 @@ vi.mock('../../src/modules/verificationFlow/applicationService.js', async () => 
       removePrincipal: vi.fn(),
       listForAgent: vi.fn(),
       assertSalesMayEdit: vi.fn(),
+      assertSalesMayAttach: vi.fn(),
       prefillInputs: vi.fn(),
     },
   };
@@ -90,6 +91,12 @@ const prefillInputsMock = vi.mocked(applicationService.prefillInputs);
 const getBytesMock = vi.mocked(documentService.getBytes);
 const uploadMock = vi.mocked(documentService.upload);
 const assertEditMock = vi.mocked(applicationService.assertSalesMayEdit);
+/**
+ * ATTACH is a different gate from EDIT and the upload route must use it: adding a file stays legal
+ * while the case is open (that is what Pending Documents is for), changing the form after submit
+ * does not. Mocking only `assertSalesMayEdit` is how this route silently kept the stricter gate.
+ */
+const assertAttachMock = vi.mocked(applicationService.assertSalesMayAttach);
 
 const detail = {
   case: {
@@ -474,7 +481,7 @@ describe('document write emits a verification socket event', () => {
   }
 
   it('publishes verification.application.documents_uploaded to the credit agent', async () => {
-    assertEditMock.mockResolvedValue(detail.case as never);
+    assertAttachMock.mockResolvedValue(detail.case as never);
     uploadMock.mockResolvedValue(undefined as never);
     getMock.mockResolvedValue(detail);
     const { payload, contentType } = multipartDoc();
