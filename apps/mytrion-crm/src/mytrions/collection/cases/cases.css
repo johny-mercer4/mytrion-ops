@@ -352,19 +352,6 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-[data-mytrion='collection'] .cc-owner {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-full);
-  background: var(--field);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-family: var(--font-num);
-  font-size: var(--text-2xs);
-  font-weight: var(--fw-bold);
-}
 
 @media (width < 1200px) {
   [data-mytrion='collection'] .cc-board {

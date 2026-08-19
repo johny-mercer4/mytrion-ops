@@ -25,7 +25,6 @@ vi.mock('../../src/repos/collectionCaseRepo.js', async (importOriginal) => {
       close: vi.fn(),
       reopen: vi.fn(),
       markPlaced: vi.fn(),
-      setAssignee: vi.fn(),
     },
   };
 });

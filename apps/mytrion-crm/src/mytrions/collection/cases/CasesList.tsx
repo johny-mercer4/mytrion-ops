@@ -12,8 +12,11 @@
  *               column could not exist before the desk had a write side.
  *
  * `Next action` is the open promise, so a due or lapsed commitment is visible without opening
- * the case. `Owner` renders `assignee_user_id` — a column that has been on the table all along
- * with nothing writing it.
+ * the case.
+ *
+ * There is deliberately NO owner column. `assignee_user_id` has been on the table all along with
+ * nothing writing it, so the column would render an em-dash on every row for ever. It goes in
+ * with case assignment, not before.
  */
 import { useMemo } from 'react';
 import { Badge, DataTable, EmptyState, Pagination, type DataColumn } from '@/ds';
@@ -149,7 +152,7 @@ export function CasesList({
       {
         id: 'next',
         header: 'Next action',
-        width: '14%',
+        width: '21%',
         cell: (row) => {
           const promise = desk[row.id]?.promise;
           if (promise) {
@@ -166,18 +169,6 @@ export function CasesList({
           }
           return <span className="cc-muted">—</span>;
         },
-      },
-      {
-        id: 'owner',
-        header: 'Owner',
-        width: '7%',
-        align: 'end',
-        cell: (row) =>
-          row.assigneeUserId ? (
-            <span className="cc-owner">{initialsOf(row.assigneeUserId)}</span>
-          ) : (
-            <span className="cc-muted">—</span>
-          ),
       },
     ],
     [desk],
@@ -224,16 +215,6 @@ export function CasesList({
       </div>
     </div>
   );
-}
-
-/**
- * Two letters from a `zoho:12345` user id. Nothing in this app resolves a collection assignee to
- * a name yet, so the avatar is an id fragment rather than a wrong name — see the note on
- * `collectionCaseRepo.setAssignee`.
- */
-function initialsOf(userId: string): string {
-  const tail = userId.split(':').pop() ?? userId;
-  return tail.slice(0, 2).toUpperCase();
 }
 
 export { PAGE_SIZE as CASES_PAGE_SIZE };

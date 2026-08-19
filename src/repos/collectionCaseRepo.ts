@@ -371,17 +371,6 @@ export const collectionCaseRepo = {
     return row ? toCollectionCaseDto(row) : undefined;
   },
 
-  /** Assign an owner. `assignee_user_id` exists on the table and nothing has ever written it. */
-  async setAssignee(id: string, userId: string | null): Promise<CollectionCaseDto | undefined> {
-    const rows = await db
-      .update(collectionCases)
-      .set({ assigneeUserId: userId, updatedAt: new Date() })
-      .where(eq(collectionCases.id, id))
-      .returning();
-    const row = rows[0];
-    return row ? toCollectionCaseDto(row) : undefined;
-  },
-
   async listInvoices(
     ctx: TenantContext,
     caseId: string,
