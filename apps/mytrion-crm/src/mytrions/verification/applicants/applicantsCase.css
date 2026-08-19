@@ -472,6 +472,23 @@
   grid-template-columns: repeat(auto-fit, minmax(19ch, 1fr));
   gap: var(--space-3);
 }
+/* A named group of columns. Nineteen fields in one flat grid gave the reviewer no map — these are the
+   same five groups Sales' own form uses, so the two desks describe the case the same way. The rule
+   between them is what separates the groups; the heading sits closer to its own fields than to the
+   group above, which is the whole job of the asymmetric padding. */
+[data-mytrion='verification'] .va-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+}
+[data-mytrion='verification'] .va-field-group + .va-field-group {
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--border-subtle);
+}
+/* The group head is a label row, not a pane head — it must not inherit the pane's baseline alignment. */
+[data-mytrion='verification'] .va-field-group > .va-pane-head {
+  align-items: baseline;
+}
 [data-mytrion='verification'] .va-field {
   display: flex;
   flex-direction: column;
@@ -500,6 +517,21 @@
   border-radius: var(--va-r-md);
   border: 1px solid var(--border-subtle);
   background: var(--surface-data-alt);
+}
+/* A block with a HEADING in it. `.va-recorded` shares `.va-counts`' grid, so an `<h4>` inside it
+   became a cell beside the values rather than a line above them. */
+[data-mytrion='verification'] .va-recorded[data-stack='true'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+}
+/* Something the case is still waiting on, so it reads as an ask rather than as a recap. */
+[data-mytrion='verification'] .va-recorded[data-needed='true'] {
+  border-color: var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+}
+[data-mytrion='verification'] .va-recorded[data-needed='true'] .va-pane-body {
+  color: var(--text-secondary);
 }
 [data-mytrion='verification'] .va-count {
   display: flex;
@@ -619,10 +651,25 @@
   min-width: 0;
 }
 [data-mytrion='verification'] .va-fig-v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-md);
   line-height: 1.2;
   font-weight: var(--fw-bold);
   color: var(--text-primary);
+}
+/* An identifier the reviewer has to READ, not glance at: an email or an address is longer than any
+   sensible track, so these wrap instead of ellipsising. */
+[data-mytrion='verification'] .va-fig-v[data-wrap='true'] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+[data-mytrion='verification'] .va-fig-v[data-empty='true'] {
+  font-weight: var(--fw-semibold);
+  color: var(--text-disabled);
 }
 [data-mytrion='verification'] .va-fig-v[data-tone='ok'] {
   color: var(--success);
@@ -736,7 +783,11 @@
   color: var(--text-muted);
   text-wrap: pretty;
 }
+/* A list, since it stopped being a stack of checkboxes — see `caseMarks.css` for the line itself. */
 [data-mytrion='verification'] .va-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 1px;

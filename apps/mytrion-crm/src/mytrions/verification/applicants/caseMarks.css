@@ -1,0 +1,198 @@
+/* =====================================================
+   The verdict control (`.va-marks`) — Identity and Screening.
+
+   WHY IT IS NOT `ds/Button`. It was: three buttons, `ghost` until chosen and `secondary` when. That
+   made the selected option a faint 1px border, and it gave "OK", "Missing" and "Inconsistent" the same
+   grey — so a reviewer scanning seven rows for the one they flagged had to read every label. A verdict
+   control whose verdicts look identical is a list of words.
+
+   HOW THE STATE READS, in three channels so no one of them is load-bearing:
+     glyph      each option owns one — a tick, an upload cloud, a warning. Survives greyscale.
+     fill       only the CHOSEN option is filled; the rest are quiet outlines. Survives colour-blindness.
+     colour     the intent tint, and only on the chosen one. Carries the meaning, never alone.
+
+   Token rules as in `applicants.css`: every size is a `--text-*` step, every colour an `--intent-*`
+   or `--tint-*`, spacing on `--space-*`. The 28px control height and the 1px hairline are box geometry.
+   ===================================================== */
+
+[data-mytrion='verification'] .va-marks {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  /* A radio group is one tab stop; the ring belongs to whichever option holds focus. */
+  padding: 2px;
+  border-radius: var(--radius-full);
+  /* `--border` and `--surface-data-alt`, not `--border-subtle` on `--field`: the subtle pair is all but
+     invisible against the check row's own `--surface` in the light theme, and the group then reads as
+     three loose text-and-icon pairs rather than as one control with three positions. */
+  border: 1px solid var(--border);
+  background: var(--surface-data-alt);
+}
+
+[data-mytrion='verification'] .va-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 28px;
+  padding: 0 var(--space-2_5);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    color var(--hz-dur-wash) var(--hz-ease);
+}
+
+/* 44px TOUCH TARGET via an overhang, not by growing the control — three of these sit in a table-dense
+   row, and 44px each would be 132px of chrome per check. `--space-2` of reach above and below. */
+[data-mytrion='verification'] .va-mark::before {
+  content: '';
+  position: absolute;
+  inset-block: calc(var(--space-2) * -1);
+  inset-inline: 0;
+}
+[data-mytrion='verification'] .va-mark {
+  position: relative;
+}
+
+[data-mytrion='verification'] .va-mark:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+}
+
+[data-mytrion='verification'] .va-mark:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* The glyph is quiet until the option is chosen — three coloured icons at rest would make every row
+   look already answered. */
+[data-mytrion='verification'] .va-mark-glyph {
+  flex: none;
+  color: var(--text-disabled);
+}
+
+/* ── Chosen ───────────────────────────────────────────────────────────────── */
+[data-mytrion='verification'] .va-mark[aria-checked='true'] {
+  background: var(--intent-neutral-bg, var(--surface-raised));
+  color: var(--text-primary);
+  box-shadow: var(--hz-glass-inset);
+}
+[data-mytrion='verification'] .va-mark[aria-checked='true'] .va-mark-glyph {
+  color: currentcolor;
+}
+
+[data-mytrion='verification'] .va-mark[data-tone='good'][aria-checked='true'] {
+  background: var(--intent-success-bg);
+  color: var(--intent-success-fg);
+}
+[data-mytrion='verification'] .va-mark[data-tone='warn'][aria-checked='true'] {
+  background: var(--intent-warning-bg);
+  color: var(--intent-warning-fg);
+}
+[data-mytrion='verification'] .va-mark[data-tone='bad'][aria-checked='true'] {
+  background: var(--intent-danger-bg);
+  color: var(--intent-danger-fg);
+}
+
+/* ── The check row it sits in ──────────────────────────────────────────────── */
+/* A 2px edge in the verdict's colour, so a column of seven rows can be read at a glance for the one
+   that needs work — the row itself is the summary, not just the control inside it. */
+[data-mytrion='verification'] .va-id-check[data-mark='ok'] {
+  border-color: var(--intent-success-bd);
+  box-shadow: inset 2px 0 0 0 var(--success);
+}
+[data-mytrion='verification'] .va-id-check[data-mark='missing'] {
+  border-color: var(--intent-warning-bd);
+  box-shadow: inset 2px 0 0 0 var(--warning);
+}
+[data-mytrion='verification'] .va-id-check[data-mark='inconsistent'] {
+  border-color: var(--intent-danger-bd);
+  box-shadow: inset 2px 0 0 0 var(--danger);
+}
+
+/* ── What to check ────────────────────────────────────────────────────────── */
+/* Not `ds/Checkbox` any more: the lines were `readOnly` boxes bound to the phase's own status, which
+   on Identity and Screening contradicted the marks the reviewer had just set. A line now carries its
+   own state, and `attention` is a state a tick box cannot express at all. */
+[data-mytrion='verification'] .va-check-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-1_5) 0;
+}
+[data-mytrion='verification'] .va-check-glyph {
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  margin-block-start: 1px;
+  border-radius: var(--radius-full);
+  color: var(--text-disabled);
+}
+[data-mytrion='verification'] .va-check-line[data-state='done'] .va-check-glyph {
+  color: var(--success);
+}
+[data-mytrion='verification'] .va-check-line[data-state='attention'] .va-check-glyph {
+  color: var(--warning);
+}
+/* A FINDING, not an ask — matches the red the pane paints on the same row. */
+[data-mytrion='verification'] .va-check-line[data-tone='bad'] .va-check-glyph {
+  color: var(--danger);
+}
+[data-mytrion='verification'] .va-check-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+[data-mytrion='verification'] .va-check-label {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+[data-mytrion='verification'] .va-check-line[data-state='done'] .va-check-label {
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .va-check-line[data-state='attention'] .va-check-label {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+/* Why it needs attention. `--text-2xs` so it reads as the label's subtitle, not a second line. */
+[data-mytrion='verification'] .va-check-why {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--warning);
+}
+[data-mytrion='verification'] .va-check-line[data-tone='bad'] .va-check-why {
+  color: var(--danger);
+}
+
+/* 640 — the structure line. The verdict control drops below its check rather than squeezing three
+   labels into a phone's width, and takes the full row so each option keeps a real target. */
+@media (width < 640px) {
+  [data-mytrion='verification'] .va-id-check {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  [data-mytrion='verification'] .va-marks {
+    /* `flex: none` above keeps the track its content width in the desktop row; stacked under its check
+       it should span the row instead, so each option gets a full-width share of the target. */
+    flex: 1 1 auto;
+    justify-content: space-between;
+  }
+  [data-mytrion='verification'] .va-mark {
+    flex: 1;
+    justify-content: center;
+  }
+}

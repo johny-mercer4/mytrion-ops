@@ -13,35 +13,103 @@ import { APPLICANT_LABEL, routeLabel, routeOf } from './applicantsModel';
 
 type FieldKind = 'text' | 'numeric' | 'type' | 'banking' | 'plaid';
 
-const INTAKE_FIELDS: ReadonlyArray<{ k: string; label: string; kind: FieldKind }> = [
-  { k: 'applicantType', label: 'Applicant type', kind: 'type' },
-  { k: 'firstName', label: 'First name', kind: 'text' },
-  { k: 'lastName', label: 'Last name', kind: 'text' },
-  { k: 'dateOfBirth', label: 'Date of birth', kind: 'text' },
-  { k: 'residentialAddress', label: 'Residential address', kind: 'text' },
-  { k: 'ssnLast4', label: 'SSN (last 4)', kind: 'text' },
-  { k: 'dlLast4', label: 'Licence (last 4)', kind: 'text' },
-  { k: 'dlState', label: 'Licence state', kind: 'text' },
-  { k: 'companyName', label: 'Company', kind: 'text' },
-  { k: 'ein', label: 'EIN', kind: 'text' },
-  { k: 'mc', label: 'MC number', kind: 'text' },
-  { k: 'dot', label: 'USDOT', kind: 'text' },
-  { k: 'businessAddress', label: 'Business address', kind: 'text' },
-  { k: 'email', label: 'Email', kind: 'text' },
-  { k: 'phone', label: 'Phone', kind: 'text' },
-  { k: 'trucksCount', label: 'Trucks', kind: 'numeric' },
-  { k: 'fuelCardsRequested', label: 'Cards requested', kind: 'numeric' },
-  { k: 'requestedLimit', label: 'Requested limit', kind: 'numeric' },
-  { k: 'bankingSource', label: 'How is banking supplied?', kind: 'banking' },
-  /**
-   * The desk's own field, and the only place in the app that can set it.
-   *
-   * Sales picks Plaid and submits — the connection is the APPLICANT's to make and this desk's to
-   * confirm, so intake is not blocked on it (see `intake.ts`). Without a control here the column was
-   * writable by nothing, which is what made "Plaid bank connection" a dead end.
-   */
-  { k: 'plaidConnected', label: 'Plaid connected', kind: 'plaid' },
+interface IntakeField {
+  k: string;
+  label: string;
+  kind: FieldKind;
+}
+
+/**
+ * Every column, GROUPED — and the group names are Sales' own ("Applicant", "Business", "Contact",
+ * "What they are asking for", "Banking"), so an agent and a reviewer talking about the same case are
+ * looking at the same map.
+ *
+ * They were one flat grid of nineteen fields, which for the desk's override surface is a wall: the
+ * reviewer scanning for the EIN had to read labels, and there was no signal that "Licence state" and
+ * "Business address" belong to two different applicant flows.
+ *
+ * ALL of them stay on screen whichever flow the case is on. This is the desk's correction surface —
+ * an owner-operator case whose type was set wrong at ingest needs `companyName` reachable to fix it,
+ * and hiding half the columns is what would make "full control" untrue. `appliesTo` only marks which
+ * flow a group BELONGS to, so the pane can say so.
+ */
+const FIELD_GROUPS: ReadonlyArray<{
+  id: string;
+  title: string;
+  /** The flow this group is required for. `both` is asked of every applicant. */
+  appliesTo: 'owner_operator' | 'carrier' | 'both';
+  fields: readonly IntakeField[];
+}> = [
+  {
+    id: 'type',
+    title: 'Applicant type',
+    appliesTo: 'both',
+    fields: [{ k: 'applicantType', label: 'Applicant type', kind: 'type' }],
+  },
+  {
+    id: 'person',
+    title: 'Applicant',
+    appliesTo: 'owner_operator',
+    fields: [
+      { k: 'firstName', label: 'First name', kind: 'text' },
+      { k: 'lastName', label: 'Last name', kind: 'text' },
+      { k: 'dateOfBirth', label: 'Date of birth', kind: 'text' },
+      { k: 'residentialAddress', label: 'Residential address', kind: 'text' },
+      { k: 'ssnLast4', label: 'SSN (last 4)', kind: 'text' },
+      { k: 'dlLast4', label: 'Licence (last 4)', kind: 'text' },
+      { k: 'dlState', label: 'Licence state', kind: 'text' },
+    ],
+  },
+  {
+    id: 'business',
+    title: 'Business',
+    appliesTo: 'carrier',
+    fields: [
+      { k: 'companyName', label: 'Company', kind: 'text' },
+      { k: 'ein', label: 'EIN', kind: 'text' },
+      { k: 'mc', label: 'MC number', kind: 'text' },
+      { k: 'dot', label: 'USDOT', kind: 'text' },
+      { k: 'businessAddress', label: 'Business address', kind: 'text' },
+    ],
+  },
+  {
+    id: 'contact',
+    title: 'Contact',
+    appliesTo: 'both',
+    fields: [
+      { k: 'email', label: 'Email', kind: 'text' },
+      { k: 'phone', label: 'Phone', kind: 'text' },
+    ],
+  },
+  {
+    id: 'request',
+    title: 'What they are asking for',
+    appliesTo: 'both',
+    fields: [
+      { k: 'trucksCount', label: 'Trucks', kind: 'numeric' },
+      { k: 'fuelCardsRequested', label: 'Cards requested', kind: 'numeric' },
+      { k: 'requestedLimit', label: 'Requested limit', kind: 'numeric' },
+    ],
+  },
+  {
+    id: 'banking',
+    title: 'Banking',
+    appliesTo: 'both',
+    fields: [
+      { k: 'bankingSource', label: 'How is banking supplied?', kind: 'banking' },
+      /**
+       * The desk's own field, and the only place in the app that can set it.
+       *
+       * Sales picks Plaid and submits — the connection is the APPLICANT's to make and this desk's to
+       * confirm, so intake is not blocked on it (see `intake.ts`). Without a control here the column
+       * was writable by nothing, which is what made "Plaid bank connection" a dead end.
+       */
+      { k: 'plaidConnected', label: 'Plaid connected', kind: 'plaid' },
+    ],
+  },
 ];
+
+const INTAKE_FIELDS: readonly IntakeField[] = FIELD_GROUPS.flatMap((g) => g.fields);
 
 const TYPE_OPTIONS = [
   { value: 'owner_operator', label: 'Owner-operator' },
@@ -139,6 +207,9 @@ export function IntakePane({
   };
 
   const received = detail.documents.filter((d) => d.status === 'received').length;
+  /** Which of the SOP's two flows this case is on — the one fact the groups below key off. */
+  const ownerOperatorFlow: 'owner_operator' | 'carrier' =
+    c.applicantType === 'owner_operator' ? 'owner_operator' : 'carrier';
 
   return (
     <div className="va-stack">
@@ -149,8 +220,21 @@ export function IntakePane({
         </span>
       </div>
 
-      <div className="va-fields">
-        {INTAKE_FIELDS.map((f) => {
+      {FIELD_GROUPS.map((group) => (
+        <div className="va-field-group" key={group.id}>
+          <div className="va-pane-head">
+            <h4 className="t-eyebrow va-pane-kicker">{group.title}</h4>
+            {/* Which flow the group belongs to, said once per group instead of leaving the reviewer to
+                infer it from the labels. Every group stays editable — this is the correction surface,
+                and a case whose type was set wrong at ingest needs the other flow's columns reachable. */}
+            {group.appliesTo !== 'both' && group.appliesTo !== ownerOperatorFlow ? (
+              <span className="va-pane-note">
+                Not required for {ownerOperatorFlow === 'owner_operator' ? 'an owner-operator' : 'a carrier'}
+              </span>
+            ) : null}
+          </div>
+          <div className="va-fields">
+        {group.fields.map((f) => {
           const value = valueOf(f.k);
           const id = `va-intake-${f.k}`;
           const invalid = missing.has(f.k);
@@ -223,8 +307,19 @@ export function IntakePane({
             </div>
           );
         })}
-      </div>
+          </div>
+        </div>
+      ))}
 
+      {/*
+        THE COMPANY'S OWNERS — and only where the server asks for them.
+        `evaluateIntakeCompleteness` requires at least one principal on the CARRIER flow only: an
+        owner-operator IS the person, so there is nobody else to name. This pane showed the section on
+        every case, which on an owner-operator was a control for a requirement that does not exist —
+        Sales' own form has always hidden it there. A carrier keeps it whatever the reviewer has
+        recorded, because that is the requirement they may still have to satisfy.
+      */}
+      {ownerOperatorFlow === 'carrier' ? (
       <div className="va-principals">
         <h3 className="t-eyebrow va-pane-kicker">Owners / principals</h3>
         {detail.principals.length === 0 ? (
@@ -276,12 +371,22 @@ export function IntakePane({
           </div>
         )}
       </div>
+      ) : null}
 
+      {/*
+        ITS OWN BLOCK, with its own heading.
+        This sentence is about DOCUMENTS, and it used to render bare, immediately under the Owners /
+        principals list — so "Still needed as files: Bank statements" read as a requirement of the
+        principals section it sat inside. It is a separate outstanding item and now says so.
+      */}
       {fileGaps.length > 0 ? (
-        <p className="va-pane-body">
-          Still needed as files, attached from Documents:{' '}
-          {fileGaps.map((k) => DOC_MISSING[k]).join(', ')}. Use any type, including Something else.
-        </p>
+        <div className="va-recorded" data-stack="true" data-needed="true">
+          <h4 className="t-eyebrow va-pane-kicker">Still needed as files</h4>
+          <p className="va-pane-body">
+            {fileGaps.map((k) => DOC_MISSING[k]).join(', ')}. Attach from Documents on the right — any
+            type will do, including “Something else”.
+          </p>
+        </div>
       ) : null}
 
       <div className="va-counts">

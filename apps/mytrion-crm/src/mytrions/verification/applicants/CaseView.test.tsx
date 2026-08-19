@@ -222,7 +222,7 @@ describe('CaseView intake writes', () => {
     uploadDeskDocuments.mockResolvedValue(intakeDesk());
     const { container } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByLabelText('Date of birth');
-    expect(screen.getByRole('combobox', { name: 'Type' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Attach as' })).toBeInTheDocument();
     const input = container.querySelector('input[type="file"]');
     expect(input).toBeTruthy();
     const file = new File(['scan'], 'extra.pdf', { type: 'application/pdf' });
@@ -230,6 +230,36 @@ describe('CaseView intake writes', () => {
     await waitFor(() =>
       expect(uploadDeskDocuments).toHaveBeenCalledWith('vc_ridgevale01', [file], {
         docType: 'other',
+      }),
+    );
+  });
+
+  /**
+   * THE TYPE THE SELECT SAYS, not the default.
+   *
+   * Choosing a file uploads it immediately with whatever `attachType` currently holds, and the picker
+   * used to sit ABOVE its type select — so a reviewer working down the panel in reading order filed
+   * every document as "Something else" and then had to ask Sales to re-upload it. The select now comes
+   * first and the button names the choice; this is the assertion that the choice is actually carried.
+   */
+  it('attaches under the type the reviewer picked', async () => {
+    getDeskCase.mockResolvedValue(intakeDesk());
+    uploadDeskDocuments.mockResolvedValue(intakeDesk());
+    const { container } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByLabelText('Date of birth');
+
+    fireEvent.pointerDown(
+      screen.getByRole('combobox', { name: 'Attach as' }).closest('[data-focus-shell]')!,
+    );
+    fireEvent.click(screen.getByRole('option', { name: 'Bank statement' }));
+    // The control names what it will do, so the choice is visible without reopening the select.
+    expect(screen.getByText('Attach bank statement')).toBeInTheDocument();
+
+    const file = new File(['scan'], 'march.pdf', { type: 'application/pdf' });
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(uploadDeskDocuments).toHaveBeenCalledWith('vc_ridgevale01', [file], {
+        docType: 'bank_statement',
       }),
     );
   });
@@ -277,7 +307,7 @@ describe('CaseView phase decisions', () => {
     expect(screen.getAllByText('Legal company name and EIN').length).toBeGreaterThan(0);
     expect(screen.queryByText("Driver's licence")).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
-    for (const btn of screen.getAllByRole('button', { name: 'OK' })) {
+    for (const btn of screen.getAllByRole('radio', { name: 'OK' })) {
       fireEvent.click(btn);
     }
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
@@ -287,7 +317,7 @@ describe('CaseView phase decisions', () => {
     requestDocuments.mockResolvedValue(desk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByRole('heading', { name: 'Ridgevale Freight' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Missing' })[0]!);
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Missing' })[0]!);
     fireEvent.click(screen.getByRole('button', { name: 'Pending documents' }));
     await waitFor(() =>
       expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {
@@ -328,12 +358,21 @@ describe('CaseView Phase 3 screening', () => {
     getDeskCase.mockResolvedValue(screeningDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByRole('heading', { name: 'Ridgevale Freight' });
-    expect(screen.getAllByText(/Name \/ owner \/ principals/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/EIN:/).length).toBeGreaterThan(0);
+    /**
+     * ONE facts block, not two. The pane printed the same eight identifiers in both check columns —
+     * eight facts read twice to notice they are identical. They are a label/value grid now, stated once
+     * above the two verdicts, so the label and the value are separate elements and `EIN:` with its old
+     * colon no longer exists.
+     */
+    // Scoped to the block: the case HEADER carries an `EIN` fact of its own.
+    const facts = screen.getByText('Identifiers to compare').closest('div')!;
+    expect(within(facts).getAllByText('Name / owner / principals')).toHaveLength(1);
+    expect(within(facts).getAllByText('EIN')).toHaveLength(1);
+    expect(within(facts).getByText('12-3456789')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'No match' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'No match' }));
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'No duplicate' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'No duplicate' }));
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
   });
 
@@ -361,7 +400,7 @@ describe('CaseView Phase 3 screening', () => {
     decidePhase.mockResolvedValue(row);
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByRole('heading', { name: 'Ridgevale Freight' });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmed match' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Confirmed' }));
     fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
     await waitFor(() =>
       expect(decidePhase).toHaveBeenCalledWith('vc_ridgevale01', 'p3_screening', {
@@ -376,7 +415,7 @@ describe('CaseView Phase 3 screening', () => {
     decidePhase.mockResolvedValue(row);
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByRole('heading', { name: 'Ridgevale Freight' });
-    fireEvent.click(screen.getByRole('button', { name: 'Duplicate / active' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Duplicate' }));
     fireEvent.click(screen.getByRole('button', { name: 'Send to manager' }));
     await waitFor(() =>
       expect(decidePhase).toHaveBeenCalledWith('vc_ridgevale01', 'p3_screening', {
@@ -829,5 +868,135 @@ describe('reopening a phase', () => {
         reason: 'Licence belonged to a different person',
       }),
     );
+  });
+});
+
+/**
+ * STAGE 1 (Intake) and STAGE 2 (Identity) — the pane structure and the verdict control.
+ *
+ * The three defects here were all "the screen says something that is not true": a documents sentence
+ * rendered inside the Owners / principals block so it read as a principals requirement, an Owners /
+ * principals section on owner-operator cases where the server never asks for one, and a verdict control
+ * whose three verdicts looked identical.
+ */
+describe('Phase 1 — the intake pane', () => {
+  beforeEach(() => {
+    getPolicy.mockResolvedValue({ wexCardCutoff: 20 });
+  });
+
+  const intakeRail = [phase({ code: 'p1_intake', label: 'Application Intake', order: 1, status: 'in_progress' })];
+
+  /**
+   * `evaluateIntakeCompleteness` requires a principal on the CARRIER flow only — an owner-operator IS
+   * the person, so there is nobody else to name. Sales' own form has always hidden it there.
+   */
+  it('hides Owners / principals on an owner-operator case', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p1_intake' },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('textbox', { name: 'First name' });
+    expect(screen.queryByText('Owners / principals')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Owner or principal full name')).not.toBeInTheDocument();
+  });
+
+  it('keeps it on a carrier case, where the server asks for one', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'carrier', phaseCode: 'p1_intake' },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    expect(await screen.findByText('Owners / principals')).toBeInTheDocument();
+  });
+
+  /**
+   * The sentence is about DOCUMENTS. It used to render bare, straight after the principals list, so
+   * "Still needed as files: Bank statements" read as a requirement of the section it sat inside.
+   */
+  it('gives the outstanding-files sentence its own heading', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'carrier', phaseCode: 'p1_intake', intakeMissing: ['bankStatements'] },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    const heading = await screen.findByText('Still needed as files');
+    expect(heading).toBeInTheDocument();
+    // And the sentence lives under THAT heading, not under the principals one.
+    expect(heading.parentElement).toHaveTextContent(/Bank statements/);
+  });
+
+  /** Every column stays reachable — a case whose type was set wrong at ingest has to be correctable. */
+  it('keeps both flows’ columns editable, grouped and labelled', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p1_intake' },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('textbox', { name: 'First name' });
+    // The other flow's fields are present, and the group says it is not required here.
+    expect(screen.getByRole('textbox', { name: 'Company' })).toBeEnabled();
+    expect(screen.getByText('Business')).toBeInTheDocument();
+    expect(screen.getByText(/Not required for an owner-operator/)).toBeInTheDocument();
+  });
+});
+
+describe('Phase 2 — the verdict control and What to check', () => {
+  const idRail = [phase({ code: 'p2_identity', label: 'Identity', order: 2, status: 'in_progress' })];
+
+  beforeEach(() => {
+    getPolicy.mockResolvedValue({ wexCardCutoff: 20 });
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p2_identity' },
+      rail: idRail,
+    });
+  });
+
+  /**
+   * A radio GROUP, not three toggles. These are mutually exclusive verdicts; `aria-pressed` on three
+   * buttons announces three independent switches, which is a different control from the one they mean.
+   */
+  it('is a radio group with exactly one verdict selected', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    // BY ITS LABEL, not by index: `ReviewPanes` declares radiogroups of its own ("Risk tier", "Final
+    // decision"), so `[0]` is not reliably a verdict control.
+    const group = await screen.findByRole('radiogroup', { name: 'Full name' });
+    expect(within(group).getAllByRole('radio')).toHaveLength(3);
+    // `queryAll`, not `getAll`: nothing is checked yet, and `getAllByRole` throws on zero matches.
+    expect(within(group).queryAllByRole('radio', { checked: true })).toHaveLength(0);
+    fireEvent.click(within(group).getByRole('radio', { name: 'OK' }));
+    expect(within(group).getAllByRole('radio', { checked: true })).toHaveLength(1);
+  });
+
+  /** The aside used to light up all at once when the phase passed. Now it follows the marks. */
+  it('moves What to check as the reviewer marks each row', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findAllByRole('radiogroup');
+    const aside = screen.getByRole('heading', { name: 'What to check' }).closest('section')!;
+    expect(within(aside).getByText('0 of 7')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('radio', { name: 'OK' })[0]!);
+    expect(within(aside).getByText('1 of 7')).toBeInTheDocument();
+
+    // `attention` outranks the count — it is the thing the reviewer has to come back to.
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Missing' })[1]!);
+    expect(within(aside).getByText('1 needs work')).toBeInTheDocument();
+    expect(within(aside).getByText(/request the document/i)).toBeInTheDocument();
+  });
+
+  it('says the ticks follow the marks, not the clock', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findAllByRole('radiogroup');
+    expect(screen.getByText(/Follows the marks you set beside each check/)).toBeInTheDocument();
   });
 });

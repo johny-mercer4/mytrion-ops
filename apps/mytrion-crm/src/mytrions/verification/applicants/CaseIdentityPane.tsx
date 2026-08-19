@@ -2,22 +2,41 @@
  * Phase 2 working pane — compare intake, attached files and the broker snapshot, then mark each SOP check.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@/ds';
 import {
   getDeskBrokerSnapshot,
   type BrokerSnapshotMatch,
 } from '@/api/verificationDeskWrites';
 import type { VerificationDeskDetail } from '@/api/verificationFlow';
+import { CaseMarkGroup, type MarkOption } from './CaseMarkGroup';
 import {
   identityChecksFor,
   type IdentityCheck,
   type IdentityMark,
 } from './caseIdentity';
 
-const MARKS: ReadonlyArray<{ id: IdentityMark; label: string }> = [
-  { id: 'ok', label: 'OK' },
-  { id: 'missing', label: 'Missing' },
-  { id: 'inconsistent', label: 'Inconsistent' },
+/**
+ * The three verdicts, with the tone each one actually carries.
+ *
+ * `missing` is `warn` and not `bad`: it is an ASK — marking it routes the check's own document type
+ * into the request to Sales (`missingIdentityDocs`) and parks the case. `inconsistent` is `bad`, because
+ * the file and the application disagree, which is a finding about the applicant rather than a gap.
+ */
+const MARKS: ReadonlyArray<MarkOption<IdentityMark>> = [
+  { id: 'ok', label: 'OK', icon: 'check_circle', tone: 'good', hint: 'Matches the application and the file' },
+  {
+    id: 'missing',
+    label: 'Missing',
+    icon: 'cloud_upload',
+    tone: 'warn',
+    hint: 'Not on file — passing the phase requests it from Sales',
+  },
+  {
+    id: 'inconsistent',
+    label: 'Inconsistent',
+    icon: 'warning',
+    tone: 'bad',
+    hint: 'The file and the application disagree',
+  },
 ];
 
 const FIELD_LABEL: Record<string, string> = {
@@ -154,19 +173,12 @@ export function IdentityPane({
                 <span className="va-id-check-label">{check.label}</span>
                 <span className="va-id-check-value">{valueFor(check)}</span>
               </div>
-              <div className="va-id-check-marks" role="group" aria-label={check.label}>
-                {MARKS.map((m) => (
-                  <Button
-                    key={m.id}
-                    variant={mark === m.id ? 'secondary' : 'ghost'}
-                    size="sm"
-                    aria-pressed={mark === m.id}
-                    onClick={() => onMarks({ ...marks, [check.id]: m.id })}
-                  >
-                    {m.label}
-                  </Button>
-                ))}
-              </div>
+              <CaseMarkGroup
+                ariaLabel={check.label}
+                options={MARKS}
+                value={mark ?? null}
+                onChange={(next) => onMarks({ ...marks, [check.id]: next })}
+              />
             </div>
           );
         })}

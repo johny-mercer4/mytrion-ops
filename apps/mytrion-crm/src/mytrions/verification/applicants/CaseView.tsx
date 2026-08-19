@@ -578,6 +578,10 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             /* Locked is when the desk MOST needs to attach — a locked case is one waiting on
                documents. Only a decided case refuses. */
             canAttach={!closed && idle}
+            /* The live marks, so "What to check" agrees with the pane the reviewer is filling in
+               rather than lighting up all at once when the phase passes. */
+            identityMarks={identityMarks}
+            screeningMarks={screeningMarks}
           />
         </div>
 
