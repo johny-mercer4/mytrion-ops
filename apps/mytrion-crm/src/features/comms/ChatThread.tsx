@@ -71,6 +71,7 @@ export function ChatThread({
   const [asNote, setAsNote] = useState(false);
   const [sending, setSending] = useState(false);
   const [linkBusy, setLinkBusy] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -226,6 +227,29 @@ export function ChatThread({
     [draft, sending, disabled, asNote, threadId, fillTail, onActivity],
   );
 
+  // Telegram-style drop: dragging a file (or several — the first is taken) anywhere over the
+  // conversation attaches it. The upload path is the same as the paperclip, so it lands in Dropbox.
+  const onDropFiles = useCallback(
+    (ev: React.DragEvent): void => {
+      ev.preventDefault();
+      setDragging(false);
+      const file = ev.dataTransfer?.files?.[0];
+      if (file && !disabled) void send({ file });
+    },
+    [send, disabled],
+  );
+  const dragProps = {
+    onDragOver: (ev: React.DragEvent): void => {
+      if (disabled) return;
+      ev.preventDefault();
+      setDragging(true);
+    },
+    onDragLeave: (ev: React.DragEvent): void => {
+      if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) setDragging(false);
+    },
+    onDrop: onDropFiles,
+  };
+
   const retry = (p: Pending): void => {
     setPending((prev) => prev.filter((x) => x.clientMsgId !== p.clientMsgId));
     setDraft(p.body);
@@ -300,7 +324,7 @@ export function ChatThread({
         </p>
       )}
 
-      <div className={c.messages} ref={scrollRef} onScroll={onScroll}>
+      <div className={c.messages} ref={scrollRef} onScroll={onScroll} {...dragProps}>
         {loading ? (
           <div aria-busy="true">
             <span className={c.srOnly} role="status">
@@ -352,22 +376,32 @@ export function ChatThread({
                         )}
                         {files.length > 0 && (
                           <div className={c.attachRow}>
-                            {files.map((a) => (
-                              <button
-                                key={a.id}
-                                type="button"
-                                className={c.attach}
-                                onClick={() => void openAttachment(a)}
-                                disabled={linkBusy === a.id}
-                                title={`${a.name}${a.sizeBytes ? ` · ${formatBytes(a.sizeBytes)}` : ''}`}
-                              >
-                                <PaperclipIcon />
-                                <span className={c.attachName}>{a.name}</span>
-                                {a.sizeBytes != null && (
-                                  <span className={c.attachSize}>{formatBytes(a.sizeBytes)}</span>
-                                )}
-                              </button>
-                            ))}
+                            {files.map((a) =>
+                              isImage(a.mime) ? (
+                                <AttachmentImage
+                                  key={a.id}
+                                  threadId={threadId}
+                                  attachment={a}
+                                  busy={linkBusy === a.id}
+                                  onOpen={(x) => void openAttachment(x)}
+                                />
+                              ) : (
+                                <button
+                                  key={a.id}
+                                  type="button"
+                                  className={c.attach}
+                                  onClick={() => void openAttachment(a)}
+                                  disabled={linkBusy === a.id}
+                                  title={`${a.name}${a.sizeBytes ? ` · ${formatBytes(a.sizeBytes)}` : ''}`}
+                                >
+                                  <PaperclipIcon />
+                                  <span className={c.attachName}>{a.name}</span>
+                                  {a.sizeBytes != null && (
+                                    <span className={c.attachSize}>{formatBytes(a.sizeBytes)}</span>
+                                  )}
+                                </button>
+                              ),
+                            )}
                           </div>
                         )}
                       </div>
@@ -417,7 +451,7 @@ export function ChatThread({
         ))}
       </div>
 
-      <div className={c.composer}>
+      <div className={`${c.composer}${dragging ? ` ${c.composerDrag}` : ''}`} {...dragProps}>
         <div className={c.composerRow}>
           <input
             ref={fileRef}
@@ -448,6 +482,14 @@ export function ChatThread({
             className={c.input}
             value={draft}
             onChange={(ev) => setDraft(ev.target.value)}
+            onPaste={(ev) => {
+              // Paste a screenshot / copied image straight into the conversation (Telegram-style).
+              const file = ev.clipboardData?.files?.[0];
+              if (file && !disabled) {
+                ev.preventDefault();
+                void send({ file });
+              }
+            }}
             onKeyDown={(ev) => {
               // Enter sends, Shift+Enter is a newline — the convention every chat user already knows.
               if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -488,11 +530,87 @@ export function ChatThread({
             <span />
           )}
           <span className={c.hint}>
-            {thread?.state === 'archived' ? 'Archived' : 'Enter to send · Shift+Enter for a new line'}
+            {dragging
+              ? 'Drop to attach'
+              : thread?.state === 'archived'
+                ? 'Archived'
+                : 'Enter to send · Shift+Enter for a new line'}
           </span>
         </div>
       </div>
     </>
+  );
+}
+
+function isImage(mime: string | null): boolean {
+  return typeof mime === 'string' && mime.startsWith('image/');
+}
+
+/**
+ * An image attachment rendered inline as a thumbnail. The presigned link is minted on mount — Dropbox
+ * links expire, so they are fetched per view rather than embedded in the list payload — and a click
+ * opens the full image in a new tab via the same on-demand path as a file attachment. A link that
+ * cannot be minted degrades to the file-chip affordance rather than a broken image.
+ */
+function AttachmentImage({
+  threadId,
+  attachment,
+  busy,
+  onOpen,
+}: {
+  threadId: string;
+  attachment: AttachmentDto;
+  busy: boolean;
+  onOpen: (a: AttachmentDto) => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null);
+    setFailed(false);
+    getAttachmentLink(threadId, attachment.id)
+      .then((link) => {
+        if (!cancelled) setUrl(link.url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId, attachment.id]);
+
+  if (failed) {
+    return (
+      <button
+        type="button"
+        className={c.attach}
+        onClick={() => onOpen(attachment)}
+        disabled={busy}
+        title={attachment.name}
+      >
+        <PaperclipIcon />
+        <span className={c.attachName}>{attachment.name}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={c.attachImg}
+      onClick={() => onOpen(attachment)}
+      disabled={busy}
+      title={attachment.name}
+    >
+      {url ? (
+        <img src={url} alt={attachment.name} loading="lazy" />
+      ) : (
+        <span className={c.attachImgLoading} aria-label={`Loading ${attachment.name}`} />
+      )}
+    </button>
   );
 }
 

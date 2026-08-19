@@ -90,6 +90,11 @@ export function resolveAccessibleMytrions(ctx: UserContext): AccessResult {
     // mirrors canAccess('recruit'). Checked BEFORE the team-lead courtesy below on purpose: a lead
     // gets HR for attendance only and must not drag Recruit onto their launcher.
     if (granted.has('hr')) granted.add('recruit');
+    // Mytrion Desk is the shared support console: anyone who works Customer Service, Billing or
+    // Verification gets it on their launcher. Mirrors canAccess('desk').
+    if (granted.has('customer-service') || granted.has('billing') || granted.has('verification')) {
+      granted.add('desk');
+    }
     // Team leads get HR on their launcher (their team's attendance + the directory). Everyone ELSE can
     // still ENTER HR read-only (see `canAccess`) — it just is not pinned to their launcher, so the
     // single-workspace auto-enter and the "no grants → Forbidden" rules are left intact.
@@ -119,6 +124,22 @@ export function canAccess(ctx: UserContext, id: MytrionId): boolean {
     const granted = ctx.accessibleMytrions;
     if (granted) return granted.includes('recruit') || granted.includes('hr');
     return ruleAllows(ctx, MYTRIONS.recruit);
+  }
+  // Mytrion Desk is the support console for Customer Service, Billing and Verification (admins
+  // bypass). A worker with any of those grants may enter; nobody else. The comms reader filter
+  // scopes the data to the caller's own department regardless of what the client renders.
+  if (id === 'desk') {
+    if (isAdmin(ctx)) return true;
+    const granted = ctx.accessibleMytrions;
+    if (granted) {
+      return (
+        granted.includes('desk') ||
+        granted.includes('customer-service') ||
+        granted.includes('billing') ||
+        granted.includes('verification')
+      );
+    }
+    return ruleAllows(ctx, MYTRIONS.desk);
   }
   if (ctx.accessibleMytrions) return ctx.accessibleMytrions.includes(id);
   const rule = MYTRIONS[id];

@@ -1,0 +1,326 @@
+/* Mytrion Desk — settings/overview panel. Tokens only (theme.css), tint scale for status. */
+
+.settings {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.settingsHead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settingsTitle {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.settingsSub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 46rem;
+}
+
+.skeleton {
+  height: 12rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.error {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  font-size: 0.85rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.cardHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.slaTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.slaTable th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.slaTable td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.slaTable tr:last-child td {
+  border-bottom: none;
+}
+
+.prio {
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.prio[data-prio='critical'] {
+  color: var(--tone-rose);
+}
+.prio[data-prio='high'] {
+  color: var(--tone-orange);
+}
+.prio[data-prio='medium'] {
+  color: var(--tone-amber);
+}
+.prio[data-prio='low'] {
+  color: var(--text-muted);
+}
+
+.deptList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.deptRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.deptName {
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deptFlags {
+  display: flex;
+  gap: 0.35rem;
+  flex: none;
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--tint-neutral-bg);
+  border: 1px solid var(--tint-neutral-bd);
+  color: var(--text-muted);
+}
+
+.flag[data-on='true'] {
+  background: var(--tint-good-bg);
+  border-color: var(--tint-good-bd);
+  color: inherit;
+}
+
+.flag[data-on='true'] svg {
+  color: var(--tone-emerald);
+}
+
+/* ── Compose modal (New ticket / escalation) ─────────────────────────────── */
+
+.composeForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (width < 640px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.composeFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Attachment picker on the create forms. */
+.attachPick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  padding: 0.4rem 0.7rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.attachPick:hover {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+.attachPick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.attachChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.35rem 0.35rem 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font-size: 0.82rem;
+}
+
+.attachChipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18rem;
+}
+
+.attachChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.attachChipRemove:hover {
+  color: inherit;
+  background: var(--surface);
+}
+
+/* ── Escalation ladder actions (in the conversation header) ───────────────── */
+
+.escActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.escLevel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--tone-rose);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
+.escStatus {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.escStatus[data-status='resolved'] {
+  color: var(--tone-emerald);
+}
+
+.escStatus[data-status='rejected'],
+.escStatus[data-status='expired'] {
+  color: var(--tone-rose);
+}
