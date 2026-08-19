@@ -181,6 +181,7 @@ export function DeskShell() {
             chatActions={chatActions}
             enableBulk
             enableTagFilter
+            enableCannedReplies
             enableSavedViews
             viewsKey="desk:tickets"
           />
@@ -195,6 +196,7 @@ export function DeskShell() {
             onFocusConsumed={() => setFocusId(null)}
             chatActions={chatActions}
             enableTagFilter
+            enableCannedReplies
             enableSavedViews
             viewsKey="desk:escalations"
           />

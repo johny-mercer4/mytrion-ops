@@ -80,6 +80,8 @@ export interface TicketConsoleProps {
   enableBulk?: boolean;
   /** Opt-in tag filter (a free-text exact-match tag narrow). */
   enableTagFilter?: boolean;
+  /** Opt-in canned-replies control in the conversation composer. */
+  enableCannedReplies?: boolean;
   /** Opt-in saved views (client-side named filter presets). Needs a `viewsKey` namespace. */
   enableSavedViews?: boolean;
   /** localStorage namespace for saved views, e.g. `desk:tickets`. Keeps tabs' presets separate. */
@@ -104,6 +106,7 @@ export function TicketConsole({
   chatActions,
   enableBulk = false,
   enableTagFilter = false,
+  enableCannedReplies = false,
   enableSavedViews = false,
   viewsKey,
 }: TicketConsoleProps) {
@@ -708,6 +711,7 @@ export function TicketConsole({
             key={selected.threadId}
             threadId={selected.threadId}
             frame={frame}
+            cannedReplies={enableCannedReplies}
             onActivity={scheduleRefresh}
             disabled={!isOpen(selected.status)}
             disabledReason={`This ${selected.kind} is ${statusLabel(selected.status).toLowerCase()}.`}

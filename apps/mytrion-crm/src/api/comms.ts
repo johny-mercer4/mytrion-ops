@@ -366,6 +366,36 @@ export async function getQueueRoster(department: string): Promise<QueueRoster> {
   )) as QueueRoster;
 }
 
+/** A team-shared reply template. */
+export interface CannedReplyDto {
+  id: string;
+  title: string;
+  body: string;
+  department: string | null;
+}
+
+export async function listCannedReplies(department?: string): Promise<CannedReplyDto[]> {
+  const res = (await request('GET', '/comms/canned-replies', {
+    query: department ? { department } : {},
+  })) as { replies: CannedReplyDto[] };
+  return res.replies;
+}
+
+export async function createCannedReply(input: {
+  title: string;
+  body: string;
+  department?: string;
+}): Promise<CannedReplyDto> {
+  const res = (await request('POST', '/comms/canned-replies', { body: input })) as {
+    reply: CannedReplyDto;
+  };
+  return res.reply;
+}
+
+export async function deleteCannedReply(id: string): Promise<void> {
+  await request('DELETE', `/comms/canned-replies/${encodeURIComponent(id)}`);
+}
+
 /** Replace a ticket's triage tags. The server normalises (trim / dedupe / cap) the set. */
 export async function setTicketTags(id: string, tags: string[]): Promise<{ ticket: TicketDto }> {
   return (await request('POST', `/comms/tickets/${encodeURIComponent(id)}/tags`, {

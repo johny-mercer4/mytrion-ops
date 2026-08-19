@@ -12,6 +12,7 @@ import {
   type ThreadDto,
 } from '@/api/comms';
 import type { CommsFrame } from './useCommsSocket';
+import { CannedReplies } from './CannedReplies';
 import { clockTime, dayKey, dayLabel, formatBytes, initials } from './chatFormat';
 import c from './comms.module.css';
 
@@ -39,6 +40,8 @@ export interface ChatThreadProps {
   onActivity?: (() => void) | undefined;
   disabled?: boolean;
   disabledReason?: string;
+  /** Show the canned-replies control in the composer (worker surfaces only). */
+  cannedReplies?: boolean;
 }
 
 interface Pending {
@@ -66,6 +69,7 @@ export function ChatThread({
   onActivity,
   disabled = false,
   disabledReason,
+  cannedReplies = false,
 }: ChatThreadProps) {
   const [thread, setThread] = useState<ThreadDto | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
@@ -525,6 +529,13 @@ export function ChatThread({
           >
             <PaperclipIcon />
           </button>
+          {cannedReplies ? (
+            <CannedReplies
+              department={thread?.department ?? null}
+              currentDraft={draft}
+              onInsert={(b) => setDraft((d) => (d.trim() ? `${d}\n${b}` : b))}
+            />
+          ) : null}
           {mentionQuery !== null && mentionCandidates.length > 0 ? (
             <ul className={c.mentionPicker} role="listbox" aria-label="Mention a teammate">
               {mentionCandidates.map((p, i) => (

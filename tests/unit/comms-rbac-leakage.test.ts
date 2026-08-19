@@ -11,6 +11,7 @@ import { actorZohoUserIdOf, commsThreadRepo } from '../../src/repos/commsThreadR
 import { commsCatalogRepo } from '../../src/repos/commsCatalogRepo.js';
 import { commsDepartmentRepo } from '../../src/repos/commsDepartmentRepo.js';
 import { commsAnalyticsRepo } from '../../src/repos/commsAnalyticsRepo.js';
+import { commsCannedReplyRepo } from '../../src/repos/commsCannedReplyRepo.js';
 import { commsEscalationRepo } from '../../src/repos/commsEscalationRepo.js';
 import { commsSettingsRepo } from '../../src/repos/commsSettingsRepo.js';
 import { commsTicketEventRepo } from '../../src/repos/commsTicketEventRepo.js';
@@ -553,6 +554,26 @@ describe('commsAnalyticsRepo.buildScalarQuery — the dashboard counts what the 
     const b = analyticsSql(ctxOf({ tenantId: OTHER_TENANT }));
     expect(a.sql).toBe(b.sql);
     expect(b.params).not.toContain('octane');
+  });
+});
+
+describe('commsCannedReplyRepo.buildListQuery — templates are tenant-scoped', () => {
+  it('binds the caller tenant + active flag, never a foreign tenant', () => {
+    const { sql, params } = commsCannedReplyRepo.buildListQuery(ctxOf()).toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).toContain(true);
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('a department narrows to global + that department, binding no other', () => {
+    const { params } = commsCannedReplyRepo
+      .buildListQuery(ctxOf(), { department: 'customer-service' })
+      .toSQL();
+    expect(params).toContain('customer-service');
+    for (const d of KNOWN_DEPARTMENTS.filter((x) => x !== 'customer-service')) {
+      expect(params).not.toContain(d);
+    }
   });
 });
 

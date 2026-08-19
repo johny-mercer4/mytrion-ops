@@ -64,6 +64,7 @@ import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
 import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
 import { commsAgentRoutes } from './routes/v1/commsAgent.routes.js';
 import { commsAnalyticsRoutes } from './routes/v1/commsAnalytics.routes.js';
+import { commsCannedRepliesRoutes } from './routes/v1/commsCannedReplies.routes.js';
 import { commsQueueRoutes } from './routes/v1/commsQueue.routes.js';
 import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
 import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
@@ -469,6 +470,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         await comms.register(commsQueueRoutes);
         await comms.register(commsAnalyticsRoutes);
         await comms.register(commsAgentRoutes);
+        await comms.register(commsCannedRepliesRoutes);
         await comms.register(commsAdminRoutes);
       });
       await v1.register(dataCenterRoutes);
