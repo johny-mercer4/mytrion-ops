@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   getTicket,
   listTickets,
   type TicketDto,
   type ListTicketsParams,
+  type TicketKind,
 } from '@/api/comms';
 import { ApiError } from '@/api/transport';
 import { ChevronLeft, Inbox, MessageSquare, RefreshCw, Search, Ticket, TriangleAlert, X } from 'lucide-react';
@@ -45,6 +46,11 @@ export interface TicketConsoleProps {
   title?: string;
   /** Include escalations alongside client tickets. */
   includeEscalations?: boolean;
+  /**
+   * Restrict the list to a single kind — 'ticket' for a tickets-only surface, 'escalation' for an
+   * escalations-only one. Overrides `includeEscalations`. Omit for the default ticket+escalation mix.
+   */
+  kind?: TicketKind;
   emptyHint?: string;
   /**
    * Open this ticket on entry — how "Create → jump to the new ticket" works.
@@ -56,6 +62,11 @@ export interface TicketConsoleProps {
   focusTicketId?: string | null;
   /** Called once the focus has been honoured, so a re-render does not keep re-selecting it. */
   onFocusConsumed?: () => void;
+  /**
+   * Extra content for the open conversation's header, given the selected ticket. Optional and
+   * unused by most mounts; Desk uses it to render the escalation ladder actions on an escalation.
+   */
+  chatActions?: (ticket: TicketDto) => ReactNode;
 }
 
 type StatusFilter = 'open' | 'all' | 'mine';
@@ -68,9 +79,11 @@ export function TicketConsole({
   department,
   title,
   includeEscalations = true,
+  kind,
   emptyHint,
   focusTicketId,
   onFocusConsumed,
+  chatActions,
 }: TicketConsoleProps) {
   const [tickets, setTickets] = useState<TicketDto[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -101,10 +114,11 @@ export function TicketConsole({
     // A queue console is scoped to its own department so a CS agent's list is CS work — the reader filter
     // would allow more (anything they participate in), and mixing the two makes a queue unusable.
     if (mode === 'queue' && department) p.department = department;
-    if (!includeEscalations) p.kind = 'ticket';
+    if (kind) p.kind = kind;
+    else if (!includeEscalations) p.kind = 'ticket';
     if (debouncedTerm) p.q = debouncedTerm;
     return p;
-  }, [filter, mode, department, includeEscalations, debouncedTerm]);
+  }, [filter, mode, department, includeEscalations, kind, debouncedTerm]);
 
   const load = useCallback(
     async (opts: { quiet?: boolean } = {}) => {
@@ -535,6 +549,7 @@ export function TicketConsole({
                     )}
                   </span>
                 </div>
+                {chatActions ? chatActions(selected) : null}
               </div>
             }
           />

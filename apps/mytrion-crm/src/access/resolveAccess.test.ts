@@ -105,7 +105,8 @@ describe('server-resolved access is authoritative (verified session)', () => {
     const { accessible, homeMytrion } = resolveAccessibleMytrions(
       ctx({ profile: 'Sales Agent', accessibleMytrions: ['billing', 'sales'], homeMytrion: 'sales', allDepartmentAccess: false }),
     );
-    expect(accessible).toEqual(['sales', 'billing']); // reordered to MYTRION_ORDER
+    // MYTRION_ORDER order; `desk` rides on the billing grant (Desk cross-grant — see canAccess('desk')).
+    expect(accessible).toEqual(['sales', 'billing', 'desk']);
     expect(homeMytrion).toBe('sales');
   });
 
@@ -133,8 +134,10 @@ describe('DEFAULT_PROFILE_SEED mirror (fallback table only — server list wins 
     expect(plus).toContain('sales');
     expect(plus).toContain('billing');
     expect(resolveAccessibleMytrions(ctx({ profile: 'Standard' })).accessible).toEqual([]);
+    // Customer Retention is also a Desk profile (the support console spans CS / Billing / Verification).
     expect(resolveAccessibleMytrions(ctx({ profile: 'Customer Retention' })).accessible).toEqual([
       'customer-service',
+      'desk',
     ]);
   });
 

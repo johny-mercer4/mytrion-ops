@@ -92,6 +92,7 @@
 [data-mytrion='marketing'] { --badge-tone: var(--tone-fuchsia); }
 [data-mytrion='trailhead'] { --badge-tone: var(--tone-blue); }
 [data-mytrion='analyst'] { --badge-tone: var(--tone-amber); }
+[data-mytrion='desk'] { --badge-tone: var(--tone-orange); }
 
 * {
   box-sizing: border-box;

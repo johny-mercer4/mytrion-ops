@@ -28,7 +28,8 @@ export type MytrionId =
   | 'recruit'
   | 'trailhead'
   | 'marketing'
-  | 'customer-service';
+  | 'customer-service'
+  | 'desk';
 
 export interface MytrionAccessRule {
   id: MytrionId;
@@ -303,6 +304,24 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     adminBypass: true,
     status: 'new',
   },
+  desk: {
+    id: 'desk',
+    title: 'Mytrion Desk',
+    tag: 'Desk',
+    icon: 'desk',
+    blurb: 'Support desk — tickets and escalations, routed by department.',
+    hue: 'orange',
+    department: 'desk',
+    allDepartments: false,
+    // The shared support console for Customer Service, Billing and Verification. Verified sessions
+    // ride on a real cs/billing/verification grant (see resolveAccess canAccess('desk')); these
+    // profile names are only the dev-mock / legacy fallback. Admins always get in.
+    allowedProfiles: ['Customer Retention', 'Billing', 'Standard Plus', 'Verification'],
+    allowedRoles: [],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
 };
 
 /** Display order for the picker. */
@@ -320,6 +339,7 @@ export const MYTRION_ORDER: MytrionId[] = [
   'hr',
   'recruit',
   'trailhead',
+  'desk',
 ];
 
 /**
@@ -378,6 +398,7 @@ export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
   recruit: 'recruitmytrion',
   trailhead: 'trailhead',
   'customer-service': 'csmytrion',
+  desk: 'deskmytrion',
 };
 
 const URL_SLUG_TO_ID: Record<string, MytrionId> = Object.fromEntries(
@@ -423,7 +444,7 @@ export const AGENT_LABELS: Record<AgentKey, string> = {
 export function agentKeyFor(id: MytrionId): AgentKey | null {
   // `admin` routes through the orchestrator; `hr` and `trailhead` have no backend agent (neither is
   // in AGENT_KEYS), so they must NOT be cast. No Mytrion shows a chat dock anyway — see MytrionShell.
-  return id === 'admin' || id === 'hr' || id === 'recruit' || id === 'trailhead'
+  return id === 'admin' || id === 'hr' || id === 'recruit' || id === 'trailhead' || id === 'desk'
     ? null
     : (id as AgentKey);
 }

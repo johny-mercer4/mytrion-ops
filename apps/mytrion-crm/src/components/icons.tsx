@@ -26,6 +26,7 @@ import {
   Home,
   Landmark,
   Layers,
+  LifeBuoy,
   LogOut,
   MessageCircleMore,
   Moon,
@@ -148,6 +149,7 @@ const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   hr: Briefcase,
   recruit: UserSearch,
   trailhead: GraduationCap,
+  desk: LifeBuoy,
 };
 
 /** Per-Mytrion glyph for the wizard picker (Lucide, consistent with the rest of the shell). */
