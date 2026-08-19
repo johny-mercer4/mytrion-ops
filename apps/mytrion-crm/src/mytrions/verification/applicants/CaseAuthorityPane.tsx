@@ -1,31 +1,63 @@
 /**
- * Phase 4 working pane — compare MC/DOT and any warehouse snapshot, then mark authority by hand.
+ * Phase 4 working pane — MC/DOT against the warehouse snapshot, then mark authority.
+ *
+ * PARTLY AUTOMATED NOW. There is no live FMCSA or QCmobile call in this repo, but `stg_broker_snapshot`
+ * holds 542,654 rows of FMCSA-shaped carrier data keyed on DOT — including `operating_status` and the
+ * authority's `add_date`. This pane was already fetching it and printing three lines of it beside five
+ * checks the reviewer then answered from scratch. `authoritySuggestions` turns what the warehouse knows
+ * into proposed marks with their evidence attached; the reviewer applies them, one at a time or all at
+ * once, and can overrule any of them. Nothing is marked on its own — a check nobody performed must not
+ * carry somebody's name.
+ *
+ * What is NOT suggested is as deliberate as what is: MC status (the snapshot is DOT-keyed and carries
+ * no MC authority), insurance (nothing here holds it) and operating history (a judgement). Those stay
+ * blank so the gap is visible rather than filled with a guess.
  */
-import { useEffect, useState } from 'react';
-import { Button, Icon, Input } from '@/ds';
+import { useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Icon, Input } from '@/ds';
 import {
   getDeskBrokerSnapshot,
   type BrokerSnapshotMatch,
 } from '@/api/verificationDeskWrites';
 import type { VerificationApplicantType, VerificationDeskDetail } from '@/api/verificationFlow';
+import { CaseMarkGroup, type MarkOption } from './CaseMarkGroup';
 import {
   AUTHORITY_CHECKS,
+  authorityAgeYears,
+  authoritySuggestions,
   type AuthorityMark,
   type AuthorityMarks,
   type StructureMark,
 } from './caseAuthority';
 
-const CHECK_MARKS: ReadonlyArray<{ id: AuthorityMark; label: string }> = [
-  { id: 'ok', label: 'OK' },
-  { id: 'inactive', label: 'Inactive' },
-  { id: 'missing', label: 'Missing' },
-  { id: 'unresolved', label: 'Unresolved' },
+/**
+ * `inactive` is `bad` and `missing` is `warn`, for the same reason as Phase 2: missing is an ASK that
+ * routes a document request to Sales, while an inactive authority is a finding about the applicant.
+ * `unresolved` is `warn` — it is the reviewer saying they could not settle it, which needs a manager.
+ */
+const CHECK_MARKS: ReadonlyArray<MarkOption<AuthorityMark>> = [
+  { id: 'ok', label: 'OK', icon: 'check_circle', tone: 'good', hint: 'Active and consistent' },
+  { id: 'inactive', label: 'Inactive', icon: 'block', tone: 'bad', hint: 'Not active — goes to Manager Review' },
+  {
+    id: 'missing',
+    label: 'Missing',
+    icon: 'cloud_upload',
+    tone: 'warn',
+    hint: 'Not on file — passing the phase requests it from Sales',
+  },
+  { id: 'unresolved', label: 'Unresolved', icon: 'warning', tone: 'warn', hint: 'Could not settle it' },
 ];
 
-const STRUCTURE_MARKS: ReadonlyArray<{ id: StructureMark; label: string }> = [
-  { id: 'na', label: 'N/A' },
-  { id: 'needed', label: 'Needed' },
-  { id: 'ok', label: 'Attached / OK' },
+const STRUCTURE_MARKS: ReadonlyArray<MarkOption<StructureMark>> = [
+  { id: 'na', label: 'N/A', icon: 'check_circle', tone: 'good', hint: 'Does not apply to this applicant' },
+  {
+    id: 'needed',
+    label: 'Needed',
+    icon: 'cloud_upload',
+    tone: 'warn',
+    hint: 'Requests the document from Sales',
+  },
+  { id: 'ok', label: 'On file', icon: 'check_circle', tone: 'good', hint: 'Attached and acceptable' },
 ];
 
 function text(value: unknown): string {
@@ -73,11 +105,28 @@ export function AuthorityPane({
     onMarks({ ...marks, checks: { ...marks.checks, [id]: mark } });
   };
 
+  // One clock for the pane, so the authority age in the snapshot column and the one in the suggestion
+  // cannot disagree by a day mid-render.
+  const now = useMemo(() => Date.now(), [snapshot]);
+  const suggestions = useMemo(() => authoritySuggestions(snapshot, now), [snapshot, now]);
+  const ageYears = authorityAgeYears(snapshot?.authorityAddedOn ?? null, now);
+  const outstanding = Object.entries(suggestions).filter(([id, s]) => marks.checks[id] !== s.mark);
+
+  const applyAll = (): void => {
+    const next = { ...marks.checks };
+    for (const [id, s] of outstanding) next[id] = s.mark;
+    onMarks({ ...marks, checks: next });
+  };
+
   return (
     <div className="va-stack">
       <div className="va-pane-head">
         <h3 className="t-eyebrow va-pane-kicker">Authority & operating status</h3>
-        <span className="va-pane-note">Manual — compare the application, files and any warehouse snapshot</span>
+        <span className="va-pane-note">
+          {snapState === 'ready'
+            ? 'Warehouse snapshot found — suggestions below, yours to apply'
+            : 'No warehouse match — decide from the application and files'}
+        </span>
       </div>
 
       <div className="va-id-compare">
@@ -97,7 +146,16 @@ export function AuthorityPane({
             <>
               <p className="va-pane-body">USDOT: {text(snapshot?.dotNumber)}</p>
               <p className="va-pane-body">Authority status: {text(snapshot?.operatingStatus)}</p>
-              <p className="va-pane-body">Authority since: {text(snapshot?.authorityAddedOn)}</p>
+              <p className="va-pane-body">
+                Authority since: {text(snapshot?.authorityAddedOn)}
+                {ageYears !== null ? ` · about ${ageYears} year${ageYears === 1 ? '' : 's'}` : ''}
+              </p>
+              {/* WHAT THE SNAPSHOT CANNOT ANSWER, named. MC status, insurance and operating history are
+                  absent from the warehouse, and a reviewer who is not told that reads three blank
+                  checks as three things the lookup cleared. */}
+              <p className="va-aside-note">
+                No MC status, insurance or operating history here — those stay yours.
+              </p>
             </>
           )}
         </section>
@@ -115,27 +173,51 @@ export function AuthorityPane({
         </section>
       </div>
 
+      {/* THE SUGGESTIONS, and the one control that takes them all. Never applied on their own — the
+          reviewer's name goes on the phase decision, so the marks have to be theirs. */}
+      {outstanding.length > 0 ? (
+        <div className="va-ask">
+          <span className="va-aside-note">
+            The warehouse snapshot answers {outstanding.length} of these {AUTHORITY_CHECKS.length}{' '}
+            checks. Applying fills the mark; the evidence stays on the row.
+          </span>
+          <div className="va-ask-actions">
+            <Button variant="secondary" size="sm" icon="check" onClick={applyAll}>
+              Apply {outstanding.length} suggestion{outstanding.length === 1 ? '' : 's'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="va-id-checks">
         {AUTHORITY_CHECKS.map((check) => {
           const mark = marks.checks[check.id];
+          const suggestion = suggestions[check.id];
           return (
             <div className="va-id-check" key={check.id} data-mark={mark ?? 'unset'}>
               <div className="va-id-check-copy">
-                <span className="va-id-check-label">{check.label}</span>
+                <span className="va-id-check-label">
+                  {check.label}
+                  {suggestion && mark !== suggestion.mark ? (
+                    <Badge intent="info" size="sm" icon="auto_awesome">
+                      Suggested: {CHECK_MARKS.find((m) => m.id === suggestion.mark)?.label}
+                    </Badge>
+                  ) : null}
+                </span>
+                {/* THE EVIDENCE, not just the verdict. A suggestion the reviewer cannot check is one
+                    they have to redo by hand anyway. */}
+                <span className="va-id-check-value">
+                  {suggestion
+                    ? suggestion.because
+                    : 'Not in the warehouse — read it from the application and the files.'}
+                </span>
               </div>
-              <div className="va-id-check-marks" role="group" aria-label={check.label}>
-                {CHECK_MARKS.map((m) => (
-                  <Button
-                    key={m.id}
-                    variant={mark === m.id ? 'secondary' : 'ghost'}
-                    size="sm"
-                    aria-pressed={mark === m.id}
-                    onClick={() => setCheck(check.id, m.id)}
-                  >
-                    {m.label}
-                  </Button>
-                ))}
-              </div>
+              <CaseMarkGroup
+                ariaLabel={check.label}
+                options={CHECK_MARKS}
+                value={mark ?? null}
+                onChange={(next) => setCheck(check.id, next)}
+              />
             </div>
           );
         })}
@@ -144,38 +226,24 @@ export function AuthorityPane({
             <span className="va-id-check-label">Related-company structure</span>
             <span className="va-id-check-value">Corporate Guarantee if a related company is in the picture</span>
           </div>
-          <div className="va-id-check-marks" role="group" aria-label="Related-company structure">
-            {STRUCTURE_MARKS.map((m) => (
-              <Button
-                key={m.id}
-                variant={marks.relatedCompany === m.id ? 'secondary' : 'ghost'}
-                size="sm"
-                aria-pressed={marks.relatedCompany === m.id}
-                onClick={() => onMarks({ ...marks, relatedCompany: m.id })}
-              >
-                {m.label}
-              </Button>
-            ))}
-          </div>
+          <CaseMarkGroup
+            ariaLabel="Related-company structure"
+            options={STRUCTURE_MARKS}
+            value={marks.relatedCompany}
+            onChange={(next) => onMarks({ ...marks, relatedCompany: next })}
+          />
         </div>
         <div className="va-id-check" data-mark={marks.thirdParty ?? 'unset'}>
           <div className="va-id-check-copy">
             <span className="va-id-check-label">Third-party carrier</span>
             <span className="va-id-check-value">Lease agreement and unit information if they are not the authority holder</span>
           </div>
-          <div className="va-id-check-marks" role="group" aria-label="Third-party carrier">
-            {STRUCTURE_MARKS.map((m) => (
-              <Button
-                key={m.id}
-                variant={marks.thirdParty === m.id ? 'secondary' : 'ghost'}
-                size="sm"
-                aria-pressed={marks.thirdParty === m.id}
-                onClick={() => onMarks({ ...marks, thirdParty: m.id })}
-              >
-                {m.label}
-              </Button>
-            ))}
-          </div>
+          <CaseMarkGroup
+            ariaLabel="Third-party carrier"
+            options={STRUCTURE_MARKS}
+            value={marks.thirdParty}
+            onChange={(next) => onMarks({ ...marks, thirdParty: next })}
+          />
         </div>
       </div>
     </div>

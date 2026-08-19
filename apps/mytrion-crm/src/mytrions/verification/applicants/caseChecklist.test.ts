@@ -10,20 +10,36 @@
 import { describe, expect, it } from 'vitest';
 import { checklistIsLive, checklistLines, checklistProgress } from './caseChecklist';
 import { identityChecksFor, type IdentityMark } from './caseIdentity';
-import { EMPTY_SCREENING_MARKS, SCREENING_CHECKLIST, type ScreeningMarks } from './caseScreening';
+import {
+  blacklistMarkFromRun,
+  EMPTY_SCREENING_MARKS,
+  SCREENING_CHECKLIST,
+  screeningRunFrom,
+  type ScreeningMarks,
+} from './caseScreening';
+import {
+  AUTHORITY_CHECKS,
+  authorityActiveFromStatus,
+  authorityAgeYears,
+  authoritySuggestions,
+  EMPTY_AUTHORITY_MARKS,
+} from './caseAuthority';
 
 const base = {
   labels: ['a', 'b', 'c'] as readonly string[],
   applicantType: 'owner_operator' as const,
   identityMarks: {} as Record<string, IdentityMark>,
   screeningMarks: EMPTY_SCREENING_MARKS as ScreeningMarks,
+  authorityMarks: EMPTY_AUTHORITY_MARKS,
 };
 
 describe('which phases are live', () => {
-  it('is Identity and Screening, and only those', () => {
-    expect(checklistIsLive('p2_identity')).toBe(true);
-    expect(checklistIsLive('p3_screening')).toBe(true);
-    for (const code of ['p1_intake', 'p4_authority', 'p5_routing', 'p6_credit_banking', 'p8_highway']) {
+  /** The three phases that carry per-check marks. Everything else has only its sign-off to report. */
+  it('is Identity, Screening and Authority, and only those', () => {
+    for (const code of ['p2_identity', 'p3_screening', 'p4_authority']) {
+      expect(checklistIsLive(code), code).toBe(true);
+    }
+    for (const code of ['p1_intake', 'p5_routing', 'p6_credit_banking', 'p8_highway', 'p10_decision']) {
       expect(checklistIsLive(code), code).toBe(false);
     }
   });
@@ -156,5 +172,159 @@ describe('the count in the head', () => {
 
   it('is all zeroes on an empty list rather than throwing', () => {
     expect(checklistProgress([])).toEqual({ done: 0, attention: 0, total: 0 });
+  });
+});
+
+/**
+ * Phase 3's automated run, and the mark it may suggest.
+ *
+ * The rule that matters is the last one: a run whose ban-list lookup was UNAVAILABLE suggests nothing.
+ * Returning "No match" there would record a clear the system never obtained, which is the exact shape
+ * of the bug Check A already had — it screened against an empty table and passed every case.
+ */
+describe('the screening run', () => {
+  const run = (over: Record<string, unknown> = {}) => ({
+    ranAt: '2026-08-20T09:00:00.000Z',
+    identifiersScreened: 7,
+    blacklistHits: 0,
+    duplicateHits: 0,
+    banList: {
+      source: 'credit_platform.public.blacklist_entries',
+      available: true,
+      error: null,
+      platformHits: 0,
+      ownHits: 0,
+    },
+    ...over,
+  });
+
+  it('reads nothing out of findings that carry no run', () => {
+    expect(screeningRunFrom(null)).toBeNull();
+    expect(screeningRunFrom({})).toBeNull();
+    expect(screeningRunFrom({ identifiersScreened: 7 })).toBeNull();
+  });
+
+  it('reads a completed run', () => {
+    const out = screeningRunFrom(run())!;
+    expect(out.ranAt).toBe('2026-08-20T09:00:00.000Z');
+    expect(out.identifiersScreened).toBe(7);
+    expect(out.banList?.available).toBe(true);
+  });
+
+  it('suggests No match on a clean run', () => {
+    expect(blacklistMarkFromRun(screeningRunFrom(run()))).toBe('none');
+  });
+
+  /** A hit is `possible`, never `confirmed`: the SOP puts a human between a match and a decline. */
+  it('suggests Possible — not Confirmed — when the run found something', () => {
+    expect(blacklistMarkFromRun(screeningRunFrom(run({ blacklistHits: 2 })))).toBe('possible');
+  });
+
+  it('suggests NOTHING when the ban list could not be read', () => {
+    const unavailable = run({
+      banList: { source: 'x', available: false, error: 'connection refused', platformHits: 0, ownHits: 0 },
+    });
+    expect(blacklistMarkFromRun(screeningRunFrom(unavailable))).toBeNull();
+  });
+
+  it('suggests nothing at all before a run', () => {
+    expect(blacklistMarkFromRun(null)).toBeNull();
+  });
+});
+
+/**
+ * Phase 4's suggestions come from `stg_broker_snapshot` — FMCSA-SHAPED warehouse data, not a live FMCSA
+ * call. What it does NOT answer is as important as what it does: MC status, insurance and operating
+ * history are absent from the warehouse, and filling them with a guess would put a name against a check
+ * nobody performed.
+ */
+describe('authority suggestions from the warehouse snapshot', () => {
+  const NOW = Date.parse('2026-08-20T00:00:00.000Z');
+
+  it('suggests nothing without a snapshot', () => {
+    expect(authoritySuggestions(null, NOW)).toEqual({});
+  });
+
+  it('reads an authorised carrier as active', () => {
+    const out = authoritySuggestions(
+      { dotNumber: '987654', operatingStatus: 'AUTHORIZED FOR PROPERTY', authorityAddedOn: '2019-03-01' },
+      NOW,
+    );
+    expect(out.dot?.mark).toBe('ok');
+    expect(out.operating?.mark).toBe('ok');
+    expect(out.dot?.because).toMatch(/AUTHORIZED FOR PROPERTY/);
+    expect(out.authority_age?.because).toMatch(/about 7 years ago/);
+  });
+
+  it('reads an out-of-service carrier as inactive', () => {
+    const out = authoritySuggestions(
+      { dotNumber: '1', operatingStatus: 'OUT OF SERVICE', authorityAddedOn: null },
+      NOW,
+    );
+    expect(out.dot?.mark).toBe('inactive');
+    expect(out.operating?.mark).toBe('inactive');
+  });
+
+  /** A status we do not recognise implies nothing — the reviewer reads it themselves. */
+  it('suggests nothing for a status it cannot classify', () => {
+    const out = authoritySuggestions(
+      { dotNumber: '1', operatingStatus: 'SOMETHING NEW', authorityAddedOn: null },
+      NOW,
+    );
+    expect(out.dot).toBeUndefined();
+    expect(out.operating).toBeUndefined();
+  });
+
+  it('never suggests MC, insurance or operating history', () => {
+    const out = authoritySuggestions(
+      { dotNumber: '1', operatingStatus: 'AUTHORIZED FOR PROPERTY', authorityAddedOn: '2019-03-01' },
+      NOW,
+    );
+    expect(out.mc).toBeUndefined();
+    expect(out.insurance).toBeUndefined();
+    expect(out.history).toBeUndefined();
+  });
+
+  it('ignores an authority date in the future rather than reporting a negative age', () => {
+    expect(authorityAgeYears('2030-01-01', NOW)).toBeNull();
+    expect(authorityAgeYears(null, NOW)).toBeNull();
+    expect(authorityActiveFromStatus('')).toBeNull();
+  });
+});
+
+/**
+ * Phase 4's checklist is live too, now that it carries real marks. The `na` case is the one worth
+ * pinning: "does not apply to this applicant" is an ANSWER, so it counts as done — otherwise a clean
+ * carrier reads as two checks short for ever.
+ */
+describe('authority follows the marks', () => {
+  const lines = (marks: typeof EMPTY_AUTHORITY_MARKS) =>
+    checklistLines({
+      ...base,
+      applicantType: 'carrier',
+      phaseCode: 'p4_authority',
+      phasePassed: false,
+      authorityMarks: marks,
+    });
+
+  it('is a live phase', () => {
+    expect(checklistIsLive('p4_authority')).toBe(true);
+  });
+
+  it('lists every check plus the two structure questions', () => {
+    expect(lines(EMPTY_AUTHORITY_MARKS)).toHaveLength(AUTHORITY_CHECKS.length + 2);
+    expect(lines(EMPTY_AUTHORITY_MARKS).every((l) => l.state === 'todo')).toBe(true);
+  });
+
+  it('separates an inactive authority from a missing document by tone', () => {
+    const out = lines({ ...EMPTY_AUTHORITY_MARKS, checks: { dot: 'inactive', insurance: 'missing' } });
+    expect(out.find((l) => l.id === 'dot')).toMatchObject({ state: 'attention', tone: 'bad' });
+    expect(out.find((l) => l.id === 'insurance')).toMatchObject({ state: 'attention', tone: 'warn' });
+  });
+
+  it('counts N/A on a structure question as answered', () => {
+    const out = lines({ ...EMPTY_AUTHORITY_MARKS, relatedCompany: 'na', thirdParty: 'needed' });
+    expect(out.find((l) => l.id === 'related_company')?.state).toBe('done');
+    expect(out.find((l) => l.id === 'third_party')).toMatchObject({ state: 'attention', tone: 'warn' });
   });
 });

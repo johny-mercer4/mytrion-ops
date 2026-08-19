@@ -21,6 +21,7 @@
  * Pure, so the mapping is testable against mark shapes rather than against a rendered aside.
  */
 import type { VerificationApplicantType } from '@/api/verificationFlow';
+import { AUTHORITY_CHECKS, type AuthorityMark, type AuthorityMarks } from './caseAuthority';
 import { identityChecksFor, type IdentityMark } from './caseIdentity';
 import { SCREENING_CHECKLIST, type ScreeningMarks } from './caseScreening';
 
@@ -45,7 +46,9 @@ export interface ChecklistLine {
 
 /** Whether a phase's lines are driven by marks the reviewer sets, or only by its sign-off. */
 export function checklistIsLive(phaseCode: string): boolean {
-  return phaseCode === 'p2_identity' || phaseCode === 'p3_screening';
+  return (
+    phaseCode === 'p2_identity' || phaseCode === 'p3_screening' || phaseCode === 'p4_authority'
+  );
 }
 
 const IDENTITY_STATE: Record<
@@ -113,6 +116,67 @@ function screeningLines(marks: ScreeningMarks): ChecklistLine[] {
 }
 
 /**
+ * Phase 4's own mark vocabulary. `missing` is an ASK (amber, requests the document from Sales);
+ * `inactive` is a FINDING about the authority and `unresolved` is the reviewer saying they could not
+ * settle it — both red, both a manager's problem, which is what the SOP does with them.
+ */
+const AUTHORITY_STATE: Record<
+  AuthorityMark,
+  { state: ChecklistState; tone?: 'warn' | 'bad'; note?: string }
+> = {
+  ok: { state: 'done' },
+  inactive: { state: 'attention', tone: 'bad', note: 'Not active — this goes to Manager Review' },
+  missing: { state: 'attention', tone: 'warn', note: 'Marked missing — request the document' },
+  unresolved: { state: 'attention', tone: 'bad', note: 'Unresolved — a manager has to rule on it' },
+};
+
+function authorityLines(marks: AuthorityMarks): ChecklistLine[] {
+  const lines: ChecklistLine[] = AUTHORITY_CHECKS.map((check) => {
+    const mark = marks.checks[check.id];
+    const mapped = mark ? AUTHORITY_STATE[mark] : null;
+    return {
+      id: check.id,
+      label: check.label,
+      state: mapped?.state ?? 'todo',
+      ...(mapped?.tone ? { tone: mapped.tone } : {}),
+      ...(mapped?.note ? { note: mapped.note } : {}),
+    };
+  });
+
+  /**
+   * The two structure questions. `na` counts as DONE — "does not apply to this applicant" is an answer,
+   * and leaving it outstanding would make a clean carrier read as two checks short forever.
+   */
+  const structure = (
+    id: string,
+    label: string,
+    mark: AuthorityMarks['relatedCompany'],
+    doc: string,
+  ): ChecklistLine =>
+    mark === 'needed'
+      ? { id, label, state: 'attention', tone: 'warn', note: `${doc} requested from Sales` }
+      : mark
+        ? { id, label, state: 'done' }
+        : { id, label, state: 'todo' };
+
+  lines.push(
+    structure(
+      'related_company',
+      'Related-company structure — Corporate Guarantee',
+      marks.relatedCompany,
+      'Corporate guarantee',
+    ),
+    structure(
+      'third_party',
+      'Third-party carrier — Lease agreement and unit info',
+      marks.thirdParty,
+      'Lease agreement',
+    ),
+  );
+  return lines;
+}
+
+/**
  * The lines for a phase.
  *
  * `passed` wins over the marks on a phase already signed off: the marks live in component state and
@@ -126,12 +190,16 @@ export function checklistLines(input: {
   applicantType: VerificationApplicantType | null;
   identityMarks: Record<string, IdentityMark>;
   screeningMarks: ScreeningMarks;
+  authorityMarks: AuthorityMarks;
 }): ChecklistLine[] {
   if (!input.phasePassed && input.phaseCode === 'p2_identity') {
     return identityLines(input.applicantType, input.identityMarks);
   }
   if (!input.phasePassed && input.phaseCode === 'p3_screening') {
     return screeningLines(input.screeningMarks);
+  }
+  if (!input.phasePassed && input.phaseCode === 'p4_authority') {
+    return authorityLines(input.authorityMarks);
   }
   return input.labels.map((label, i) => ({
     id: `${input.phaseCode}:${i}`,

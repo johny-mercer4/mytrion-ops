@@ -8,7 +8,9 @@
 import { addDeskPrincipal, removeDeskPrincipal } from '@/api/verificationDeskWrites';
 import {
   patchDeskIntake,
+  runScreening,
   saveRiskAssessment,
+  setScreeningVerdict,
   submitFinalDecision,
   type VerificationDeskDetail,
   type VerificationRailPhase,
@@ -94,7 +96,22 @@ export function PhaseBody({
         />
       );
     case 'p3_screening':
-      return <ScreeningPane detail={detail} marks={screeningMarks} onMarks={onScreeningMarks} />;
+      return (
+        <ScreeningPane
+          detail={detail}
+          marks={screeningMarks}
+          onMarks={onScreeningMarks}
+          canAct={canAct}
+          running={pending === 'screening'}
+          verdictBusy={pending === 'screening'}
+          /* `runScreening` was a route and a client function nothing ever called — this is the door.
+             It reports through the same one-action-at-a-time `pending` key every other pane uses. */
+          onRun={() => void onRun('screening', () => runScreening(caseId))}
+          onVerdict={(hitId, verdict) =>
+            void onRun('screening', () => setScreeningVerdict(caseId, hitId, { verdict }))
+          }
+        />
+      );
     case 'p4_authority':
       return (
         <AuthorityPane

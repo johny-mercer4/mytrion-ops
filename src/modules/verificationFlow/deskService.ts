@@ -31,6 +31,7 @@ import {
   zohoFromCtx,
   type IntakePatch,
 } from './applicationService.js';
+import { matchCreditPlatformBanList } from '../../integrations/creditPlatformBlacklist.js';
 import { isTierPriceable } from './capacity.js';
 import {
   saveBankingReview,
@@ -409,11 +410,21 @@ export const deskService = {
         applicantIp: null,
       });
 
-      const blacklisted = await verificationScreeningRepo.matchBlacklist(
-        ctx,
-        identifiers.map((i) => i.hash),
-      );
+      /**
+       * TWO LISTS, and the first one is the one that matters.
+       *
+       * `verification_blacklist_entries` (ours) holds the entries this desk has added itself through
+       * `decline_blacklist` — and nothing else, because nothing else writes it. The list Octane
+       * actually maintains is the credit platform's `public.blacklist_entries`, 6,803 active rows, so
+       * screening against ours alone returned "no match" on every case in the system. Both are matched;
+       * a hit from either goes to a credit agent for a verdict, exactly as the SOP requires.
+       */
+      const [ours, platform] = await Promise.all([
+        verificationScreeningRepo.matchBlacklist(ctx, identifiers.map((i) => i.hash)),
+        matchCreditPlatformBanList(identifiers.map((i) => ({ entryType: i.entryType, value: i.value }))),
+      ]);
       const byHash = new Map(identifiers.map((i) => [i.hash, i]));
+      const displayByType = new Map(identifiers.map((i) => [i.entryType, i.display]));
 
       const duplicates = await verificationScreeningRepo.matchDuplicates(ctx, caseId, {
         ein: row.ein,
@@ -425,11 +436,30 @@ export const deskService = {
       });
 
       const hits = [
-        ...blacklisted.map((entry) => ({
+        ...ours.map((entry) => ({
           checkType: 'blacklist' as const,
           entryType: entry.entryType,
           matchedValueDisplay: byHash.get(entry.valueHash)?.display ?? entry.valueDisplay,
           matchedEntryId: entry.id,
+          verdict: 'unverified' as const,
+        })),
+        ...platform.hits.map((hit) => ({
+          checkType: 'blacklist' as const,
+          entryType: hit.entryType,
+          // The MASKED form of our own identifier, never the platform's stored plaintext — a hit says
+          // "this applicant's email is listed", and printing the listed value adds nothing the
+          // reviewer needs and everything a screenshot should not carry.
+          matchedValueDisplay: displayByType.get(hit.entryType) ?? hit.cpType,
+          // `cp:` prefixed so a platform row can never collide with one of our own text ids, and so
+          // the desk can tell the reviewer which list a hit came from.
+          matchedEntryId: `cp:${hit.entryId}`,
+          note: [
+            `Credit platform ban list (${hit.cpType})`,
+            hit.reason?.trim() ? hit.reason.trim() : null,
+            hit.addedBy?.trim() ? `added by ${hit.addedBy.trim()}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
           verdict: 'unverified' as const,
         })),
         ...duplicates.map((dup) => ({
@@ -451,6 +481,20 @@ export const deskService = {
           identifiersScreened: identifiers.length,
           blacklistHits: stored.filter((h) => h.checkType === 'blacklist').length,
           duplicateHits: stored.filter((h) => h.checkType === 'duplicate').length,
+          /**
+           * WHETHER THE BAN LIST WAS ACTUALLY READ.
+           *
+           * A lookup that failed must not read as a clear. The desk shows this verbatim, so "no match"
+           * and "could not reach the list" are different sentences on screen — which is the whole
+           * reason `matchCreditPlatformBanList` returns a flag instead of throwing.
+           */
+          banList: {
+            source: 'credit_platform.public.blacklist_entries',
+            available: platform.available,
+            error: platform.error,
+            platformHits: platform.hits.length,
+            ownHits: ours.length,
+          },
         },
       });
       return this.detail(ctx, caseId);

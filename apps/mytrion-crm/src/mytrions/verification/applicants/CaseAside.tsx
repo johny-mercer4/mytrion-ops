@@ -29,6 +29,7 @@ import {
   checklistProgress,
   type ChecklistLine,
 } from './caseChecklist';
+import { type AuthorityMarks } from './caseAuthority';
 import { identityChecklistLines, type IdentityMark } from './caseIdentity';
 import { SCREENING_CHECKLIST, type ScreeningMarks } from './caseScreening';
 import { authorityChecklistLines } from './caseAuthority';
@@ -129,6 +130,7 @@ export function CaseAside({
   canAttach,
   identityMarks,
   screeningMarks,
+  authorityMarks,
 }: {
   detail: VerificationDeskDetail;
   caseId: string;
@@ -160,6 +162,7 @@ export function CaseAside({
   /** The reviewer's live marks, so "What to check" agrees with the pane rather than with the clock. */
   identityMarks: Record<string, IdentityMark>;
   screeningMarks: ScreeningMarks;
+  authorityMarks: AuthorityMarks;
 }) {
   const [asking, setAsking] = useState(false);
   const [attachType, setAttachType] = useState<VerificationDocType>('other');
@@ -188,6 +191,7 @@ export function CaseAside({
           applicantType: detail.case.applicantType,
           identityMarks,
           screeningMarks,
+          authorityMarks,
         });
   const progress = checklistProgress(checklist);
   const live = checklistIsLive(phase.code);

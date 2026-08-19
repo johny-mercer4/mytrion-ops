@@ -582,6 +582,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                rather than lighting up all at once when the phase passes. */
             identityMarks={identityMarks}
             screeningMarks={screeningMarks}
+            authorityMarks={authorityMarks}
           />
         </div>
 

@@ -364,8 +364,11 @@ describe('CaseView Phase 3 screening', () => {
      * above the two verdicts, so the label and the value are separate elements and `EIN:` with its old
      * colon no longer exists.
      */
-    // Scoped to the block: the case HEADER carries an `EIN` fact of its own.
-    const facts = screen.getByText('Identifiers to compare').closest('div')!;
+    // Scoped to the `.va-recorded` block, not to the heading's own row: the heading now shares a
+    // `.va-pane-head` with the Run Check A button, and the case HEADER carries an `EIN` fact of its own.
+    const facts = screen
+      .getByText('Identifiers to compare')
+      .closest<HTMLElement>('.va-recorded')!;
     expect(within(facts).getAllByText('Name / owner / principals')).toHaveLength(1);
     expect(within(facts).getAllByText('EIN')).toHaveLength(1);
     expect(within(facts).getByText('12-3456789')).toBeInTheDocument();
@@ -580,9 +583,22 @@ describe('CaseView Phase 4 authority', () => {
     expect(screen.getAllByText('MC status').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Operating authority').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
-    for (const label of ['MC status', 'USDOT status', 'Operating authority', 'Insurance status', 'Operating history']) {
-      const group = screen.getByRole('group', { name: label });
-      fireEvent.click(group.querySelector('button')!);
+    /**
+     * SIX checks now, not five. "Authority age" was the one item on the SOP's Phase 4 list with no
+     * check of its own, so a reviewer had nowhere to record it and Phase 9 — which reads authority age
+     * for the risk tier — had nothing to inherit. And they are `radiogroup`s now: mutually exclusive
+     * verdicts, sharing Phase 2's control.
+     */
+    for (const label of [
+      'MC status',
+      'USDOT status',
+      'Operating authority',
+      'Insurance status',
+      'Operating history',
+      'Authority age',
+    ]) {
+      const group = screen.getByRole('radiogroup', { name: label });
+      fireEvent.click(within(group).getByRole('radio', { name: 'OK' }));
     }
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
   });
@@ -593,8 +609,8 @@ describe('CaseView Phase 4 authority', () => {
     requestDocuments.mockResolvedValue(row);
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByRole('heading', { name: 'Ridgevale Freight' });
-    const insurance = screen.getByRole('group', { name: 'Insurance status' });
-    fireEvent.click(within(insurance).getByRole('button', { name: 'Missing' }));
+    const insurance = screen.getByRole('radiogroup', { name: 'Insurance status' });
+    fireEvent.click(within(insurance).getByRole('radio', { name: 'Missing' }));
     fireEvent.click(screen.getByRole('button', { name: 'Pending documents' }));
     await waitFor(() =>
       expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {

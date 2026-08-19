@@ -641,7 +641,9 @@
 }
 [data-mytrion='verification'] .va-figs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15ch, 1fr));
+  /* 18ch, not 15: an email is the identifier most often read here and at 15 it broke mid-domain
+     ("gmail.co / m"). Wide enough for one to land on two clean lines. */
+  grid-template-columns: repeat(auto-fit, minmax(18ch, 1fr));
   gap: var(--space-3);
 }
 [data-mytrion='verification'] .va-fig {
