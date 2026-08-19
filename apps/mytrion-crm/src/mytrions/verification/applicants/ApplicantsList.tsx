@@ -74,18 +74,6 @@ import './applicants.css';
  */
 const PAGE_SIZE = 15;
 
-/**
- * Height reserved for the table while it loads.
- *
- * `DataTable`'s table-mode loading state is a single `TableMessageRow` — `skeletonRows` is card-mode
- * only — so the panel stands ~90px tall and then leaps to a full page when the rows land. Measured:
- * the queue jumped 645px and the roster 999px, both under the reader's cursor.
- *
- * Sized to a FULL page, which is now also the most the table can hold, so a full first page lands
- * with no movement at all. Measured in Chrome at 1440px: comfortable row 66px, header 37px.
- */
-const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 66 + 37}px`;
-
 /** The tenant's card cutoff moves about once a year; the queue re-reads it hourly at most. */
 const STALE_POLICY = 60 * 60_000;
 
@@ -536,9 +524,7 @@ export function ApplicantsList({
             layout="fixed"
             density="comfortable"
             loading={cases.loading}
-            {...(cases.loading && !cases.data
-              ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } }
-              : {})}
+            skeletonRows={PAGE_SIZE}
             sort={{
               by: sortKey,
               direction: sortDir === 'asc' ? 'ascending' : 'descending',
