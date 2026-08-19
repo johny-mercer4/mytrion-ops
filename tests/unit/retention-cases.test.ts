@@ -148,6 +148,7 @@ function openRow(overrides: Partial<RetentionCase> = {}): RetentionCase {
     carrierId: '104882',
     zohoDealId: null,
     companyName: 'Ironhide Logistics LLC',
+    clientName: null,
     applicationId: null,
     agentName: null,
     contactPhone: null,

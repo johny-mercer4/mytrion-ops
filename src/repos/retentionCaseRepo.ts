@@ -30,6 +30,7 @@ export interface RetentionCaseDto {
   carrierId: string;
   zohoDealId: string | null;
   companyName: string | null;
+  clientName?: string | null;
   applicationId: string | null;
   agentName: string | null;
   contactPhone: string | null;
@@ -86,6 +87,7 @@ export interface CreateRetentionCaseInput {
   carrierId: string;
   zohoDealId?: string | undefined;
   companyName?: string | undefined;
+  clientName?: string | undefined;
   applicationId?: string | undefined;
   agentName?: string | undefined;
   contactPhone?: string | undefined;
@@ -123,6 +125,7 @@ export interface UpdateRetentionCaseInput {
   lastReviewCycleAt?: Date | null | undefined;
   salesManagerZohoUserId?: string | null | undefined;
   agentName?: string | null | undefined;
+  clientName?: string | null | undefined;
   contactPhone?: string | null | undefined;
   preferredLanguage?: string | null | undefined;
   isSpanishDesk?: boolean | undefined;
@@ -153,6 +156,7 @@ export function toRetentionCaseDto(row: RetentionCase): RetentionCaseDto {
     carrierId: row.carrierId,
     zohoDealId: row.zohoDealId,
     companyName: row.companyName,
+    clientName: row.clientName,
     applicationId: row.applicationId,
     agentName: row.agentName,
     contactPhone: row.contactPhone,
@@ -368,6 +372,7 @@ export const retentionCaseRepo = {
       carrierId: input.carrierId.trim(),
       zohoDealId: trimOrNull(input.zohoDealId),
       companyName: trimOrNull(input.companyName),
+      clientName: trimOrNull(input.clientName),
       applicationId: trimOrNull(input.applicationId),
       agentName: trimOrNull(input.agentName),
       contactPhone: trimOrNull(input.contactPhone),
@@ -469,6 +474,7 @@ export const retentionCaseRepo = {
       set.salesManagerZohoUserId = trimOrNull(patch.salesManagerZohoUserId);
     }
     if (patch.agentName !== undefined) set.agentName = trimOrNull(patch.agentName);
+    if (patch.clientName !== undefined) set.clientName = trimOrNull(patch.clientName);
     if (patch.contactPhone !== undefined) set.contactPhone = trimOrNull(patch.contactPhone);
     if (patch.preferredLanguage !== undefined) {
       set.preferredLanguage = trimOrNull(patch.preferredLanguage);

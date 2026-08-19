@@ -1077,11 +1077,23 @@ export type RetentionPhase1Outcome =
   | 'ops_confirm_vacation'
   | 'ops_deny_vacation';
 
+export interface EntityNoteRow {
+  id: string;
+  entityType: string;
+  entityId: string;
+  content: string;
+  authorZohoUserId: string | null;
+  authorName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RetentionCaseRow {
   id: string;
   carrierId: string;
   zohoDealId: string | null;
   companyName: string | null;
+  clientName?: string | null;
   applicationId: string | null;
   agentName: string | null;
   /** Denormalized DWH phone at sync — prefer over lazy case_contact. */

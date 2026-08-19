@@ -65,6 +65,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     carrierId: '104882',
     zohoDealId: 'deal-1',
     companyName: 'Ironhide',
+    clientName: null,
     applicationId: null,
     agentName: 'Rep',
     contactPhone: null,

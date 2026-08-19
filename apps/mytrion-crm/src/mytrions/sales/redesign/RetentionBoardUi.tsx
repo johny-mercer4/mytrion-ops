@@ -282,6 +282,11 @@ export function RetentionCaseCard({
           </div>
           <RetentionFreqBadge f={row.transactionFrequency} />
         </div>
+        {row.clientName && (
+          <div style={s('font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+            {row.clientName}
+          </div>
+        )}
         <div style={s("font-family:var(--font-mono);font-size:12px;color:var(--text2)")}>
           {row.carrierId}
         </div>
@@ -303,6 +308,11 @@ export function RetentionCaseCard({
         </div>
         <RetentionFreqBadge f={row.transactionFrequency} />
       </div>
+      {row.clientName && (
+        <div style={s('font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+          {row.clientName}
+        </div>
+      )}
       <div className="ss-ret-card-meta">{row.carrierId}</div>
       <div
         style={s(

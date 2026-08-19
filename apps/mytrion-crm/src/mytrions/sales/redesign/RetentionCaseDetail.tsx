@@ -11,7 +11,8 @@ import {
   setDialContext,
   subscribeRingCentral,
 } from '@/components/ringcentral/ringcentralEvents';
-import type { RetentionCaseEventRow } from '@/api/touchpointTypes';
+import type { EntityNoteRow, RetentionCaseEventRow } from '@/api/touchpointTypes';
+import { listEntityNotes, createEntityNote, deleteEntityNote } from '@/api/entityNotes';
 import { createPortal } from 'react-dom';
 import { useLoad } from '../../_shared/useLoad';
 import { useSales } from './ctx';
@@ -27,6 +28,7 @@ import {
   RetentionDetailSkeleton,
   RetentionInactivityBlock,
   RetentionMetaGrid,
+  RetentionNotesPanel,
   RetentionTimelineSlot,
 } from './RetentionCaseMeta';
 import {
@@ -73,6 +75,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [contactPhone, setContactPhone] = useState<string | null>(seed?.contactPhone ?? null);
   const [phoneLoading, setPhoneLoading] = useState(!seed?.contactPhone?.trim());
+  const [notes, setNotes] = useState<EntityNoteRow[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesBusy, setNotesBusy] = useState(false);
   const [awaitingCallEnd, setAwaitingCallEnd] = useState(false);
   const [pendingCall, setPendingCall] = useState<PendingCallLog | null>(null);
   const [statusPick, setStatusPick] = useState<StatusPick>('');
@@ -107,6 +112,8 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     const seeded = seed?.contactPhone?.trim() || null;
     setContactPhone(seeded);
     setPhoneLoading(!seeded);
+    setNotes([]);
+    setNotesLoading(true);
   }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps -- reset on case switch only
 
   useEffect(() => {
@@ -152,6 +159,26 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
       off = true;
     };
   }, [caseId, row?.contactPhone]);
+
+  useEffect(() => {
+    let off = false;
+    setNotesLoading(true);
+    void listEntityNotes('retention_case', caseId)
+      .then((loaded) => {
+        if (off) return;
+        setNotes(loaded);
+      })
+      .catch(() => {
+        if (off) return;
+        setNotes([]);
+      })
+      .finally(() => {
+        if (!off) setNotesLoading(false);
+      });
+    return () => {
+      off = true;
+    };
+  }, [caseId]);
 
   useEffect(() => {
     if (!evidenceFile) {
@@ -228,6 +255,30 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
       return;
     }
     onClose();
+  };
+
+  const onAddNote = async (content: string): Promise<void> => {
+    setNotesBusy(true);
+    try {
+      const note = await createEntityNote({ entityType: 'retention_case', entityId: caseId, content });
+      setNotes((prev) => [note, ...prev]);
+    } catch (e) {
+      pushToast('Note failed', e instanceof Error ? e.message : 'Could not add note');
+    } finally {
+      setNotesBusy(false);
+    }
+  };
+
+  const onDeleteNote = async (id: string): Promise<void> => {
+    setNotesBusy(true);
+    try {
+      await deleteEntityNote(id);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+    } catch (e) {
+      pushToast('Delete failed', e instanceof Error ? e.message : 'Could not delete note');
+    } finally {
+      setNotesBusy(false);
+    }
   };
 
   /**
@@ -533,6 +584,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         <RetentionCaseHeader
           loading={initialLoad}
           companyName={row?.companyName || 'Case'}
+          clientName={row?.clientName ?? null}
           carrierId={row?.carrierId ?? caseId}
           phoneDisplay={phoneDisplay}
           phoneLoading={!initialLoad && phoneLoading}
@@ -624,6 +676,13 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                 hidden={!showTimeline}
                 loading={timelineLoading}
                 events={liveEvents}
+              />
+              <RetentionNotesPanel
+                notes={notes}
+                loading={notesLoading}
+                busy={notesBusy}
+                onAdd={onAddNote}
+                onDelete={onDeleteNote}
               />
             </div>
           )}

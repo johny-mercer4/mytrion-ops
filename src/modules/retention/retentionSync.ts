@@ -159,6 +159,7 @@ export async function syncRetentionCases(
       await retentionCaseRepo.update(ctx, String(existing.id), {
         metrics: candidateMetrics(candidate),
         ...(candidate.contactPhone ? { contactPhone: candidate.contactPhone } : {}),
+        ...(candidate.clientName ? { clientName: candidate.clientName } : {}),
         preferredLanguage: candidate.preferredLanguage,
         isSpanishDesk: candidate.isSpanishDesk,
         // Backfill deal id when sync previously created the case without it.
@@ -182,6 +183,7 @@ export async function syncRetentionCases(
     const created = await retentionCaseRepo.create(ctx, {
       carrierId: candidate.carrierId,
       companyName: candidate.companyName ?? undefined,
+      clientName: candidate.clientName ?? undefined,
       applicationId: candidate.applicationId ?? undefined,
       agentName: candidate.agentName ?? undefined,
       contactPhone: candidate.contactPhone ?? undefined,
