@@ -46,6 +46,7 @@ vi.mock('../../src/repos/maintenanceCaseRepo.js', () => ({
       totalAmount: 0,
     })),
     getById: vi.fn(async () => undefined),
+    deleteById: vi.fn(async () => undefined),
     insert: vi.fn(async (row: Record<string, unknown>) => ({ id: 'mtc_created', ...row })),
     update: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch })),
     distinctOwners: vi.fn(async () => []),
@@ -628,14 +629,54 @@ describe('list payload', () => {
   });
 });
 
-describe('there is no delete', () => {
-  it('DELETE is not routed — total_amount feeds prepay math, so removal is not an agent action', async () => {
+describe('delete (test-case cleanup only, 2026-08-19)', () => {
+  it('deletes, audits with a snapshot, and makes no Zoho call', async () => {
+    repo.deleteById.mockResolvedValueOnce({
+      id: 'mtc_abc123',
+      name: 'Test Co',
+      companyName: 'Test Co',
+      carrierId: '900001',
+      caseType: 'Mechanical',
+      totalAmount: '0.00',
+      status: 'In Process',
+    } as never);
     const res = await app.inject({
       method: 'DELETE',
       url: '/v1/cs/maintenance/mtc_abc123',
       headers: auth(await csAgent()),
     });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ id: 'mtc_abc123', deleted: true });
+    expect(zohoCallCount()).toBe(0);
+    expect(repo.deleteById).toHaveBeenCalledWith('mtc_abc123');
+    expect(audited).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'cs.maintenance.delete',
+        detail: expect.objectContaining({ snapshot: expect.objectContaining({ carrierId: '900001' }) }),
+      }),
+    );
+  });
+
+  it('404s a delete for a case that does not exist, and does not audit a no-op as ok', async () => {
+    repo.deleteById.mockResolvedValueOnce(undefined);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/cs/maintenance/mtc_missing',
+      headers: auth(await csAgent()),
+    });
     expect(res.statusCode).toBe(404);
+    expect(audited).not.toHaveBeenCalled();
+  });
+
+  it('gated the same as every other CS Maintenance route — no extra grant on top of department access', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/cs/maintenance/mtc_abc123',
+      headers: auth(await salesAgent()),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(repo.deleteById).not.toHaveBeenCalled();
   });
 });
 

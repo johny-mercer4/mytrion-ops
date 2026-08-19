@@ -15,7 +15,17 @@
    ===================================================== */
 
 .co-root {
-  --co-measure: var(--hz-measure);
+  /*
+   * FULL WIDTH, deliberately, and the only Mytrion that opts out of --hz-measure (1280px).
+   *
+   * This desk is a data surface: an eight-column case table, a five-lane board and a
+   * seven-column placement queue. Clamping those to 1280 on a 2560px monitor does not improve
+   * a reading measure — there is no prose to measure — it just squeezes the columns the desk
+   * exists to compare and leaves half the screen empty. Prose keeps its own limit: `.co-sub`
+   * and PageHead's description are still capped in ch, so the one line of text on each page
+   * does not run the full width.
+   */
+  --co-measure: none;
   --co-gap: 18px;
   --co-gap-lg: 26px;
   --co-pad: clamp(20px, 3vw, 34px);
@@ -333,4 +343,336 @@
   .co-root .co-btn:hover {
     transform: none;
   }
+}
+
+/* =====================================================
+   DESK ATOMS — the six pieces added by the redesign (see CollectionBits.tsx).
+   Tokens only; no literal outside the two meter greys, which are alpha steps of the
+   existing --border-strong rather than new colours.
+   ===================================================== */
+
+/* AGING METER — four bands. `data-on` fills; the tone comes from the band reached, so the
+   whole meter recolours rather than only its last segment (a single coloured tip is invisible
+   in a scanned column). */
+.co-root .co-aging {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  flex: none;
+}
+.co-root .co-aging i {
+  display: block;
+  width: 9px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--border-strong);
+  opacity: 0.45;
+}
+.co-root .co-aging i[data-on] {
+  opacity: 1;
+  background: var(--co-aging-fill, var(--success));
+}
+.co-root .co-aging[data-tone='ok'] { --co-aging-fill: var(--success); }
+.co-root .co-aging[data-tone='warn'] { --co-aging-fill: var(--warning); }
+.co-root .co-aging[data-tone='hot'] { --co-aging-fill: var(--ember, var(--warning)); }
+.co-root .co-aging[data-tone='bad'] { --co-aging-fill: var(--danger); }
+
+.co-root .co-age {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.co-root .co-age .num[data-tone='warn'] {
+  color: var(--warning);
+  font-weight: var(--fw-semibold);
+}
+.co-root .co-age .num[data-tone='bad'] {
+  color: var(--danger);
+  font-weight: var(--fw-bold);
+}
+
+/* RECOVERY BAR — the remainder is the TRACK. See the note on the component. */
+.co-root .co-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+  min-width: 0;
+}
+.co-root .co-recbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.co-root .co-recbar {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--field);
+  border: 1px solid var(--border);
+}
+.co-root .co-recbar i {
+  display: block;
+  height: 100%;
+  transition: width var(--dur-base) var(--ease-standard);
+}
+.co-root .co-recbar-pct {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--success);
+}
+/* Nothing back yet is a fact, not an alarm — it reads muted rather than red. */
+.co-root .co-recbar-pct[data-zero='true'] {
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
+.co-root [data-part='paid'] { background: var(--success); }
+.co-root [data-part='plan'] { background: color-mix(in srgb, var(--success) 40%, transparent); }
+/* Only ever a legend swatch now — it names what the empty part of the track means. */
+.co-root .co-legend [data-part='open'] {
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.co-root .co-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.co-root .co-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+}
+.co-root .co-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.co-root .co-legend b {
+  font-family: var(--font-num);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* PROMISE CHIP — dashed, because a promise is not a settled fact. */
+.co-root .co-promise {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  min-height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px dashed color-mix(in srgb, var(--accent) 42%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  white-space: nowrap;
+  flex: none;
+}
+.co-root .co-promise[data-late='true'] {
+  border-color: color-mix(in srgb, var(--danger) 52%, transparent);
+  background: var(--intent-danger-bg);
+  color: var(--intent-danger-fg);
+}
+
+/* READINESS DOTS */
+.co-root .co-dots {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex: none;
+}
+.co-root .co-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--success);
+  flex: none;
+}
+.co-root .co-dots i[data-missing] {
+  background: var(--danger);
+}
+
+/* PLAN PIPS */
+.co-root .co-pips {
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+}
+.co-root .co-pips i {
+  flex: 1 1 4px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  opacity: 0.5;
+}
+.co-root .co-pips i[data-state='paid'] { background: var(--success); opacity: 1; }
+.co-root .co-pips i[data-state='missed'] { background: var(--danger); opacity: 1; }
+
+/* LAST TOUCH */
+.co-root .co-touch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.co-root .co-touch[data-tone='stale'] { color: var(--warning); }
+.co-root .co-touch[data-tone='never'] {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
+/* Fact — a labelled figure. */
+.co-root .co-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.co-root .co-fact-v {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+/* Visually hidden, still announced. There is no app-wide utility for this — every ds component
+   redefines the clip pattern locally — so the module gets one rather than three. */
+.co-root .co-sr,
+[data-mytrion='collection'] .co-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* =====================================================
+   SKELETONS — see CollectionSkeletons.tsx. Geometry only: every dimension mirrors the real row,
+   so the panel is the same height before and after the data lands and nothing jumps.
+   ===================================================== */
+
+.co-root .ck-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.co-root .ck-end {
+  align-items: flex-end;
+  flex: none;
+}
+
+/* Table: the head rule and row heights are Table.module.css's own. */
+.co-root .ck-table .ck-head,
+.co-root .ck-table .ck-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--ui-table-rule);
+}
+.co-root .ck-table .ck-head {
+  padding-block: var(--space-2_5);
+  background: var(--ui-table-head-bg);
+}
+.co-root .ck-table[data-density='compact'] .ck-row {
+  padding: var(--space-1_5) var(--space-3);
+}
+.co-root .ck-table .ck-row:last-of-type {
+  border-bottom: 0;
+}
+.co-root .ck-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: none;
+}
+.co-root .ck-table .ck-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3_5) var(--space-4);
+  background: var(--surface-data-alt);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* KPI tiles: the real box, four across.
+   flex-wrap with a basis rather than the real grid's `repeat(4, …)` plus its two media queries —
+   those sit at 1024/560, which are off the 480/640/900/1200 ladder, and adding them here would
+   have put two new off-ladder breakpoints into the app for a loading state. Wrapping reflows
+   continuously instead, and at any width where four tiles fit it is identical to the grid. */
+.co-root .ck-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.co-root .ck-kpis .ck-kpi {
+  flex: 1 1 200px;
+}
+.co-root .ck-kpis .ck-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  border: 1px solid var(--glass-bd);
+  box-shadow: var(--glare);
+}
+
+/* Worklist row: the tone rail is present but colourless — the reason is not known yet. */
+[data-mytrion='collection'] .wl-row.ck-wl {
+  align-items: center;
+  gap: var(--space-3);
+}
+[data-mytrion='collection'] .ck-rail {
+  background: var(--border-strong);
+  opacity: 0.4;
+}
+[data-mytrion='collection'] .cc-tl-item.ck-tl::before {
+  display: none;
+}
+
+/* Record header. */
+.co-root .ck-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.co-root .ck-record-id {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.co-root .ck-facts {
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.co-root .ck-facts > * {
+  flex: none;
+  width: 76px;
+}
+
+.co-root .ck-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  min-width: 0;
+  flex: 1;
 }

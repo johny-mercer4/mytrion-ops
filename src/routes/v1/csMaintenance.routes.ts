@@ -8,9 +8,10 @@
  * from the canonical constants in maintenanceFields.ts unioned with the values actually present in
  * the table, so the dropdowns never depend on a Zoho round-trip.
  *
- * There is deliberately NO delete. `total_amount` on these rows is real money that feeds the prepay
- * ledger, so removing a case is an irreversible accounting hole; setting `status` to 'Cancelled' is
- * the reversible path and drops the case out of the active filters.
+ * Hard delete exists (2026-08-19) ONLY to clean up test-created cases — `total_amount` on a REAL
+ * case is real money that feeds the prepay ledger, so deleting one is still an irreversible
+ * accounting hole. Setting `status` to 'Cancelled' remains the reversible path for a real case;
+ * this endpoint is a deliberately blunt escape hatch, not a replacement for it.
  */
 import { createId } from '@paralleldrive/cuid2';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -365,6 +366,43 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     return row;
+  });
+
+  /**
+   * Hard delete — for a test-created case that never should have existed, not a correction to a
+   * real one (see the module docblock: a real case's `total_amount` feeds the prepay ledger, so
+   * deleting one is an irreversible accounting hole). Same access gate as every other CS route
+   * here — no extra grant, matching CitiFuel's row-delete rather than the billing
+   * payment-transaction delete's grant-gated pattern.
+   */
+  app.delete('/cs/maintenance/:id', guard, async (request) => {
+    const ctx = requireCsAccess(request);
+    const { id } = idParam.parse(request.params);
+    const row = await maintenanceCaseRepo.deleteById(id);
+    if (!row) {
+      throw new AppError('Maintenance case not found', {
+        statusCode: 404,
+        code: 'NOT_FOUND',
+        expose: true,
+      });
+    }
+    await auditFromContext(ctx, {
+      action: 'cs.maintenance.delete',
+      status: 'ok',
+      resourceType: 'maintenance_case',
+      resourceId: id,
+      detail: {
+        snapshot: {
+          name: row.name,
+          companyName: row.companyName,
+          carrierId: row.carrierId,
+          caseType: row.caseType,
+          totalAmount: row.totalAmount,
+          status: row.status,
+        },
+      },
+    });
+    return { id, deleted: true };
   });
 
   /** Attachments — the CRM has this on every record; the Postgres-backed case didn't (CS feedback

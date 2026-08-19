@@ -5,6 +5,7 @@
  * wire format). Format them at the edge; do not `Number()` them into a float for storage.
  */
 import { request } from './transport';
+import type { CaseDeskInfo } from './collectionDesk';
 
 const COLLECTION_HEADERS = { 'x-department-access': 'collection' } as const;
 
@@ -104,6 +105,12 @@ export interface CollectionCaseListResult {
   items: CollectionCaseRow[];
   total: number;
   aggregates: CollectionCaseAggregates;
+  /**
+   * Desk state per case id — last touch, open promise, plan progress. A SIBLING map rather than a
+   * field on each item, so the finder-owned row above stays exactly what the finder writes and
+   * what this app added to it is visibly separate. See api/collectionDesk.ts.
+   */
+  desk?: Record<string, CaseDeskInfo>;
 }
 
 export interface CollectionCaseListFilter {
@@ -113,6 +120,10 @@ export interface CollectionCaseListFilter {
   stage?: CollectionStage;
   closedReason?: CollectionClosedReason;
   search?: string;
+  /** Saved view: at least this much still outstanding. */
+  minRemaining?: number;
+  /** Saved view: no contact attempt has ever been logged. */
+  neverContacted?: boolean;
 }
 
 export interface ArrayReportRow {

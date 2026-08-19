@@ -9,7 +9,7 @@
  * debt totals; fetching 526 invoice rows for a 50-row page would be the unbounded join this
  * desk exists to avoid.
  */
-import { and, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, notExists, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   collectionCaseInvoices,
@@ -20,6 +20,7 @@ import {
   type CollectionClosedReason,
   type CollectionStage,
 } from '../db/schema/collection.js';
+import { collectionActivity } from '../db/schema/collection_desk.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { canReadCollectionSnapshot } from './collectionAccess.js';
 import { firstOrUndefined, normalizePagination } from './util.js';
@@ -34,6 +35,10 @@ export interface CollectionCaseListFilter {
   stage?: CollectionStage | undefined;
   closedReason?: CollectionClosedReason | undefined;
   search?: string | undefined;
+  /** Saved view: only cases with at least this much still outstanding. */
+  minRemaining?: number | undefined;
+  /** Saved view: nobody has ever logged a contact attempt against the case. */
+  neverContacted?: boolean | undefined;
 }
 
 export interface CollectionCaseDto {
@@ -191,6 +196,26 @@ export function buildCaseWhere(filter: CollectionCaseListFilter): SQL | undefine
   if (filter.status) clauses.push(eq(collectionCases.status, filter.status));
   if (filter.stage) clauses.push(eq(collectionCases.collectionStage, filter.stage));
   if (filter.closedReason) clauses.push(eq(collectionCases.closedReason, filter.closedReason));
+  if (filter.minRemaining !== undefined) {
+    clauses.push(gte(collectionCases.totalDebtAmount, String(filter.minRemaining)));
+  }
+  // NOT EXISTS rather than a LEFT JOIN … IS NULL: the join would multiply the case row by its
+  // whole feed before discarding it, and this runs against the full book on every saved-view click.
+  if (filter.neverContacted) {
+    clauses.push(
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(collectionActivity)
+          .where(
+            and(
+              eq(collectionActivity.caseId, collectionCases.id),
+              eq(collectionActivity.kind, 'contact'),
+            ),
+          ),
+      ),
+    );
+  }
   const q = filter.search?.trim();
   if (q) {
     const like = `%${q}%`;
@@ -265,6 +290,84 @@ export const collectionCaseRepo = {
     const row = firstOrUndefined(
       await db.select().from(collectionCases).where(eq(collectionCases.id, id)).limit(1),
     );
+    return row ? toCollectionCaseDto(row) : undefined;
+  },
+
+  /**
+   * Move a case to another stage.
+   *
+   * ⚠ `collection_cases` IS FINDER-OWNED. Every other column here is written by the upsert job,
+   * and a future finder run can overwrite what the desk sets. Three columns are written by this
+   * desk — `collection_stage`, `status`/`closed_*`, `placement_date` — because they are the ones
+   * a human decides and the whole UI reads, and there is no second place to put them that the
+   * board, the list and the spine would all agree on. Every one of these writes also lands in
+   * `collection_activity`, so if the finder does clobber a stage the record of who moved it and
+   * when survives. Confirm the finder's write set before this goes to prod.
+   */
+  async setStage(id: string, stage: CollectionStage): Promise<CollectionCaseDto | undefined> {
+    const rows = await db
+      .update(collectionCases)
+      .set({ collectionStage: stage, updatedAt: new Date() })
+      .where(eq(collectionCases.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toCollectionCaseDto(row) : undefined;
+  },
+
+  /** Close a case with a reason from the real enum. Never deletes — reopening must stay possible. */
+  async close(
+    id: string,
+    input: { reason: CollectionClosedReason; stage: CollectionStage },
+  ): Promise<CollectionCaseDto | undefined> {
+    const rows = await db
+      .update(collectionCases)
+      .set({
+        status: 'closed',
+        closedReason: input.reason,
+        collectionStage: input.stage,
+        closedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(collectionCases.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toCollectionCaseDto(row) : undefined;
+  },
+
+  /** Reopen. `reopen_count` is the finder's own column and is incremented, not reset. */
+  async reopen(id: string): Promise<CollectionCaseDto | undefined> {
+    const rows = await db
+      .update(collectionCases)
+      .set({
+        status: 'open',
+        closedReason: null,
+        closedAt: null,
+        reopenCount: sql`${collectionCases.reopenCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(collectionCases.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toCollectionCaseDto(row) : undefined;
+  },
+
+  /** Record a placement with an agency. Sets the stage too — the two are one decision. */
+  async markPlaced(
+    id: string,
+    input: { placementDate: string; agency: string },
+  ): Promise<CollectionCaseDto | undefined> {
+    const rows = await db
+      .update(collectionCases)
+      .set({
+        placementDate: input.placementDate,
+        agencyTransferDate: input.placementDate,
+        firstCollectionAgency: input.agency,
+        collectionStage: 'with_agency',
+        updatedAt: new Date(),
+      })
+      .where(eq(collectionCases.id, id))
+      .returning();
+    const row = rows[0];
     return row ? toCollectionCaseDto(row) : undefined;
   },
 

@@ -106,7 +106,19 @@ export const MYTRION_TABS: Record<MytrionId, readonly TabDescriptor[]> = {
   admin: ADMIN_TABS,
   sales: fromNav(SALES_NAV),
   billing: BILLING_TABS,
-  collection: fromNav(COLLECTION_TABS),
+  // Two fieldsets in the picker, mirroring the rail's own Desk / Agency split.
+  // The desk redesign kept every existing key (`home`, `cases`, `array`) and added `queue`, so no
+  // stored grant is orphaned — see the rename warning in this file's header for why that mattered.
+  collection: [
+    ...fromNav(
+      COLLECTION_TABS.filter((t) => t.section === 'desk'),
+      'Desk',
+    ),
+    ...fromNav(
+      COLLECTION_TABS.filter((t) => t.section === 'agency'),
+      'Agency',
+    ),
+  ],
   finance: FINANCE_TABS,
   verification: VERIFICATION_TABS,
   manager: MANAGER_TABS,

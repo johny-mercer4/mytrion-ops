@@ -57,6 +57,7 @@ export * from './verification_cases.js';
 export * from './verification_flow.js';
 export * from './mytrion_watch.js';
 export * from './collection.js';
+export * from './collection_desk.js';
 export * from './carrier_attachments.js';
 export * from './mytrion_rejection_reports.js';
 export * from './sales_kpi.js';

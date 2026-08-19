@@ -1,0 +1,117 @@
+/* =====================================================
+   Today — the worklist. Scoped under [data-mytrion='collection'].
+
+   The row is a flex line, not a table row: the ask is a sentence that must be allowed to wrap,
+   and a <td> with a fixed width would either clip it or force every row to the tallest one.
+   ===================================================== */
+
+[data-mytrion='collection'] .wl-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--ui-table-rule);
+  background: var(--surface-data);
+}
+[data-mytrion='collection'] .wl-row:last-of-type {
+  border-bottom: 0;
+}
+[data-mytrion='collection'] .wl-row:hover {
+  background: var(--row-hover);
+}
+
+/* The tone rail — WHY this row is here, before any word is read. 3px, full bleed, inside the
+   panel's own radius because the panel clips. */
+[data-mytrion='collection'] .wl-rail {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--wl-tone, var(--text-muted));
+}
+
+/* The identity + sentence block is one big hit target that opens the case. A row-level click
+   handler would swallow the action button beside it, so the target is an explicit button. */
+[data-mytrion='collection'] .wl-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+[data-mytrion='collection'] .wl-open:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  border-radius: var(--radius-sm);
+}
+
+[data-mytrion='collection'] .wl-why {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+[data-mytrion='collection'] .wl-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+/* `text-wrap: pretty` rather than a clamp: the sentence is the row's reason for existing and a
+   truncated one turns a decision into a hover. */
+[data-mytrion='collection'] .wl-ask {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+[data-mytrion='collection'] .wl-figs {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  flex: none;
+}
+[data-mytrion='collection'] .wl-fig {
+  align-items: flex-end;
+  text-align: end;
+}
+[data-mytrion='collection'] .wl-fig-v {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* Below the structure line the two figures move under the sentence — at 375px a right-aligned
+   money column and a 44px action button cannot both fit beside a wrapping line of prose. */
+@media (width < 900px) {
+  [data-mytrion='collection'] .wl-row {
+    flex-wrap: wrap;
+  }
+  [data-mytrion='collection'] .wl-open {
+    flex: 1 1 100%;
+  }
+  [data-mytrion='collection'] .wl-figs {
+    flex: 1;
+    justify-content: flex-start;
+    padding-left: calc(34px + var(--space-2_5));
+  }
+  [data-mytrion='collection'] .wl-fig {
+    align-items: flex-start;
+    text-align: start;
+  }
+}
