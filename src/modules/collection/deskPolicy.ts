@@ -4,11 +4,14 @@
  * needs attention today.
  *
  * ⚠ EVERY NUMBER IN `DESK_POLICY` IS A PLACEHOLDER THE BUSINESS HAS NOT CONFIRMED.
- * The one real threshold in this domain is the $100 remaining-debt floor at which the finder
- * opens and closes a case, and that lives in the finder, not here. The values below came out of
- * the redesign as plausible defaults so the screens had something to render; they are gathered
- * in one object, named, and exported so changing them is a one-line edit and a grep finds every
- * consumer — not scattered as literals through five components the way the mockups had them.
+ * The only real threshold in this pipeline is `remaining >= 0.01`, the floor at which
+ * `servercrm/jobs/collectionCaseFinder.js` opens a case — verified against the source on
+ * 2026-08-20. (An earlier version of this comment claimed a $100 floor and that the finder
+ * deletes cases below it. Both are false: the finder never deletes, it zeroes the money fields
+ * and leaves the row.) The values below came out of the redesign as plausible defaults so the
+ * screens had something to render; they are gathered in one object, named, and exported so
+ * changing them is a one-line edit and a grep finds every consumer — not scattered as literals
+ * through five components the way the mockups had them.
  *
  * Pure by design: no db import, no I/O. `tests/unit/collection-desk-policy.test.ts` exercises the
  * whole lane matrix without Postgres.
@@ -87,19 +90,31 @@ export function laneFor(s: WorklistSignals): WorklistLane | null {
   return null;
 }
 
+/**
+ * Stages where "send this to an agency" is not advice worth giving: it is already there, it is
+ * past the agency and with lawyers or a court, or it is finished. Legal and court stages matter
+ * here — a case in civil court that is 200 days past due would otherwise be nagged every morning
+ * to do something it did six months ago.
+ */
+const AGENCY_ADVICE_POINTLESS = new Set([
+  'with_agency',
+  'skip_tracing',
+  'legal_action',
+  'small_claims',
+  'civil_court',
+  'closed_successfully',
+  'case_lost',
+]);
+
 /** Past both agency gates right now. */
 export function isAgencyDue(s: Pick<WorklistSignals, 'daysPastDue' | 'remaining' | 'stage'>): boolean {
-  if (s.stage === 'with_agency' || s.stage === 'closed_successfully' || s.stage === 'case_lost') {
-    return false;
-  }
+  if (AGENCY_ADVICE_POINTLESS.has(s.stage)) return false;
   return s.daysPastDue >= DESK_POLICY.agencyMinDaysPastDue && s.remaining >= DESK_POLICY.agencyMinRemaining;
 }
 
 /** Big enough already, and inside the warning window before the day threshold. */
 function isAgencyNear(s: Pick<WorklistSignals, 'daysPastDue' | 'remaining' | 'stage'>): boolean {
-  if (s.stage === 'with_agency' || s.stage === 'closed_successfully' || s.stage === 'case_lost') {
-    return false;
-  }
+  if (AGENCY_ADVICE_POINTLESS.has(s.stage)) return false;
   if (s.remaining < DESK_POLICY.agencyMinRemaining) return false;
   const toGo = DESK_POLICY.agencyMinDaysPastDue - s.daysPastDue;
   return toGo > 0 && toGo <= DESK_POLICY.agencyWarnWindowDays;

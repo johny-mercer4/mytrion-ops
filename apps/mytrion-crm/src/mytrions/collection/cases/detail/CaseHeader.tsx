@@ -14,11 +14,11 @@ import { AgingMeter, PromiseChip, RecoveryBar } from '../../CollectionBits';
 import { fmtDate, money } from '../../collectionFormat';
 import {
   CLOSED_REASON_LABEL,
-  STAGE_PROGRESSION,
+  SPINE_MILESTONES,
   caseInitials,
   caseName,
   nextStage,
-  spineState,
+  milestoneState,
   stageLabel,
   statusChip,
 } from '../casesModel';
@@ -143,13 +143,13 @@ export function CaseHeader({
         </div>
       ) : null}
 
-      <ol className="cc-spine" aria-label="Collection stages">
-        {STAGE_PROGRESSION.map((stage) => {
-          const state = spineState(row.collectionStage, stage, bundle?.stageHistory ?? []);
+      <ol className="cc-spine" aria-label="Collection progress">
+        {SPINE_MILESTONES.map((lane) => {
+          const state = milestoneState(row.collectionStage, lane, bundle?.stageHistory ?? []);
           return (
-            <li key={stage} className="cc-spine-step" data-state={state}>
+            <li key={lane.id} className="cc-spine-step" data-state={state}>
               <span className="cc-spine-bar" aria-hidden="true" />
-              <span className="cc-spine-label">{stageLabel(stage)}</span>
+              <span className="cc-spine-label">{lane.label}</span>
             </li>
           );
         })}

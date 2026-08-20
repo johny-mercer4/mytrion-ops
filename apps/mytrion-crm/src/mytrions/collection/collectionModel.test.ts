@@ -4,11 +4,12 @@ import { accountStatusLabel, reportName } from './array/arrayModel';
 import {
   BOARD_LANES,
   CASE_INVOICES_PAGE_SIZE,
+  BOARD_LANES as LANES_FOR_SPINE,
   STAGE_PROGRESSION,
   caseName,
   laneOfStage,
   nextStage,
-  spineState,
+  milestoneState,
   daysTone,
   invoiceCacheKey,
   invoicePageOffset,
@@ -173,6 +174,18 @@ describe('board lanes', () => {
     expect(laneOfStage('with_agency')).toBe('agency');
     expect(laneOfStage('small_claims')).toBe('agency');
   });
+
+  it('keeps the no-contact ladder together and out of Working', () => {
+    // The ladder is the early-funnel work the Today worklist exists to drive. It went missing
+    // entirely when the enum only carried eight stages.
+    for (const stage of ['nc_attempt_1', 'nc_attempt_2', 'nc_attempt_3', 'usps_letter'] as const) {
+      expect(laneOfStage(stage), stage).toBe('chasing');
+    }
+    expect(laneOfStage('connected')).toBe('working');
+    expect(laneOfStage('failed_promise')).toBe('working');
+    expect(laneOfStage('legal_action')).toBe('agency');
+    expect(laneOfStage('civil_court')).toBe('agency');
+  });
 });
 
 /**
@@ -183,27 +196,45 @@ describe('board lanes', () => {
  * happens to list `with_agency` first.
  */
 describe('stage progression', () => {
-  it('holds exactly the eight enum stages, reordered', () => {
+  const laneById = (id: string) => {
+    const lane = LANES_FOR_SPINE.find((l) => l.id === id);
+    if (!lane) throw new Error(`no lane ${id}`);
+    return lane;
+  };
+
+  it('holds exactly the enum stages, reordered', () => {
     expect([...STAGE_PROGRESSION].sort()).toEqual([...COLLECTION_STAGES].sort());
     expect(STAGE_PROGRESSION.indexOf('payment_plan')).toBeLessThan(
       STAGE_PROGRESSION.indexOf('with_agency'),
     );
+    // The chase comes before the conversation it is trying to start.
+    expect(STAGE_PROGRESSION.indexOf('nc_attempt_1')).toBeLessThan(
+      STAGE_PROGRESSION.indexOf('connected'),
+    );
   });
 
-  it('never marks a stage done that the case has not been through', () => {
-    // On a plan, never placed. The agency stages must NOT read as visited.
-    expect(spineState('payment_plan', 'with_agency', ['connected', 'payment_plan'])).toBe('todo');
-    expect(spineState('payment_plan', 'skip_tracing', ['connected', 'payment_plan'])).toBe('todo');
-    expect(spineState('payment_plan', 'payment_plan', [])).toBe('now');
-    expect(spineState('payment_plan', 'connected', ['connected', 'payment_plan'])).toBe('done');
+  it('never marks a milestone done that the case has not been through', () => {
+    // On a plan, never placed. The agency milestone must NOT read as visited.
+    const history = ['connected', 'payment_plan'] as const;
+    expect(milestoneState('payment_plan', laneById('agency'), history)).toBe('todo');
+    expect(milestoneState('payment_plan', laneById('plan'), [])).toBe('now');
+    expect(milestoneState('payment_plan', laneById('working'), history)).toBe('done');
+  });
+
+  it('marks a milestone done from ANY stage inside it', () => {
+    // A case that only ever reached USPS Letter has still been through the chase.
+    expect(milestoneState('connected', laneById('chasing'), ['usps_letter'])).toBe('done');
+    expect(milestoneState('connected', laneById('chasing'), [])).toBe('todo');
   });
 
   it('always treats intake as visited — every case starts there', () => {
-    expect(spineState('with_agency', 'intake', [])).toBe('done');
+    expect(milestoneState('with_agency', laneById('intake'), [])).toBe('done');
   });
 
   it('advances along the progression and stops at the end', () => {
-    expect(nextStage('intake')).toBe('connected');
+    expect(nextStage('intake')).toBe('nc_attempt_1');
+    expect(nextStage('nc_attempt_3')).toBe('usps_letter');
+    expect(nextStage('usps_letter')).toBe('connected');
     expect(nextStage('connected')).toBe('payment_plan');
     expect(nextStage('closed_successfully')).toBe('case_lost');
     expect(nextStage('case_lost')).toBeNull();

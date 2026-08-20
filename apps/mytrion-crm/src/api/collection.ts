@@ -12,13 +12,22 @@ const COLLECTION_HEADERS = { 'x-department-access': 'collection' } as const;
 export const COLLECTION_CASE_STATUSES = ['open', 'closed'] as const;
 export type CollectionCaseStatus = (typeof COLLECTION_CASE_STATUSES)[number];
 
+/** Mirrors `COLLECTION_STAGES` in src/db/schema/collection.ts — one slug per Zoho Blueprint stage. */
 export const COLLECTION_STAGES = [
   'intake',
+  'nc_attempt_1',
+  'nc_attempt_2',
+  'nc_attempt_3',
+  'usps_letter',
   'connected',
-  'with_agency',
   'payment_plan',
+  'reconnect_attempt',
+  'failed_promise',
+  'with_agency',
   'skip_tracing',
+  'legal_action',
   'small_claims',
+  'civil_court',
   'closed_successfully',
   'case_lost',
 ] as const;

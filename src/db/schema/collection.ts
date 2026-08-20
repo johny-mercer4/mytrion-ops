@@ -8,10 +8,15 @@
  * is enforced in the repo layer — a non-`octane` tenant is served an empty page rather than the
  * Octane debtor book.
  *
- * `collection_cases` is one row per carrier (UNIQUE carrier_id). The finder keeps the row only
- * while remaining debt is above $100; it does not write Zoho. Invoices hang off the case and
- * cascade. `array_reports` is a Metro 2 snapshot per (carrier_id, report_period) — the live 6h
- * cron still writes Zoho; this table is what the desk reads.
+ * `collection_cases` is one row per carrier (UNIQUE carrier_id). It NEVER loses a row: the Zoho
+ * finder opens a case at `remaining >= 0.01` and, when the carrier settles or leaves CMP, zeroes
+ * the money fields rather than deleting ("No case deletion (history preserved)"). There is no
+ * $100 floor anywhere in the pipeline. Invoices hang off the case and cascade.
+ *
+ * `array_reports` is a Metro 2 snapshot per (carrier_id, report_period) — the live 6h cron writes
+ * Zoho; this table is what the desk reads. `report_period` is a HUMAN-FORMATTED string
+ * (`'Aug 2026'`), so it does not sort: order by `reportPeriodSortKey` from repos/arrayPeriod.ts,
+ * never by the column itself.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -31,13 +36,37 @@ import {
 export const COLLECTION_CASE_STATUSES = ['open', 'closed'] as const;
 export type CollectionCaseStatus = (typeof COLLECTION_CASE_STATUSES)[number];
 
+/**
+ * The stage vocabulary, one slug per stage of the Zoho Blueprint on `Collection_Cases`.
+ *
+ * This list used to hold eight of the sixteen. The eight it dropped were the whole no-contact
+ * ladder (`nc_attempt_1..3` → `usps_letter`), the two recovery-from-failure stages
+ * (`reconnect_attempt`, `failed_promise`) and the two legal stages above small claims
+ * (`legal_action`, `civil_court`) — which is to say, most of the early-funnel work the Today
+ * worklist exists to drive. Read `GET Collection_Cases/{id}/actions/blueprint` against Zoho to
+ * see the transitions; the graph is documented in the collections atlas.
+ *
+ * The original eight keep their slugs, so no stored value changes.
+ *
+ * NOT here: Zoho also has seven records stranded on a `Debt Closed` value that is not in its own
+ * picklist and has no blueprint transitions. Representing a broken state as a valid one would
+ * just move the problem; those records need fixing at the source.
+ */
 export const COLLECTION_STAGES = [
   'intake',
+  'nc_attempt_1',
+  'nc_attempt_2',
+  'nc_attempt_3',
+  'usps_letter',
   'connected',
-  'with_agency',
   'payment_plan',
+  'reconnect_attempt',
+  'failed_promise',
+  'with_agency',
   'skip_tracing',
+  'legal_action',
   'small_claims',
+  'civil_court',
   'closed_successfully',
   'case_lost',
 ] as const;
