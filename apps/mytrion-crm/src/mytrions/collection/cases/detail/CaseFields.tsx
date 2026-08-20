@@ -10,8 +10,9 @@
  * verified phone number on the same call — and four endpoints would mean four round trips and a
  * half-saved record if the third failed.
  *
- * The FEES block is read-only on purpose: it is computed from the debt and the agency's rate, and
- * a typed-over fee would be a number quoted to a debtor that no contract backs.
+ * The MONEY is not here. It lives in the rail's Debt pane, beside the debt the fee is a percentage
+ * of — it used to sit at the bottom of this panel, which put "remaining" on screen three times and
+ * stranded the agency fee two columns away from the figure it derives from.
  */
 import { useState } from 'react';
 import { Button, DateField, Input, Select, Switch, useToast } from '@/ds';
@@ -25,7 +26,7 @@ import {
   COURT_TYPES,
   type CollectionCaseRow,
 } from '@/api/collection';
-import { patchCaseFields, type CaseDossier, type CaseFieldPatch } from '@/api/collectionDesk';
+import { patchCaseFields, type CaseFieldPatch } from '@/api/collectionDesk';
 import { fmtDate, moneyExact } from '../../collectionFormat';
 
 const opts = (values: readonly string[], blank: string) => [
@@ -36,15 +37,7 @@ const opts = (values: readonly string[], blank: string) => [
 /** `null` for a cleared select, so the patch clears the column rather than writing an empty string. */
 const orNull = (v: string | null | undefined): string | null => (v && v.length > 0 ? v : null);
 
-export function CaseFields({
-  row,
-  dossier,
-  onSaved,
-}: {
-  row: CollectionCaseRow;
-  dossier: CaseDossier | null;
-  onSaved: () => void;
-}) {
+export function CaseFields({ row, onSaved }: { row: CollectionCaseRow; onSaved: () => void }) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -287,20 +280,6 @@ export function CaseFields({
           )}
         </Block>
 
-        {dossier ? (
-          <Block
-            title="What the debtor owes"
-            hint="Computed from the debt and the agency's rate — not editable, because a typed-over fee is a number nobody has a contract for."
-          >
-            <Fact k="Remaining" v={moneyExact(dossier.totalRemainingAmount)} strong />
-            <Fact
-              k="Agency fee"
-              v={dossier.agencyFee === null ? 'Rate not known' : moneyExact(dossier.agencyFee)}
-            />
-            <Fact k="Total with fee" v={moneyExact(dossier.totalDebtWithFee)} strong />
-            <Fact k="Merchant fee" v={moneyExact(row.totalMerchantFee)} />
-          </Block>
-        ) : null}
       </div>
     </section>
   );

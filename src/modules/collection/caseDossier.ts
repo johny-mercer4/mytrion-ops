@@ -19,8 +19,8 @@ import { agencyFee, totalDebtWithFee } from './agencyFees.js';
 export type PromiseStatus = 'Kept' | 'Failed' | 'Pending';
 
 export interface DossierInputs {
+  /** Already net of payments — see the note in `buildCaseDossier`. */
   totalDebtAmount: string;
-  totalAmountPaid: string;
   currentAgency: string | null;
   /** The newest promise on the case, whatever its state. */
   promise: { dueDate: string; status: string } | null;
@@ -105,10 +105,23 @@ function daysSince(iso: string, now: Date): number {
 }
 
 export function buildCaseDossier(input: DossierInputs, now = new Date()): CaseDossier {
+  /**
+   * `total_debt_amount` IS ALREADY NET OF PAYMENTS — do not subtract them again.
+   *
+   * The finder writes it as `totalInvoiceAmount - totalPaid` (`collectionCaseFinder.js`), and Zoho
+   * agrees on every row: checked against eight live cases carrying payments,
+   * `Total_Debt_Amount == Total_Invoice_Amount - Total_Amount_Paid` and
+   * `Total_Remaining_Amount == Total_Debt_Amount` exactly, including one carrier who had paid
+   * $177,975 of $202,632.
+   *
+   * This used to compute `debt - paid`, which took the payments off twice: a case owing $72,500
+   * with $7,500 paid read as $65,000 remaining while "total with fee" beside it still said
+   * $72,500. The desk was quoting a debtor less than they owe and contradicting itself on the
+   * same panel.
+   */
   const debt = Number(input.totalDebtAmount) || 0;
-  const paid = Number(input.totalAmountPaid) || 0;
-  // Remaining can only be floored at zero: an overpayment is a credit question, not a debt.
-  const remaining = Math.max(0, debt - paid);
+  // Floored at zero: an overpayment is a credit question, not a negative debt.
+  const remaining = Math.max(0, debt);
   const fee = agencyFee(input.currentAgency, debt);
 
   const plan = input.plan;

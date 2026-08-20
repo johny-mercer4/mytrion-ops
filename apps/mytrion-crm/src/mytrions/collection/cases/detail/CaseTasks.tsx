@@ -131,11 +131,9 @@ export function CaseTasks({
         </div>
       ) : null}
 
-      {tasks.length === 0 && !adding ? (
-        <p className="ct-empty">
-          No follow-ups on this case. Set one when you agree a call-back date.
-        </p>
-      ) : null}
+      {/* No empty state: the header already says "Nothing scheduled". This panel sits at the top of
+          the record, and five lines of chrome telling you there is nothing here pushed the timeline
+          — the thing you opened the case to read — below the fold. */}
 
       <ul className="ct-list">
         {[...open, ...done].map((task) => (

@@ -283,7 +283,7 @@ export function CaseDetail({
             )}
           </section>
 
-          <CaseFields row={row} dossier={bundle?.dossier ?? null} onSaved={refresh} />
+          <CaseFields row={row} onSaved={refresh} />
 
           <CaseFiles caseId={caseId} readOnly={row.status === 'closed'} />
         </div>

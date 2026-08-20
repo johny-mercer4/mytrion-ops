@@ -189,7 +189,6 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
     // fetched above — no extra queries. See modules/collection/caseDossier.ts.
     const dossier = buildCaseDossier({
       totalDebtAmount: row.totalDebtAmount,
-      totalAmountPaid: row.totalAmountPaid,
       currentAgency: row.currentAgency,
       promise: promises[0] ? { dueDate: promises[0].dueDate, status: promises[0].status } : null,
       plan: plan

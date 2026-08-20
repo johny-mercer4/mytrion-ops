@@ -87,33 +87,40 @@ export function CaseFiles({ caseId, readOnly }: { caseId: string; readOnly: bool
 
   return (
     <section className="cc-pane ct-pane">
+      {/* The kind picker used to sit up here beside the title. `ds/Select` puts its label above the
+          control, so the panel header grew to two lines and the count, a labelled dropdown and a
+          button competed for the same row. The picker belongs with the act of attaching, not with
+          the heading — it moved into the strip below. */}
       <header className="cc-pane-head">
         <h2 className="cc-pane-title">Documents</h2>
-        <span className="cc-pane-meta">
-          {items.length === 0 ? 'Nothing attached' : `${items.length} file${items.length === 1 ? '' : 's'}`}
-        </span>
-        {readOnly ? null : (
-          <span className="cf-actions">
-            <Select
-              size="sm"
-              label="Kind"
-              value={kind}
-              onChange={(v) => setKind((v as CollectionAttachmentKind | null) ?? 'other')}
-              options={COLLECTION_ATTACHMENT_KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="attach_file"
-              loading={busy}
-              disabled={busy}
-              onClick={() => fileInput.current?.click()}
-            >
-              Attach
-            </Button>
+        {items.length > 0 ? (
+          <span className="cc-pane-meta">
+            {items.length} file{items.length === 1 ? '' : 's'}
           </span>
-        )}
+        ) : null}
       </header>
+
+      {readOnly ? null : (
+        <div className="ct-add">
+          <Select
+            size="sm"
+            label="Kind"
+            value={kind}
+            onChange={(v) => setKind((v as CollectionAttachmentKind | null) ?? 'other')}
+            options={COLLECTION_ATTACHMENT_KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="attach_file"
+            loading={busy}
+            disabled={busy}
+            onClick={() => fileInput.current?.click()}
+          >
+            Attach a file
+          </Button>
+        </div>
+      )}
 
       <input
         ref={fileInput}
@@ -131,7 +138,7 @@ export function CaseFiles({ caseId, readOnly }: { caseId: string; readOnly: bool
         <p className="ct-empty">Could not load the documents on this case.</p>
       ) : items.length === 0 ? (
         <p className="ct-empty">
-          No documents yet. Attach the agency letter or the court filing so the next person can see it.
+          Nothing attached yet — the agency letter, the court filing, the proof of mailing.
         </p>
       ) : (
         <ul className="ct-list">

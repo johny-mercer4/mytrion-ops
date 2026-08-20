@@ -8,7 +8,13 @@
 import { useState } from 'react';
 import { Badge, Button, Icon, useToast } from '@/ds';
 import type { CollectionCaseRow } from '@/api/collection';
-import { assignCase, unassignCase, type CaseDeskBundle, type PaymentPlan } from '@/api/collectionDesk';
+import {
+  assignCase,
+  unassignCase,
+  type CaseDeskBundle,
+  type CaseDossier,
+  type PaymentPlan,
+} from '@/api/collectionDesk';
 import { CallButton, callPhone } from '../../CollectionCall';
 import { PlanPips } from '../../CollectionBits';
 import { fmtDate, money, moneyExact } from '../../collectionFormat';
@@ -43,6 +49,7 @@ export function CaseRail({
   onReopen: () => void;
 }) {
   const plan = bundle?.plan ?? null;
+  const dossier = bundle?.dossier ?? null;
   const tradeline = bundle?.tradeline ?? null;
   const closed = row.status === 'closed';
   const progress = plan ? planProgress(plan) : null;
@@ -116,6 +123,32 @@ export function CaseRail({
         </section>
       ) : null}
 
+      {/*
+        Every money figure on this record, once.
+        Remaining used to appear three times — in the header's recovery bar, here, and again in a
+        "What the debtor owes" block down in Case detail — with the agency fee stranded away from
+        the debt it is a percentage of. The header states the position, this states the figures,
+        and Case detail is left for the fields a human edits.
+      */}
+      <section className="cc-pane">
+        <h2 className="cc-pane-title">Debt</h2>
+        <dl className="cc-dl">
+          <Row k="Invoiced">{moneyExact(row.totalInvoiceAmount)}</Row>
+          <Row k="Paid">{moneyExact(row.totalAmountPaid)}</Row>
+          <Row k="Remaining">{moneyExact(row.totalDebtAmount)}</Row>
+          <Row k="Agency fee">{agencyFeeCopy(row, dossier)}</Row>
+          <Row k={row.currentAgency ? 'Total with fee' : 'Total owed'}>
+            {dossier ? moneyExact(dossier.totalDebtWithFee) : moneyExact(row.totalDebtAmount)}
+          </Row>
+          {Number(row.totalMerchantFee) > 0 ? (
+            <Row k="Merchant fee">{moneyExact(row.totalMerchantFee)}</Row>
+          ) : null}
+          <Row k="First delinquent">{fmtDate(row.firstDelinquentDate)}</Row>
+          <Row k="Placed">{fmtDate(row.placementDate)}</Row>
+          {row.reopenCount > 0 ? <Row k="Reopened">{String(row.reopenCount)}</Row> : null}
+        </dl>
+      </section>
+
       <section className="cc-pane">
         <header className="cc-pane-head">
           <h2 className="cc-pane-title">Array tradeline</h2>
@@ -155,9 +188,17 @@ export function CaseRail({
         </header>
         <dl className="cc-dl cc-dl-1">
           <Row k="Contact">{row.debtorFullName ?? '—'}</Row>
-          <Row k="Email">{row.verifiedEmail ?? row.debtorEmail ?? '—'}</Row>
-          <Row k="Phone">{callPhone(row) ?? '—'}</Row>
-          <Row k="Address">{addressOf(row)}</Row>
+          {/* The EFFECTIVE detail, with a mark when a human confirmed it. Two panes each showing a
+              different version of the debtor's phone is how you end up ringing the dead one. */}
+          <Row k="Email" verified={Boolean(row.verifiedEmail)}>
+            {row.verifiedEmail ?? row.debtorEmail ?? '—'}
+          </Row>
+          <Row k="Phone" verified={Boolean(row.verifiedPhone)}>
+            {callPhone(row) ?? '—'}
+          </Row>
+          <Row k="Address" verified={Boolean(row.verifiedAddress)}>
+            {addressOf(row)}
+          </Row>
           <Row k="Date of birth">{fmtDate(row.debtorDateOfBirth)}</Row>
         </dl>
         {callPhone(row) ? (
@@ -167,39 +208,65 @@ export function CaseRail({
         ) : null}
       </section>
 
-      <section className="cc-pane">
-        <h2 className="cc-pane-title">Debt</h2>
-        <dl className="cc-dl">
-          <Row k="Invoiced">{moneyExact(row.totalInvoiceAmount)}</Row>
-          <Row k="Paid">{moneyExact(row.totalAmountPaid)}</Row>
-          <Row k="Remaining">{moneyExact(row.totalDebtAmount)}</Row>
-          <Row k="First delinquent">{fmtDate(row.firstDelinquentDate)}</Row>
-          <Row k="Placed">{fmtDate(row.placementDate)}</Row>
-          <Row k="Reopened">{String(row.reopenCount)}</Row>
-        </dl>
-      </section>
     </div>
   );
 }
 
-function Row({ k, children }: { k: string; children: string }) {
+function Row({
+  k,
+  verified,
+  children,
+}: {
+  k: string;
+  /** Confirmed by a person, not copied off the Deal. */
+  verified?: boolean;
+  children: string;
+}) {
   return (
     <div className="cc-dl-row">
-      <dt>{k}</dt>
+      <dt>
+        {k}
+        {verified ? (
+          <Icon name="check_circle" size="sm" className="cc-verified" aria-label="verified" />
+        ) : null}
+      </dt>
       <dd className="num">{children}</dd>
     </div>
   );
 }
 
+/**
+ * Two different nulls. No agency means there is no fee to charge; an agency we have no rate for
+ * means there IS one and we cannot state it. "Rate not known" on an unplaced case reads as a
+ * system that has lost the number.
+ */
+function agencyFeeCopy(row: CollectionCaseRow, dossier: CaseDossier | null): string {
+  if (!row.currentAgency) return 'No agency';
+  if (!dossier || dossier.agencyFee === null) return 'Rate not known';
+  return moneyExact(dossier.agencyFee);
+}
+
+/**
+ * The debtor's address, once.
+ *
+ * `debtor_address` IS the whole address already — the finder composes it as
+ * `[address, city, state, zip].join(', ')` — so appending the parts again printed
+ * "1175 Durbin terrace, Maineville, OH, 45039 · Maineville, OH · 45039". Use it as it comes, and
+ * only assemble from the parts when the composed line is missing.
+ *
+ * A verified address wins outright: it is what a human confirmed, where `debtor_*` is overwritten
+ * from the Deal every half hour.
+ */
 function addressOf(row: CollectionCaseRow): string {
-  const line = [
-    row.debtorAddress,
+  const verified = row.verifiedAddress?.trim();
+  if (verified) return verified;
+  const composed = row.debtorAddress?.trim();
+  if (composed) return composed;
+  const parts = [
     [row.debtorCity, row.debtorState].filter(Boolean).join(', '),
     row.debtorZipCode,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  return line || '—';
+  ].filter(Boolean);
+  return parts.join(' · ') || '—';
 }
 
 /**

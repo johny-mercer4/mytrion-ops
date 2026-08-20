@@ -208,6 +208,31 @@
   min-width: 0;
 }
 
+/*
+ * The rail follows you down the record.
+ *
+ * The main column carries the timeline, the invoices, the field blocks and the documents; the rail
+ * carries what you act on — Do next, the owner, the debt figures. Left static, the rail ran out
+ * several hundred pixels before the main column did, so the half of the screen holding every
+ * button went blank exactly when you had read far enough to want one.
+ *
+ * Only from 900px: below that the two columns are stacked and there is no second column to pin.
+ * The rail scrolls inside itself when it is taller than the viewport, so a long plan or tradeline
+ * block can still be read.
+ */
+@media (width >= 900px) {
+  [data-mytrion='collection'] .cc-rail {
+    position: sticky;
+    top: var(--space-4);
+    align-self: flex-start;
+    max-height: calc(100svh - var(--space-8));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    /* Its own scrollbar must not eat the panel edge. */
+    scrollbar-gutter: stable;
+  }
+}
+
 [data-mytrion='collection'] .cc-pane {
   display: flex;
   flex-direction: column;
@@ -546,8 +571,10 @@
 }
 /* flex-basis, not a px grid track: the blocks wrap from four across to one as the pane narrows,
    and a fixed track would pin a column the phone viewport cannot fit. */
+/* 20rem, not 15: at 15 the four blocks wrapped 3 + 1 and Disposition sat alone beside a column of
+   nothing. At 20 they pair up two-by-two on a desk pane and go four across on a wide one. */
 [data-mytrion='collection'] .cf-block {
-  flex: 1 1 15rem;
+  flex: 1 1 20rem;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -615,6 +642,11 @@
 [data-mytrion='collection'] .ct-add > :first-child {
   flex: 1 1 12rem;
 }
+/* The Documents strip is a picker plus a button, not a form — the picker sizes to its content and
+   the button sits at the end, rather than the picker stretching across the panel. */
+[data-mytrion='collection'] .ct-pane .ct-add:has(> :last-child:nth-child(2)) > :first-child {
+  flex: 0 1 14rem;
+}
 [data-mytrion='collection'] .ct-add-actions {
   display: flex;
   gap: var(--space-2);
@@ -680,4 +712,11 @@
 [data-mytrion='collection'] .cr-owner-name[data-empty='true'] {
   color: var(--text-muted);
   font-weight: var(--fw-body);
+}
+
+/* A detail a person confirmed on a call, not one copied off the Deal. */
+[data-mytrion="collection"] .cc-verified {
+  margin-inline-start: var(--space-1);
+  color: var(--success);
+  vertical-align: text-bottom;
 }

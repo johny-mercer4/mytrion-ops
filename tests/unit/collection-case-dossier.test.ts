@@ -12,7 +12,6 @@ const NOW = new Date('2026-08-20T12:00:00Z');
 function inputs(over: Partial<DossierInputs> = {}): DossierInputs {
   return {
     totalDebtAmount: '10000',
-    totalAmountPaid: '0',
     currentAgency: null,
     promise: null,
     plan: null,
@@ -125,16 +124,28 @@ describe('stage clock', () => {
 describe('the formula fields Zoho would not hand over', () => {
   it('computes remaining, the agency cut, and the all-in figure', () => {
     const d = buildCaseDossier(
-      inputs({ totalDebtAmount: '10000', totalAmountPaid: '2500', currentAgency: 'Trust Altus' }),
+      inputs({ totalDebtAmount: '10000', currentAgency: 'Trust Altus' }),
       NOW,
     );
-    expect(d.totalRemainingAmount).toBe('7500.00');
+    expect(d.totalRemainingAmount).toBe('10000.00');
     expect(d.agencyFee).toBe('1500.00');
     expect(d.totalDebtWithFee).toBe('11500.00');
   });
 
+  /**
+   * The regression that prompted this. `total_debt_amount` is written by the finder as
+   * `invoiced - paid`, so taking payments off again showed a debtor owing less than they do —
+   * and left "remaining" contradicting "total with fee" on the same panel.
+   */
+  it('does NOT subtract payments a second time', () => {
+    // The live case that exposed it: $80,000 invoiced, $7,500 paid, debt written as $72,500.
+    const d = buildCaseDossier(inputs({ totalDebtAmount: '72500' }), NOW);
+    expect(d.totalRemainingAmount).toBe('72500.00');
+    expect(d.totalDebtWithFee).toBe('72500.00');
+  });
+
   it('floors remaining at zero — an overpayment is a credit question, not a debt', () => {
-    const d = buildCaseDossier(inputs({ totalDebtAmount: '100', totalAmountPaid: '250' }), NOW);
+    const d = buildCaseDossier(inputs({ totalDebtAmount: '-250' }), NOW);
     expect(d.totalRemainingAmount).toBe('0.00');
   });
 
