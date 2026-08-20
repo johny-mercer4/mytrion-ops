@@ -142,14 +142,22 @@ export function PhaseBody({
       );
     case 'p6_credit_banking': {
       const routing = deskReviewOrder(detail);
+      // `credit` and `banking` stay separate action keys: separate routes, separate saves, and the
+      // error slot has to land beside the step that failed. Each step passes its own scope up.
       return (
         <CreditBankingPane
           detail={detail}
+          caseId={caseId}
           order={routing.order}
           source={routing.source}
           assumedMissingTrucks={routing.assumedMissingTrucks}
           marks={creditBankingMarks}
           onMarks={onCreditBankingMarks}
+          canAct={canAct}
+          /* One `pending` key for both steps: they save to different routes but the reviewer is on
+             one step at a time, and two spinners for one region is the double-loader this app bans. */
+          busy={pending === 'credit' || pending === 'banking'}
+          onSaved={(scope, run) => void onRun(scope, run)}
         />
       );
     }

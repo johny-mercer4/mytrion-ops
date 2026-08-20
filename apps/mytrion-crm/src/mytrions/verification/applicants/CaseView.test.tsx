@@ -774,7 +774,13 @@ describe('CaseView Phase 5 routing', () => {
 });
 
 describe('CaseView Phase 6 credit and banking', () => {
-  it('renders banking before credit when Phase 5 stored banking-first', async () => {
+  /**
+   * PHASE 5'S ORDER IS A SEQUENCE NOW, not a column position. The pane used to render both reviews
+   * side by side, so "banking first" only meant "banking on the left" — which on a wide screen is no
+   * ordering at all. One step shows at a time and step one is whichever review Phase 5 put first, so
+   * this asserts the tab order and which tab is selected rather than two headings' x-positions.
+   */
+  it('starts on banking, and lists it first, when Phase 5 stored banking-first', async () => {
     getDeskCase.mockResolvedValue(
       creditDesk({ trucksCount: 4 }, [
         phase({
@@ -795,20 +801,47 @@ describe('CaseView Phase 6 credit and banking', () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     expect(await screen.findByText(/Banking → Credit/)).toBeInTheDocument();
     expect(screen.getByText(/confirmed in Routing/)).toBeInTheDocument();
-    const titles = screen.getAllByRole('heading', { level: 3 }).map((n) => n.textContent);
-    expect(titles.indexOf('Banking review — last 3 months')).toBeLessThan(
-      titles.indexOf('Credit report review'),
-    );
+    const tabs = screen.getAllByRole('tab').map((n) => n.textContent ?? '');
+    expect(tabs[0]).toContain('Banking');
+    expect(tabs[1]).toContain('Credit report review');
+    // And the one actually open is step one, not merely the one drawn leftmost.
+    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+    expect(screen.getByRole('heading', { level: 4 }).textContent).toContain('Banking review');
+  });
+
+  /** Credit-first is the other branch of the same decision, and must open on the other step. */
+  it('starts on credit when the order is credit-first', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('tab', { selected: true });
+    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Credit report review');
+  });
+
+  /**
+   * THE SEQUENCE IS GUIDANCE, NOT A LOCK. A reviewer with the statements already open must be able to
+   * start on either step, and a correction to a saved step cannot require walking the flow again.
+   */
+  it('lets the reviewer switch to the other step', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    const bankingTab = await screen.findByRole('tab', { name: /Banking/ });
+    fireEvent.click(bankingTab);
+    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
   });
 
   it('keeps Pass off until credit is strong/acceptable and banking has no missing rows', async () => {
     getDeskCase.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    await screen.findByRole('group', { name: 'Credit profile result' });
+    await screen.findByRole('radiogroup', { name: 'Credit profile result' });
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Strong' }));
-    for (const check of screen.getAllByRole('group').filter((g) => g.getAttribute('aria-label') !== 'Credit profile result')) {
-      fireEvent.click(within(check).getByRole('button', { name: 'OK' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Strong/ }));
+    // Credit alone is not enough, and the banking rows live on the OTHER step — which is the point of
+    // the sequence: a reviewer cannot pass Phase 6 without having opened both halves.
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Banking/ }));
+    for (const group of screen.getAllByRole('radiogroup')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /OK/ }));
     }
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
   });
@@ -817,10 +850,10 @@ describe('CaseView Phase 6 credit and banking', () => {
     getDeskCase.mockResolvedValue(creditDesk());
     decidePhase.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    await screen.findByRole('group', { name: 'Credit profile result' });
-    fireEvent.click(screen.getByRole('button', { name: 'Borderline / Mixed' }));
+    await screen.findByRole('radiogroup', { name: 'Credit profile result' });
+    fireEvent.click(screen.getByRole('radio', { name: /Borderline/ }));
     expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Unacceptable' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Unacceptable/ }));
     expect(screen.getByRole('button', { name: 'Deposit / prepaid' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Deposit / prepaid' }));
     await waitFor(() =>
@@ -836,10 +869,12 @@ describe('CaseView Phase 6 credit and banking', () => {
     getDeskCase.mockResolvedValue(creditDesk());
     requestDocuments.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    const ownership = await screen.findByRole('group', {
+    // The banking judgement rows live on the banking step, which credit-first does not open first.
+    fireEvent.click(await screen.findByRole('tab', { name: /Banking/ }));
+    const ownership = screen.getByRole('radiogroup', {
       name: 'Account ownership — applicant/company name and address',
     });
-    fireEvent.click(within(ownership).getByRole('button', { name: 'Missing' }));
+    fireEvent.click(within(ownership).getByRole('radio', { name: /Missing/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Pending documents' }));
     await waitFor(() =>
       expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {

@@ -1161,6 +1161,22 @@
   gap: var(--space-1);
   flex-shrink: 0;
 }
+/*
+ * THE ROW WRAPS BEFORE IT CRUSHES ITS OWN LABEL.
+ *
+ * `.va-id-check` is `space-between` with a `flex-shrink: 0` mark group, which is right when the row
+ * owns the pane width. Phase 6 put a FOUR-option group in a half-width column and the group won: the
+ * copy has `min-width: 0`, so it collapsed to one word per line while the option labels clipped.
+ * `flex-wrap` plus a sensible basis lets the marks drop to their own line instead — the same outcome
+ * the `< 900px` rule below already produces, now driven by the row's real width rather than the
+ * viewport's, which is what was wrong. No container query needed and no new breakpoint.
+ */
+[data-mytrion='verification'] .va-id-check {
+  flex-wrap: wrap;
+}
+[data-mytrion='verification'] .va-id-check-copy {
+  flex: 1 1 16rem;
+}
 @media (width < 900px) {
   [data-mytrion='verification'] .va-id-compare {
     grid-template-columns: minmax(0, 1fr);
@@ -1194,35 +1210,177 @@
 [data-mytrion='verification'] .va-order-card[data-assumed] .va-order-value {
   color: var(--warning);
 }
-[data-mytrion='verification'] .va-cb-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-5);
+/*
+ * A VERDICT TONE for the cards that carry one.
+ *
+ * Phase 6's weekly-net-cash-flow card is the Phase 7 hard stop made visible, and it was reaching for
+ * `data-order` to colour itself — an attribute that names a REVIEW ORDER and, as it happens, styles
+ * nothing at all here. So the most consequential number on the screen rendered in the same neutral
+ * as everything around it. `data-tone` says what it means, and the edge is 2px so the colour is not
+ * the only channel carrying it.
+ */
+[data-mytrion='verification'] .va-order-card[data-tone='good'] {
+  border-color: var(--intent-success-bd);
+  box-shadow: inset 2px 0 0 0 var(--success);
 }
-[data-mytrion='verification'] .va-cb-block {
+[data-mytrion='verification'] .va-order-card[data-tone='bad'] {
+  border-color: var(--intent-danger-bd);
+  box-shadow: inset 2px 0 0 0 var(--danger);
+}
+[data-mytrion='verification'] .va-order-card[data-tone='bad'] .va-order-value {
+  color: var(--danger);
+}
+/* ── Phase 6 review steps ─────────────────────────────────────────────────── */
+/*
+ * A real two-step sequence, replacing the `.va-cb-cols` two-column layout. The order Phase 5 decides
+ * is the order of these steps; putting both reviews on screen at once made that decision decorative,
+ * and squeezed each `.va-id-check` into the collapse fixed above.
+ */
+[data-mytrion='verification'] .va-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .va-step {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--va-r-md);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  /* Named properties, not `all`: this sits next to blurred chrome and `transition: all` re-runs the
+     machinery for every changed property, including ones that force a re-rasterise. */
+  transition:
+    border-color 0.2s cubic-bezier(0.2, 0, 0, 1),
+    background 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+[data-mytrion='verification'] .va-step:hover {
+  border-color: var(--border);
+  background: var(--surface-alt);
+}
+[data-mytrion='verification'] .va-step[data-active] {
+  border-color: var(--accent);
+  background: var(--surface-raised);
+}
+[data-mytrion='verification'] .va-step-index {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--va-r-pill);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+}
+[data-mytrion='verification'] .va-step[data-active] .va-step-index {
+  background: var(--intent-info-bg);
+  color: var(--text-primary);
+}
+/* Done carries a glyph as well as a colour — the tick is rendered in the markup for that reason. */
+[data-mytrion='verification'] .va-step[data-done] .va-step-index {
+  background: var(--intent-success-bg);
+  color: var(--success);
+}
+[data-mytrion='verification'] .va-step-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 1px;
 }
-[data-mytrion='verification'] .va-cb-title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--fw-bold);
+[data-mytrion='verification'] .va-step-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
 }
-[data-mytrion='verification'] .va-cb-criteria {
-  margin: 0;
-  padding-left: 1.2em;
+[data-mytrion='verification'] .va-step-note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .va-step-panel {
+  padding-top: var(--space-2);
+}
+
+/* ── Review field affordances ─────────────────────────────────────────────── */
+/* The unit belongs to the field, not to its name — "Total debt · USD" rather than "Total debt (USD)",
+   so the label stays scannable and the unit stays quiet. */
+[data-mytrion='verification'] .va-field-unit {
+  font-weight: var(--fw-regular);
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .va-field-hint,
+[data-mytrion='verification'] .va-field-error {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+[data-mytrion='verification'] .va-field-hint {
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .va-field-error {
+  color: var(--danger);
+}
+/* A field that spans the grid — a sentence needs the width a number does not. */
+[data-mytrion='verification'] .va-field[data-span='2'] {
+  grid-column: span 2;
+}
+[data-mytrion='verification'] .va-textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-2_5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--va-r-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  /* 16px on touch, or iOS zooms the whole page on focus and does not zoom back. */
+  font-size: var(--text-input-mobile, var(--text-sm));
+  line-height: 1.5;
+  resize: vertical;
+}
+[data-mytrion='verification'] .va-textarea:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+[data-mytrion='verification'] .va-textarea:disabled {
+  color: var(--text-muted);
+  background: var(--surface-alt);
+}
+[data-mytrion='verification'] .va-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2_5);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--va-r-md);
+  background: var(--surface);
+  cursor: pointer;
+}
+[data-mytrion='verification'] .va-toggle input {
+  flex: none;
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+[data-mytrion='verification'] .va-toggle-copy {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.45;
+  gap: 1px;
 }
-@media (width >= 900px) {
-  [data-mytrion='verification'] .va-cb-cols {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+[data-mytrion='verification'] .va-toggle-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+@media (width < 640px) {
+  [data-mytrion='verification'] .va-field[data-span='2'] {
+    grid-column: auto;
   }
 }
