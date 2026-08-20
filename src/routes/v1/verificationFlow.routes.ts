@@ -164,6 +164,12 @@ const finalBody = z.object({
   ]),
   approvedLimit: z.coerce.number().min(0).max(99_999_999).optional(),
   note: z.string().trim().max(2000).optional(),
+  /**
+   * Which arrangement a `deposit_prepaid` outcome is. The status column cannot tell a 1:1 deposit
+   * from a prepaid account, and the SOP asks for the conditions to be recorded — so the instrument
+   * is part of the decision, not a detail of the note.
+   */
+  instrument: z.enum(['deposit_1_1', 'prepaid']).optional(),
 });
 
 const docRequestBody = z.object({
@@ -544,15 +550,21 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
       const body = finalBody.parse(request.body ?? {});
       const detail = await deskService.decide(ctx, id, {
         decision: body.decision,
-        ...(body.approvedLimit === undefined ? {} : { approvedLimit: String(body.approvedLimit) }),
+        ...(body.approvedLimit === undefined ? {} : { approvedLimit: body.approvedLimit }),
         ...(body.note === undefined ? {} : { note: body.note }),
+        ...(body.instrument === undefined ? {} : { instrument: body.instrument }),
       });
       await auditFromContext(ctx, {
         action: 'verification.flow.decision',
         status: 'ok',
         resourceType: 'verification_case',
         resourceId: id,
-        detail: { decision: body.decision, approvedLimit: body.approvedLimit ?? null },
+        detail: {
+          decision: body.decision,
+          approvedLimit: body.approvedLimit ?? null,
+          instrument: body.instrument ?? null,
+          statusCode: detail.case.statusCode,
+        },
       });
       return detail;
     },

@@ -65,6 +65,36 @@ const CP_TYPE_TO_OURS: Record<string, VerificationIdentifierType> = {
   ip: 'ip',
 };
 
+/**
+ * Ours → the ONE CP type a new ban of ours is filed under.
+ *
+ * Reading probes every CP type that can satisfy ours; WRITING must pick one, or a single banned name
+ * would insert twice — once as `name`, once as `company_name` — for the same string. `name` is the
+ * choice for both, because `collectIdentifiers` flattens the company name and the person's name into
+ * one `name` identifier and cannot tell them apart afterwards, and because our own probe queries both
+ * CP name types anyway, so a ban filed under `name` is found either way.
+ *
+ * Null for the four types CP does not model — `ssn`, `mc`, `usdot`, `ip`. Those stay on our list
+ * alone, which is the honest outcome: inventing a CP type for them would write rows nothing reads.
+ * (`carrier_id` is absent for the different reason given above: a new applicant has none.)
+ */
+export function canonicalCpType(entryType: VerificationIdentifierType): string | null {
+  switch (entryType) {
+    case 'name':
+      return 'name';
+    case 'ein':
+      return 'ein';
+    case 'email':
+      return 'email';
+    case 'phone':
+      return 'phone';
+    case 'address':
+      return 'address';
+    default:
+      return null;
+  }
+}
+
 /** Ours → every CP type that can satisfy it. The inverse of the map above. */
 const OURS_TO_CP_TYPES: Partial<Record<VerificationIdentifierType, string[]>> = (() => {
   const out: Partial<Record<VerificationIdentifierType, string[]>> = {};

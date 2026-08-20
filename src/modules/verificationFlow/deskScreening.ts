@@ -23,10 +23,18 @@ import { verificationCaseAssetRepo } from '../../repos/verificationCaseAssetRepo
 import { verificationScreeningRepo } from '../../repos/verificationScreeningRepo.js';
 import { VERIFICATION_PHASE, type VerificationCase } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { matchCreditPlatformBanList } from '../../integrations/creditPlatformBlacklist.js';
+import {
+  canonicalCpType,
+  matchCreditPlatformBanList,
+} from '../../integrations/creditPlatformBlacklist.js';
+import {
+  insertBanListEntries,
+  type BanListWriteResult,
+} from '../../integrations/creditPlatformWriteDb.js';
 import { screenDealsForCase } from '../../integrations/verificationDealScreening.js';
 import { zohoFromCtx } from './applicationService.js';
 import { informCollectionsOfBlacklist } from './notify.js';
+import { auditFromContext } from '../audit/auditLogger.js';
 import { collectIdentifiers } from './screening.js';
 
 /** The identifier set both checks screen on. One definition, so a decline bans what screening probed. */
@@ -179,30 +187,55 @@ export async function runCaseScreening(ctx: TenantContext, row: VerificationCase
 }
 
 /**
- * Add every identifier of a declined case to OUR blacklist, so Check A catches the next application.
+ * Add every identifier of a declined case to BOTH ban lists, so Check A catches the next application.
  *
- * This is the writeback the credit platform does not do: nothing over there adds to
- * `blacklist_entries` on a decline, so without this the decision means nothing for the next
- * application. It writes to our own table — we do not own theirs — which is why `runCaseScreening`
- * unions the two lists rather than reading only the bigger one.
+ * This is the writeback the credit platform does not do: the credit-platform team confirmed nothing
+ * over there adds to `blacklist_entries` on a decline, so without this the decision means nothing for
+ * the next application.
+ *
+ * BOTH LISTS, and in that order. Ours is the record of THIS desk's decision and must land — it is a
+ * local transaction and the one Check A is guaranteed to read. Theirs is the shared list every other
+ * door reads, so a ban that stops at our table bans the applicant here and nowhere else; but it is a
+ * database we do not own, over a link that can be down, so its failure is reported and never allowed
+ * to lose the decision. Only the identifier types CP actually models are sent (see `canonicalCpType`)
+ * — `ssn`, `mc`, `usdot` and `ip` stay on our list alone.
  */
 export async function blacklistCaseIdentifiers(
   ctx: TenantContext,
   row: VerificationCase,
   reason?: string,
-): Promise<number> {
+): Promise<{
+  local: { added: number; alreadyListed: number };
+  platform: BanListWriteResult;
+}> {
   const identifiers = identifiersOf(row);
-  const added = await verificationScreeningRepo.addBlacklistEntries(
+  const why = reason ?? 'Confirmed blacklist match or fraud at underwriting.';
+
+  const local = await verificationScreeningRepo.addBlacklistEntries(
     ctx,
     identifiers.map((i) => ({
       entryType: i.entryType,
       valueHash: i.hash,
       valueLast4: i.last4,
       valueDisplay: i.display,
-      reason: reason ?? 'Confirmed blacklist match or fraud at underwriting.',
+      reason: why,
       sourceCaseId: row.id,
       addedBy: zohoFromCtx(ctx) ?? ctx.userId,
     })),
+  );
+
+  /**
+   * The shared list. `i.value` is already normalised by `collectIdentifiers` — the same normaliser the
+   * read probe applies to its needles — so a ban filed here is immediately findable by both sides.
+   *
+   * Ours carries the case id; theirs has no column for one, so the reason is the only provenance that
+   * survives. It is prefixed with the case so a hit months later can be traced back to a decision.
+   */
+  const platform = await insertBanListEntries(
+    identifiers.flatMap((i) => {
+      const type = canonicalCpType(i.entryType);
+      return type ? [{ type, value: i.value, reason: `${why} (Mytrion case ${row.id})` }] : [];
+    }),
   );
 
   // SOP Phase 3: "Decline + Blacklist -> Inform Collections Department." Blacklisting silently would
@@ -211,10 +244,32 @@ export async function blacklistCaseIdentifiers(
     caseId: row.id,
     applicantName:
       row.companyName ?? [row.firstName, row.lastName].filter(Boolean).join(' ') ?? row.id,
-    identifierCount: added,
+    identifierCount: local.added,
     reason,
     actorName: ctx.userName || ctx.userId,
   });
 
-  return added;
+  /**
+   * Audited HERE rather than in the routes, because both callers (Phase 3's `decline_blacklist`
+   * verdict and Phase 10's decision) need the same record, and because the remote half can fail
+   * without failing the decision — so whether the shared list actually took the ban is only knowable
+   * from this line.
+   */
+  await auditFromContext(ctx, {
+    action: 'verification.flow.blacklisted',
+    status: platform.available ? 'ok' : 'error',
+    resourceType: 'verification_case',
+    resourceId: row.id,
+    detail: {
+      identifiers: identifiers.length,
+      ownListAdded: local.added,
+      ownListAlreadyListed: local.alreadyListed,
+      platformAvailable: platform.available,
+      platformAttempted: platform.attempted,
+      platformInserted: platform.inserted,
+      ...(platform.error === undefined ? {} : { platformError: platform.error }),
+    },
+  });
+
+  return { local, platform };
 }

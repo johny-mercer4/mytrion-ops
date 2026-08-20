@@ -5,7 +5,7 @@
  * every query, including the duplicate scan, which is the one most likely to be written carelessly:
  * a cross-tenant duplicate match would leak the existence of another tenant's applicant.
  */
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   verificationBlacklistEntries,
@@ -198,10 +198,15 @@ export const verificationScreeningRepo = {
    * Add or reactivate. A previously deactivated entry being re-added must come back on rather than
    * conflict — the unique index is on (tenant, type, hash), so this is an upsert by design.
    */
+  /**
+   * `inserted` is true only when the row was NEW. `xmax = 0` is Postgres' own discriminator: zero on a
+   * fresh insert, non-zero on a row the ON CONFLICT path updated. Callers need the difference —
+   * re-declining an applicant already on the list must not be reported as a fresh ban.
+   */
   async addBlacklistEntry(
     ctx: TenantContext,
     input: Omit<NewVerificationBlacklistEntry, 'tenantId'>,
-  ): Promise<VerificationBlacklistEntry> {
+  ): Promise<VerificationBlacklistEntry & { inserted: boolean }> {
     const rows = await db
       .insert(verificationBlacklistEntries)
       .values({ ...input, tenantId: ctx.tenantId })
@@ -218,20 +223,29 @@ export const verificationScreeningRepo = {
           addedBy: input.addedBy ?? null,
         },
       })
-      .returning();
+      .returning({
+        ...getTableColumns(verificationBlacklistEntries),
+        inserted: sql<boolean>`xmax = 0`,
+      });
     return firstOrThrow(rows, 'Failed to add blacklist entry');
   },
 
+  /**
+   * Returns how many identifiers were NOT already banned.
+   *
+   * It used to return `entries.length` — the number of rows ATTEMPTED — so re-declining an applicant
+   * already on the list told Collections "8 identifiers added" when nothing had been added.
+   */
   async addBlacklistEntries(
     ctx: TenantContext,
     entries: Array<Omit<NewVerificationBlacklistEntry, 'tenantId'>>,
-  ): Promise<number> {
+  ): Promise<{ added: number; alreadyListed: number }> {
     let added = 0;
     for (const entry of entries) {
-      await this.addBlacklistEntry(ctx, entry);
-      added += 1;
+      const row = await this.addBlacklistEntry(ctx, entry);
+      if (row.inserted) added += 1;
     }
-    return added;
+    return { added, alreadyListed: entries.length - added };
   },
 
   async deactivateBlacklistEntry(ctx: TenantContext, id: string): Promise<boolean> {

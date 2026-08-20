@@ -16,12 +16,12 @@ import {
   type VerificationRailPhase,
 } from '@/api/verificationFlow';
 
-import { DecisionPane } from '../flow/ReviewPanes';
 import { RiskPane } from './CaseRiskPane';
 import type { RiskMarks } from './caseRisk';
 import { IntakePane } from './CaseIntakePane';
 import { IdentityPane } from './CaseIdentityPane';
 import { runAuthorityLookup } from '@/api/verificationDeskWrites';
+import { CaseDecisionPane } from './CaseDecisionPane';
 import { HardStopsPane } from './CaseHardStopsPane';
 import { HighwayPane } from './CaseHighwayPane';
 import type { HighwayMarks } from './caseHighway';
@@ -220,11 +220,12 @@ export function PhaseBody({
       );
     case 'p10_decision':
       return (
-        <DecisionPane
+        <CaseDecisionPane
           detail={detail}
           busy={pending === 'decision'}
           disabled={!canAct || !idle}
           onDecide={(b) => void onRun('decision', () => submitFinalDecision(caseId, b))}
+          onGoToPhase={onGoToPhase}
         />
       );
     default:

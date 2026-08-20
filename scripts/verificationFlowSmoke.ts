@@ -211,7 +211,7 @@ async function main(): Promise<void> {
 
   console.log('\n=== 5. Final decision ===');
   await deskService.decidePhase(desk, caseId, 'p9_risk_capacity', { outcome: 'pass' });
-  detail = await deskService.decide(desk, caseId, { decision: 'approve', approvedLimit: '4560.00' });
+  detail = await deskService.decide(desk, caseId, { decision: 'approve', approvedLimit: 4560 });
   check('approved and closed', detail.case.statusCode === 'approved' && detail.case.closedAt !== null);
   check('a timeline exists', detail.events.length > 5, `${detail.events.length} events`);
 

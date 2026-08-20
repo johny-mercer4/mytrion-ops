@@ -12,7 +12,9 @@ import { verificationFlowRepo } from '../../repos/verificationFlowRepo.js';
 import {
   VERIFICATION_PHASE,
   VERIFICATION_STATUS,
+  type VerificationCase,
   type VerificationDocType,
+  type VerificationPhaseCode,
 } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -58,6 +60,22 @@ export async function requestDocuments(
 }
 
 /**
+ * The phase a documents hold will resume at: the one that raised the most recent request.
+ *
+ * Shared with Phase 10's decision, which records this on the case so the reviewer is told where it
+ * will return to. Two copies of the rule would drift, and the copy that drifted would be the promise.
+ * `listDocuments` is newest-first, so the first row carrying a phase is the latest ask.
+ */
+export async function documentReturnPhase(
+  ctx: TenantContext,
+  row: VerificationCase,
+): Promise<VerificationPhaseCode> {
+  const documents = await verificationCaseAssetRepo.listDocuments(ctx, row.id);
+  const lastRequestPhase = documents.find((d) => d.requestedInPhase)?.requestedInPhase ?? row.phaseCode;
+  return resolveDocumentReturnPhase(lastRequestPhase, row.applicantType);
+}
+
+/**
  * Resume once the outstanding asks are fulfilled. Returns the case to the phase that RAISED the
  * request, per the SOP, rather than to the start of the flow.
  */
@@ -71,10 +89,7 @@ export async function resumeAfterDocuments(ctx: TenantContext, caseId: string) {
         { statusCode: 409, code: 'VERIFICATION_DOCS_OUTSTANDING', expose: true },
       );
     }
-    const documents = await verificationCaseAssetRepo.listDocuments(ctx, caseId);
-    const lastRequestPhase =
-      documents.find((d) => d.requestedInPhase)?.requestedInPhase ?? row.phaseCode;
-    const target = resolveDocumentReturnPhase(lastRequestPhase, row.applicantType);
+    const target = await documentReturnPhase(ctx, row);
 
     await verificationFlowRepo.applyTransition(ctx, caseId, {
       phaseCode: target,

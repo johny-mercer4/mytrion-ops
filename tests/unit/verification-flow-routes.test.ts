@@ -319,7 +319,12 @@ describe('risk + decision validation', () => {
     expect(decideMock).not.toHaveBeenCalled();
   });
 
-  it('passes the approved limit through as text', async () => {
+  /**
+   * As a NUMBER now, not a string. The route used to stringify it only for the service to be unable
+   * to compare it with anything — and Phase 10 has to compare it against the recommended limit to
+   * tell a standard LOC from a management exception.
+   */
+  it('passes the approved limit through as a number', async () => {
     await app.inject({
       method: 'POST',
       url: '/v1/verification/flow/cases/vc_1/decision',
@@ -329,7 +334,22 @@ describe('risk + decision validation', () => {
     expect(decideMock).toHaveBeenCalledWith(
       expect.anything(),
       'vc_1',
-      expect.objectContaining({ decision: 'approve', approvedLimit: '4560' }),
+      expect.objectContaining({ decision: 'approve', approvedLimit: 4560 }),
+    );
+  });
+
+  /** The instrument is part of the decision — the status column cannot tell deposit from prepaid. */
+  it('passes the deposit instrument through', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/v1/verification/flow/cases/vc_1/decision',
+      headers: bearer(await workerToken('Verification')),
+      payload: { decision: 'deposit_prepaid', instrument: 'prepaid', note: 'Thin file' },
+    });
+    expect(decideMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'vc_1',
+      expect.objectContaining({ decision: 'deposit_prepaid', instrument: 'prepaid' }),
     );
   });
 });

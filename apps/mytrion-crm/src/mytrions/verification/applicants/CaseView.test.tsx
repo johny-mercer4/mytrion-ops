@@ -25,11 +25,14 @@ vi.mock('@/api/verificationFlow', async (importOriginal) => {
     requestDocuments,
     reopenPhase,
     saveRiskAssessment,
+    submitFinalDecision,
   };
 });
 
 /** Phase 9's save. Unmocked, a click would reach the real transport from jsdom. */
 const saveRiskAssessment = vi.fn();
+/** Phase 10's decision. Same reason — and this one closes the case, so it must never reach the wire. */
+const submitFinalDecision = vi.fn();
 const getDeskBrokerSnapshot = vi.fn();
 /**
  * `runAuthorityLookup` is mocked alongside the snapshot for the reason the snapshot is: Phase 4's Run
@@ -1335,5 +1338,191 @@ describe('Phase 2 — the verdict control and What to check', () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
     await screen.findAllByRole('radiogroup');
     expect(screen.getByText(/Follows the marks you set beside each check/)).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * PHASE 10 — the final decision.
+ *
+ * A decided case is read-only, so the fixture is an OPEN case sitting on `p10_decision` with a stored
+ * risk assessment: that is the one state in which this pane accepts input.
+ */
+function decisionDesk(over: Record<string, unknown> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, phaseCode: 'p10_decision', requestedLimit: '5000' },
+    banking: {
+      ...(base.banking ?? {}),
+      recurringWeeklyIncome: '5000',
+      recurringWeeklyExpenses: '3000',
+      avgWeeklyFuelExpense: '800',
+    },
+    credit: { ...(base.credit ?? {}), creditScore: 700 },
+    risk: { riskTier: 'strong', recommendedLimit: '4000', riskFactor: '1.43', keyRisks: [] },
+    rail: [phase({ code: 'p10_decision', label: 'Decision', order: 10, status: 'in_progress' })],
+    ...over,
+  } as unknown as VerificationDeskDetail;
+}
+
+describe('CaseView Phase 10 final decision', () => {
+  beforeEach(() => {
+    submitFinalDecision.mockReset();
+    submitFinalDecision.mockResolvedValue(decisionDesk());
+  });
+
+  it('separates the outcomes that close the case from the ones that do not', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    expect(screen.getByText('Keeps the case open')).toBeInTheDocument();
+  });
+
+  it('preselects nothing, and says so instead of greying the button silently', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    for (const option of screen.getAllByRole('radio')) {
+      expect(option).toHaveAttribute('aria-checked', 'false');
+    }
+    expect(screen.getByText('Choose an outcome.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Record final decision/ })).toBeDisabled();
+  });
+
+  it('shows the three limits so the decision is made against the recommendation', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    // Scoped: the case-facts header carries a "Requested limit" of its own, so an unscoped
+    // getByText('$5,000') matches two nodes.
+    const figs = screen.getByText('Recommended').closest('.va-figs') as HTMLElement;
+    expect(within(figs).getByText('$5,000')).toBeInTheDocument();
+    expect(within(figs).getByText('$4,000')).toBeInTheDocument();
+  });
+
+  it('offers the limit box only once approve is chosen, prefilled by the shortcut', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    expect(screen.queryByLabelText(/Approved credit limit/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Approve — standard LOC/ }));
+    expect(screen.getByText('Enter the approved credit limit.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use recommended' }));
+    expect(screen.getByRole('button', { name: /Record final decision/ })).toBeEnabled();
+  });
+
+  it('names an over-recommended approval an exception and demands a reason', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Approve — standard LOC/ }));
+    fireEvent.change(screen.getByLabelText(/Approved credit limit/), {
+      target: { value: '9000' },
+    });
+    expect(screen.getByText('Above the recommended limit')).toBeInTheDocument();
+    expect(screen.getByText('125% over recommended')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Record final decision/ })).toBeDisabled();
+  });
+
+  it('refuses to approve at all when Phase 9 never ran', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk({ risk: null }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Approve — standard LOC/ }));
+    expect(screen.getByText(/Phase 9 has not assessed/)).toBeInTheDocument();
+  });
+
+  it('asks which arrangement a deposit is, through a real radiogroup', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Deposit 1:1 \/ Prepaid/ }));
+    // A radiogroup, not three loose radios — arrow keys have to work here like everywhere else.
+    const group = screen.getByRole('radiogroup', { name: 'Arrangement' });
+    expect(within(group).getByRole('radio', { name: 'Deposit 1:1' })).toBeInTheDocument();
+    expect(screen.getByText(/1:1 deposit or a prepaid account/)).toBeInTheDocument();
+  });
+
+  it('blocks a documents hold with nothing outstanding, and offers the way out', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Pending documents/ }));
+    expect(screen.getByText(/Request the missing documents first/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to the current phase/ })).toBeInTheDocument();
+  });
+
+  it('names the phase a documents hold will return to', async () => {
+    getDeskCase.mockResolvedValue(
+      decisionDesk({
+        documents: [
+          {
+            id: 'd1',
+            status: 'requested',
+            docType: 'bank_statement',
+            label: 'Bank statement — March',
+            requestedInPhase: 'p6_credit_banking',
+          },
+        ],
+        rail: [
+          phase({ code: 'p6_credit_banking', label: 'Credit & banking', order: 6 }),
+          phase({ code: 'p10_decision', label: 'Decision', order: 10 }),
+        ],
+      }),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Pending documents/ }));
+    const banner = screen
+      .getByText('Returns to Credit & banking once received.')
+      .closest('.va-banner') as HTMLElement;
+    expect(within(banner).getByText('Bank statement — March')).toBeInTheDocument();
+  });
+
+  it('says what Decline + blacklist actually does, and arms before it does it', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Decline \+ blacklist/ }));
+    expect(screen.getByText('This bans the applicant, not just this case')).toBeInTheDocument();
+    expect(screen.getByText(/shared credit-platform ban list/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Confirmed fraud' } });
+    const button = screen.getByRole('button', { name: /Record final decision/ });
+    fireEvent.click(button);
+    // First click arms only — nothing is sent.
+    expect(submitFinalDecision).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /cannot be undone/ })).toBeInTheDocument();
+  });
+
+  it('sends the decision, the limit and the instrument together', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Deposit 1:1 \/ Prepaid/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Deposit 1:1' }));
+    fireEvent.change(screen.getByLabelText(/Secured line amount/), { target: { value: '2000' } });
+    fireEvent.change(screen.getByLabelText(/Reason and conditions/), {
+      target: { value: 'Thin file, deposit agreed' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Record final decision/ }));
+    expect(submitFinalDecision).toHaveBeenCalledWith('vc_ridgevale01', {
+      decision: 'deposit_prepaid',
+      approvedLimit: 2000,
+      note: 'Thin file, deposit agreed',
+      instrument: 'deposit_1_1',
+    });
+  });
+
+  it('warns that a borderline referral does not end the application', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Borderline \/ exception/ }));
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Inconsistent figures' } });
+    expect(screen.getByText(/The case stays open/)).toBeInTheDocument();
   });
 });

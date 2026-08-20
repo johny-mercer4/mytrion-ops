@@ -640,7 +640,13 @@ export async function resumeAfterDocuments(id: string): Promise<VerificationDesk
 
 export async function submitFinalDecision(
   id: string,
-  body: { decision: VerificationFinalDecision; approvedLimit?: number; note?: string },
+  body: {
+    decision: VerificationFinalDecision;
+    approvedLimit?: number;
+    note?: string;
+    /** Which arrangement a `deposit_prepaid` outcome is — the status column cannot tell them apart. */
+    instrument?: 'deposit_1_1' | 'prepaid';
+  },
 ): Promise<VerificationDeskDetail> {
   return (await request('POST', `/verification/flow/cases/${id}/decision`, {
     body,

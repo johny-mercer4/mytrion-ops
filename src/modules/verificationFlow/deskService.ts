@@ -16,7 +16,6 @@ import { verificationFlowBundleRepo } from '../../repos/verificationFlowBundleRe
 import { verificationScreeningRepo } from '../../repos/verificationScreeningRepo.js';
 import { toNumber } from '../../repos/verificationReviewRepo.js';
 import {
-  VERIFICATION_PHASE,
   VERIFICATION_STATUS,
   type VerificationCase,
   type VerificationPhaseOutcome,
@@ -55,13 +54,12 @@ import { runAuthorityLookup } from './deskAuthority.js';
 import { saveHighwayReview, type HighwayReviewInput } from './deskHighway.js';
 import { requestDocuments, resumeAfterDocuments } from './deskDocuments.js';
 import { blacklistCaseIdentifiers, runCaseScreening } from './deskScreening.js';
+import { recordFinalDecision, type FinalDecisionInput } from './deskDecision.js';
 import { screeningVerdictSummary } from './screening.js';
 import {
-  FINAL_DECISIONS,
   resolvePhaseDecision,
   resolveReviewOrder,
   resolveUnderwritingRoute,
-  type FinalDecision,
 } from './stateMachine.js';
 
 /** Red cases are visible to the desk but not workable — Sales still owes intake. */
@@ -498,50 +496,11 @@ export const deskService = {
 
   // ---- Phase 10 ----
 
-  async decide(
-    ctx: TenantContext,
-    caseId: string,
-    input: { decision: FinalDecision; approvedLimit?: string | undefined; note?: string | undefined },
-  ) {
-    return withFlowSchemaGuard(async () => {
-      const row = await loadWorkable(ctx, caseId);
-      const statusCode = FINAL_DECISIONS[input.decision];
-
-      if (input.decision === 'approve' && !input.approvedLimit) {
-        throw new AppError('An approved credit limit is required to approve an application.', {
-          statusCode: 422,
-          code: 'VERIFICATION_LIMIT_REQUIRED',
-          expose: true,
-        });
-      }
-
-      const closed =
-        statusCode !== VERIFICATION_STATUS.managerReview &&
-        statusCode !== VERIFICATION_STATUS.pendingDocs;
-
-      await verificationFlowRepo.applyTransition(ctx, caseId, {
-        phaseCode: VERIFICATION_PHASE.decision,
-        statusCode,
-        phaseStatus: closed ? 'passed' : 'manager_review',
-        decidedPhase: VERIFICATION_PHASE.decision,
-        outcome: input.decision === 'approve' ? 'pass' : undefined,
-        closed,
-        eventType: 'decision',
-        eventNotes: input.note ?? `Final decision: ${input.decision}.`,
-        actorZohoUserId: zohoFromCtx(ctx),
-        actorName: ctx.userName || ctx.userId,
-        findings: { decision: input.decision, approvedLimit: input.approvedLimit ?? null },
-      });
-
-      if (input.approvedLimit) {
-        await verificationFlowRepo.patchIntake(ctx, caseId, {
-          approvedLimitAmount: input.approvedLimit,
-        });
-      }
-      if (input.decision === 'decline_blacklist') {
-        await blacklistCaseIdentifiers(ctx, row, input.note);
-      }
-      return this.detail(ctx, caseId);
-    });
+  /**
+   * Phase 10 — the final decision. The seven outcomes and what the SOP requires of each live in
+   * `deskDecision.ts`; this stays the one door the routes come through, as every other phase does.
+   */
+  async decide(ctx: TenantContext, caseId: string, input: FinalDecisionInput) {
+    return recordFinalDecision(ctx, caseId, input);
   },
 };

@@ -561,6 +561,16 @@
   text-transform: uppercase;
   color: var(--text-muted);
 }
+/* A label carrying a Required badge needs a gap, and the plain rule above has none — so the badge sat
+   flush against the text ("REASONREQUIRED"). A modifier rather than a change to every field label:
+   several existing labels end in an inline `.va-field-unit` suffix (" · mo") that a gap would push
+   away from its number. */
+[data-mytrion='verification'] .va-field-label-badged {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
 [data-mytrion='verification'] :is(.va-counts, .va-recorded) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(18ch, 1fr));
@@ -992,6 +1002,155 @@
   font-size: var(--text-2xs);
   line-height: var(--lh-2xs);
   color: var(--text-muted);
+}
+
+/* ── Phase 10 · final decision ─────────────────────────────────────────────
+   The seven outcomes are grouped by what they DO, and the group heads are the point: five of them
+   close the case forever and two hand it on, which nothing on the old flat list said. Two columns on
+   a wide pane so both kinds are visible at once — stacked below 900, where a two-column read of
+   seven cards stops working. */
+[data-mytrion='verification'] .va-decide-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(28ch, 100%), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+[data-mytrion='verification'] .va-decide-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+[data-mytrion='verification'] .va-decide-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  padding-block-end: var(--space-1);
+}
+[data-mytrion='verification'] .va-decide-group-hint {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+[data-mytrion='verification'] .va-decide-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2_5);
+  align-items: start;
+  width: 100%;
+  padding: var(--space-3) var(--space-3_5);
+  border: 1px solid var(--border);
+  border-radius: var(--va-r-md);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+[data-mytrion='verification'] .va-decide-option:hover:not(:disabled) {
+  border-color: var(--border-hover);
+}
+[data-mytrion='verification'] .va-decide-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+[data-mytrion='verification'] .va-decide-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The glyph carries the tone at rest so the KIND of each outcome reads before it is chosen — a row of
+   seven identically grey cards was the old pane's real problem. */
+[data-mytrion='verification'] .va-decide-option-glyph {
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .va-decide-option[data-tone='approve'] .va-decide-option-glyph {
+  color: var(--intent-success-fg);
+}
+[data-mytrion='verification'] .va-decide-option[data-tone='conditional'] .va-decide-option-glyph,
+[data-mytrion='verification'] .va-decide-option[data-tone='hold'] .va-decide-option-glyph {
+  color: var(--intent-warning-fg);
+}
+[data-mytrion='verification'] .va-decide-option[data-tone='decline'] .va-decide-option-glyph {
+  color: var(--intent-danger-fg);
+}
+/* SELECTED. A 1px border swap is not enough on the last screen of the flow, so the chosen outcome
+   also takes its tone's surface — the same escalation `.va-mark[aria-checked]` makes. */
+[data-mytrion='verification'] .va-decide-option[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--surface-data);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+[data-mytrion='verification'] .va-decide-option[data-tone='approve'][aria-checked='true'] {
+  border-color: var(--intent-success-bd);
+  background: var(--intent-success-bg);
+  box-shadow: inset 0 0 0 1px var(--intent-success-bd);
+}
+[data-mytrion='verification']
+  .va-decide-option[data-tone='conditional'][aria-checked='true'],
+[data-mytrion='verification'] .va-decide-option[data-tone='hold'][aria-checked='true'] {
+  border-color: var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+  box-shadow: inset 0 0 0 1px var(--intent-warning-bd);
+}
+[data-mytrion='verification'] .va-decide-option[data-tone='decline'][aria-checked='true'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+  box-shadow: inset 0 0 0 1px var(--intent-danger-bd);
+}
+[data-mytrion='verification'] .va-decide-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  min-width: 0;
+}
+[data-mytrion='verification'] .va-decide-option-label {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
+}
+[data-mytrion='verification'] .va-decide-option-body {
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+/* WHAT THE CHOSEN OUTCOME NEEDS.
+   The tone is carried by the border colour of the whole block, the way `.va-banner[data-tone]`
+   already does it in this stylesheet — not by a thick accent bar down one edge, which is a tell
+   rather than a signal and which the house detector flags by name. */
+[data-mytrion='verification'] .va-decide-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--va-r-md);
+  background: var(--surface-data);
+}
+[data-mytrion='verification'] .va-decide-detail[data-tone='approve'] {
+  border-color: var(--intent-success-bd);
+}
+[data-mytrion='verification'] .va-decide-detail[data-tone='conditional'],
+[data-mytrion='verification'] .va-decide-detail[data-tone='hold'] {
+  border-color: var(--intent-warning-bd);
+}
+[data-mytrion='verification'] .va-decide-detail[data-tone='decline'] {
+  border-color: var(--intent-danger-bd);
+}
+/* The limit box and its "use recommended" shortcut share a row; the input takes the slack. */
+[data-mytrion='verification'] .va-decide-limit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .va-decide-limit > :first-child {
+  flex: 1 1 12ch;
+  min-width: 0;
 }
 
 /* ── Decision footer ──────────────────────────────────────────────────────── */
