@@ -26,6 +26,18 @@ export async function getDeskBrokerSnapshot(
   };
 }
 
+/**
+ * Phase 4's register lookup. POST because it spends an outbound call and writes the phase findings.
+ *
+ * Returns the whole detail, like every other desk write — `CaseView.run` replaces the detail wholesale.
+ */
+export async function runAuthorityLookup(id: string): Promise<VerificationDeskDetail> {
+  return (await request(
+    'POST',
+    `/verification/flow/cases/${id}/authority/run`,
+  )) as VerificationDeskDetail;
+}
+
 export async function addDeskPrincipal(
   id: string,
   body: { fullName: string },

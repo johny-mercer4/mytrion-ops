@@ -176,3 +176,31 @@ export function deriveRiskSignals(
     ),
   };
 }
+
+/**
+ * The underwriting policy a tenant has when it has never opened the policy screen.
+ *
+ * `verification_policy` is seeded per tenant, but a read must not create a row, so the desk detail
+ * falls back to these. They are the SAME numbers the seed migration writes — kept next to
+ * `deriveRiskSignals` and `IndicatorThresholds` because `adbReviewThreshold` and `nsfReviewThreshold`
+ * are what they are FOR, and a default that drifts from the threshold it feeds is silent.
+ */
+export interface VerificationPolicyShape {
+  strongFactor: string | null;
+  moderateFactor: string | null;
+  weakFactor: string | null;
+  adbReviewThreshold: string;
+  nsfReviewThreshold: number;
+  bankFirstTruckMin: number;
+  wexCardCutoff: number;
+}
+
+export const VERIFICATION_POLICY_DEFAULTS: VerificationPolicyShape = {
+  strongFactor: '0.800',
+  moderateFactor: null,
+  weakFactor: null,
+  adbReviewThreshold: '500',
+  nsfReviewThreshold: 2,
+  bankFirstTruckMin: 10,
+  wexCardCutoff: 20,
+};

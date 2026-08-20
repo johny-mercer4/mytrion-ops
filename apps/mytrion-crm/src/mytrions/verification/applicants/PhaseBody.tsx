@@ -19,6 +19,7 @@ import { HardStopsPane } from '../flow/PhasePanes';
 import { DecisionPane, RiskPane } from '../flow/ReviewPanes';
 import { IntakePane } from './CaseIntakePane';
 import { IdentityPane } from './CaseIdentityPane';
+import { runAuthorityLookup } from '@/api/verificationDeskWrites';
 import { ScreeningPane } from './CaseScreeningPane';
 import { AuthorityPane } from './CaseAuthorityPane';
 import { CreditBankingPane } from './CaseCreditBankingPane';
@@ -123,6 +124,11 @@ export function PhaseBody({
           caseId={caseId}
           marks={authorityMarks}
           onMarks={onAuthorityMarks}
+          canAct={canAct}
+          canScreen={canScreen}
+          running={pending === 'authority'}
+          /* Same one-action-at-a-time `pending` key every other pane reports through. */
+          onRun={() => void onRun('authority', () => runAuthorityLookup(caseId))}
         />
       );
     case 'p5_routing':

@@ -10,6 +10,8 @@ export type CaseActionKey =
   | 'intake'
   | 'principal'
   | 'screening'
+  /** Phase 4's register lookup — its own key so only the Authority pane's control reports. */
+  | 'authority'
   | 'credit'
   | 'banking'
   | 'risk'

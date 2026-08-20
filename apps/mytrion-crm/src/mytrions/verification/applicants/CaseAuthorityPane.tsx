@@ -1,17 +1,26 @@
 /**
- * Phase 4 working pane — MC/DOT against the warehouse snapshot, then mark authority.
+ * Phase 4 working pane — the FMCSA register and census, then mark authority.
  *
- * PARTLY AUTOMATED NOW. There is no live FMCSA or QCmobile call in this repo, but `stg_broker_snapshot`
- * holds 542,654 rows of FMCSA-shaped carrier data keyed on DOT — including `operating_status` and the
- * authority's `add_date`. This pane was already fetching it and printing three lines of it beside five
- * checks the reviewer then answered from scratch. `authoritySuggestions` turns what the warehouse knows
- * into proposed marks with their evidence attached; the reviewer applies them, one at a time or all at
- * once, and can overrule any of them. Nothing is marked on its own — a check nobody performed must not
- * carry somebody's name.
+ * AUTOMATED NOW, AND HONEST ABOUT WHICH HALF ANSWERED. `runAuthorityLookup` reads four sources: the
+ * QCMobile register (source of truth for MC/USDOT status, operating authority and INSURANCE), the
+ * FMCSA census (live, and the only offline source carrying MC status — the DWH snapshot has no MC
+ * column at all), the insurance filing history (FROZEN, labelled as such) and the DWH broker snapshot
+ * this pane already read. Between them they answer five of the six checks; `history` stays a judgement.
  *
- * What is NOT suggested is as deliberate as what is: MC status (the snapshot is DOT-keyed and carries
- * no MC authority), insurance (nothing here holds it) and operating history (a judgement). Those stay
- * blank so the gap is visible rather than filled with a guess.
+ * THE REGISTER IS UNREACHABLE OFF-RENDER, and that is a first-class state rather than an error. Every
+ * fmcsa.dot.gov host denies non-US egress at the edge, so `reason: 'blocked'` means "we could not ask",
+ * which says nothing whatever about the carrier. It gets the same treatment Phase 3 gives an
+ * unreadable ban list: ONE collapsed banner listing what went quiet, and the suggestion withheld.
+ *
+ * SUGGESTIONS ARE PER CHECK, and per check is the point. This pane used to offer a single "Apply N
+ * suggestions" button, so a reviewer either took the warehouse's word on everything or typed all six
+ * by hand. Each row now carries its own evidence and its own control, matching the Phase 3 screening
+ * pane — and nothing is ever marked on its own, because a check nobody performed must not carry
+ * somebody's name.
+ *
+ * WHAT WAS ALSO WRONG HERE: the pane took no `canAct` and no `pending`, so every mark group stayed
+ * live on a case that had already been decided, and the three-column prose block printed the same
+ * facts as sentences at three different x-positions.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Icon, Input } from '@/ds';
@@ -24,9 +33,14 @@ import { CaseMarkGroup, type MarkOption } from './CaseMarkGroup';
 import {
   AUTHORITY_CHECKS,
   authorityAgeYears,
+  authorityRunFrom,
   authoritySuggestions,
+  authoritySuggestionsFromRun,
+  authorityUnreachable,
+  formatDollars,
   type AuthorityMark,
   type AuthorityMarks,
+  type AuthoritySuggestion,
   type StructureMark,
 } from './caseAuthority';
 
@@ -48,8 +62,14 @@ const CHECK_MARKS: ReadonlyArray<MarkOption<AuthorityMark>> = [
   { id: 'unresolved', label: 'Unresolved', icon: 'warning', tone: 'warn', hint: 'Could not settle it' },
 ];
 
+/**
+ * `na` and `ok` were BOTH `check_circle` with tone `good`, so "does not apply" and "on file and
+ * acceptable" were distinguishable only by their label — colour as the sole channel, which the house
+ * accessibility floor forbids. `na` is now a block glyph: it is the absence of a requirement, not the
+ * satisfaction of one.
+ */
 const STRUCTURE_MARKS: ReadonlyArray<MarkOption<StructureMark>> = [
-  { id: 'na', label: 'N/A', icon: 'check_circle', tone: 'good', hint: 'Does not apply to this applicant' },
+  { id: 'na', label: 'N/A', icon: 'block', tone: 'good', hint: 'Does not apply to this applicant' },
   {
     id: 'needed',
     label: 'Needed',
@@ -59,6 +79,19 @@ const STRUCTURE_MARKS: ReadonlyArray<MarkOption<StructureMark>> = [
   },
   { id: 'ok', label: 'On file', icon: 'check_circle', tone: 'good', hint: 'Attached and acceptable' },
 ];
+
+/** Short local timestamp for "when the register was read". Empty on anything unparseable. */
+function whenText(iso: string | null): string {
+  if (!iso) return '';
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function text(value: unknown): string {
   if (value == null) return '—';
@@ -71,11 +104,21 @@ export function AuthorityPane({
   caseId,
   marks,
   onMarks,
+  canAct,
+  canScreen,
+  running,
+  onRun,
 }: {
   detail: VerificationDeskDetail;
   caseId: string;
   marks: AuthorityMarks;
   onMarks: (next: AuthorityMarks) => void;
+  /** Whether the case is DECIDABLE. False on a red or decided case — the marks go read-only. */
+  canAct: boolean;
+  /** Whether the register may be READ. Weaker than `canAct`: only a decided case is out of reach. */
+  canScreen: boolean;
+  running: boolean;
+  onRun: () => void;
 }) {
   const c = detail.case as VerificationDeskDetail['case'] & Record<string, unknown>;
   const [snapshot, setSnapshot] = useState<BrokerSnapshotMatch | null>(null);
@@ -108,9 +151,27 @@ export function AuthorityPane({
   // One clock for the pane, so the authority age in the snapshot column and the one in the suggestion
   // cannot disagree by a day mid-render.
   const now = useMemo(() => Date.now(), [snapshot]);
-  const suggestions = useMemo(() => authoritySuggestions(snapshot, now), [snapshot, now]);
+  const phase = detail.rail.find((p) => p.code === 'p4_authority');
+  const run = authorityRunFrom(phase?.findings);
+  /**
+   * THE REGISTER WINS WHERE IT ANSWERED, the warehouse fills the rest.
+   *
+   * Both are suggestion sources and they overlap on `dot` / `operating` / `authority_age`. The register
+   * and the census are the federal record; `stg_broker_snapshot` is a lagging warehouse copy that
+   * matched about a quarter of cases. So the run is spread LAST and takes precedence per check — and
+   * the row shows whichever one produced the value, so provenance is never guessed.
+   */
+  const suggestions: Record<string, AuthoritySuggestion> = {
+    ...authoritySuggestions(snapshot, now),
+    ...authoritySuggestionsFromRun(run, now),
+  };
   const ageYears = authorityAgeYears(snapshot?.authorityAddedOn ?? null, now);
   const outstanding = Object.entries(suggestions).filter(([id, s]) => marks.checks[id] !== s.mark);
+  const unreachable = authorityUnreachable(run);
+  // Deliberately NOT a second loading affordance: the pane already has one, on the Run control. This
+  // only distinguishes "the warehouse answered and had nothing" from "we have not asked yet".
+  const warehouseSilent = snapState === 'none';
+  const registerName = run?.register.legalName ?? null;
 
   const applyAll = (): void => {
     const next = { ...marks.checks };
@@ -121,69 +182,213 @@ export function AuthorityPane({
   return (
     <div className="va-stack">
       <div className="va-pane-head">
-        <h3 className="t-eyebrow va-pane-kicker">Authority & operating status</h3>
+        <h3 className="t-eyebrow va-pane-kicker">Authority &amp; operating status</h3>
         <span className="va-pane-note">
-          {snapState === 'ready'
-            ? 'Warehouse snapshot found — suggestions below, yours to apply'
-            : 'No warehouse match — decide from the application and files'}
+          {run
+            ? `Register read ${whenText(run.ranAt)}${registerName ? ` · ${registerName}` : ''}`
+            : 'Read the FMCSA register, then rule on what it found'}
         </span>
       </div>
 
-      <div className="va-id-compare">
-        <section className="va-id-col">
-          <h4 className="va-field-label">On the application</h4>
-          <p className="va-pane-body">{text(c.companyName)}</p>
-          <p className="va-pane-body">MC: {text(c.mc)}</p>
-          <p className="va-pane-body">USDOT: {text(c.dot)}</p>
-        </section>
-        <section className="va-id-col">
-          <h4 className="va-field-label">Broker snapshot</h4>
-          {snapState === 'loading' ? (
-            <p className="va-pane-body">Looking up carrier records…</p>
-          ) : snapState === 'none' ? (
-            <p className="va-pane-body">No warehouse match — decide from the application and files.</p>
-          ) : (
-            <>
-              <p className="va-pane-body">USDOT: {text(snapshot?.dotNumber)}</p>
-              <p className="va-pane-body">Authority status: {text(snapshot?.operatingStatus)}</p>
-              <p className="va-pane-body">
-                Authority since: {text(snapshot?.authorityAddedOn)}
-                {ageYears !== null ? ` · about ${ageYears} year${ageYears === 1 ? '' : 's'}` : ''}
-              </p>
-              {/* WHAT THE SNAPSHOT CANNOT ANSWER, named. MC status, insurance and operating history are
-                  absent from the warehouse, and a reviewer who is not told that reads three blank
-                  checks as three things the lookup cleared. */}
-              <p className="va-aside-note">
-                No MC status, insurance or operating history here — those stay yours.
-              </p>
-            </>
-          )}
-        </section>
-        <section className="va-id-col">
-          <h4 className="va-field-label">Files received</h4>
-          {received.length === 0 ? (
-            <p className="va-pane-body">None yet — attach from Documents.</p>
-          ) : (
-            received.map((d) => (
-              <p className="va-pane-body" key={d.id}>
-                {d.label ?? d.fileName ?? d.docType}
-              </p>
-            ))
-          )}
-        </section>
+      {/* THE IDENTIFIERS THE LOOKUP USES, stated once as a grid rather than three columns of prose.
+          Values scanned for agreement are read by their values, and a label-per-line puts every value
+          at a different x — the same reason the Phase 3 pane collapsed its two fact columns into one. */}
+      <div className="va-recorded" data-stack="true">
+        <div className="va-pane-head">
+          <h4 className="t-eyebrow va-pane-kicker">Authority numbers</h4>
+          <Button
+            variant={run ? 'secondary' : 'primary'}
+            size="sm"
+            icon="restart_alt"
+            loading={running}
+            disabled={!canScreen}
+            onClick={onRun}
+          >
+            {run ? 'Read the register again' : 'Read the register'}
+          </Button>
+        </div>
+        <div className="va-figs">
+          <span className="va-fig">
+            <span className="t-eyebrow">Company</span>
+            <span className="va-fig-v" data-wrap data-empty={c.companyName ? undefined : true}>
+              {text(c.companyName)}
+            </span>
+          </span>
+          <span className="va-fig">
+            <span className="t-eyebrow">MC</span>
+            <span className="va-fig-v" data-empty={c.mc ? undefined : true}>{text(c.mc)}</span>
+          </span>
+          <span className="va-fig">
+            <span className="t-eyebrow">USDOT</span>
+            <span className="va-fig-v" data-empty={c.dot ? undefined : true}>{text(c.dot)}</span>
+          </span>
+          <span className="va-fig">
+            <span className="t-eyebrow">Warehouse USDOT</span>
+            <span className="va-fig-v" data-empty={snapshot?.dotNumber ? undefined : true}>
+              {text(snapshot?.dotNumber)}
+            </span>
+          </span>
+          <span className="va-fig">
+            <span className="t-eyebrow">Fleet (register)</span>
+            <span className="va-fig-v" data-empty={run?.register.totalPowerUnits == null ? true : undefined}>
+              {run?.register.totalPowerUnits ?? run?.census.powerUnits ?? '—'}
+            </span>
+          </span>
+          <span className="va-fig">
+            <span className="t-eyebrow">Authority since</span>
+            <span
+              className="va-fig-v"
+              data-empty={run?.census.addDate ?? snapshot?.authorityAddedOn ? undefined : true}
+            >
+              {/* The census fills this on 100% of its rows; the warehouse date is the fallback, and
+                  its age is worth printing because Phase 9 reads authority age again for the tier. */}
+              {run?.census.addDate ??
+                (snapshot?.authorityAddedOn
+                  ? `${snapshot.authorityAddedOn}${ageYears === null ? '' : ` · ~${ageYears}y`}`
+                  : '—')}
+            </span>
+          </span>
+        </div>
+
+        {/* WHY THE CONTROL IS OFF, when it is. `runAuthorityLookup` goes through `loadScreenable`,
+            which allows a case Sales has not finished and refuses a DECIDED one — re-reading the
+            register afterwards would rewrite the findings the decision was recorded against. */}
+        {!canScreen ? (
+          <p className="va-aside-note">
+            This application has been decided, so the register can no longer be read — it would
+            rewrite the findings the decision rests on.
+          </p>
+        ) : !canAct ? (
+          <p className="va-aside-note">
+            Sales has not submitted this application yet. The register still reads — MC and USDOT
+            arrive with the Deal — but the marks below need the complete file.
+          </p>
+        ) : null}
+
+        {/* WHAT IS ALREADY ON FILE. Phase 4 asks for an authority document and an insurance
+            certificate when a check comes back missing, so the reviewer needs to see what has already
+            arrived without leaving for the Documents pane. One line, not a third column. */}
+        <p className="va-aside-note">
+          {received.length === 0
+            ? 'No documents received yet — a missing mark below requests one from Sales.'
+            : `On file: ${received
+                .map((d) => d.label ?? d.fileName ?? d.docType)
+                .join(' · ')}`}
+        </p>
+
+        {/* TWO AUTHORITY NUMBERS THAT AGREE ARE ONE NUMBER. Measured: 10 of our 15 both-filled cases
+            have identical digits in the MC and USDOT columns, so "we checked both" would be false. */}
+        {run?.keys.authorityNumbersIdentical ? (
+          <p className="va-aside-note">
+            The MC and USDOT columns hold the <strong>same digits</strong>, so this is one authority
+            number in two boxes — not two independent confirmations.
+          </p>
+        ) : null}
+        {run?.keys.carrierDotDisagrees ? (
+          <p className="va-aside-note">
+            The application&rsquo;s USDOT and the warehouse&rsquo;s disagree
+            {run.keys.dot && run.keys.carrierDot ? ` (${run.keys.dot} vs ${run.keys.carrierDot})` : ''}.
+            Worth settling before trusting either &mdash; a mistyped authority number reads as a clean
+            lookup of somebody else.
+          </p>
+        ) : null}
       </div>
 
-      {/* THE SUGGESTIONS, and the one control that takes them all. Never applied on their own — the
-          reviewer's name goes on the phase decision, so the marks have to be theirs. */}
+      {warehouseSilent && !run ? (
+        <p className="va-aside-note">
+          No warehouse match for this carrier, and the register has not been read yet.
+        </p>
+      ) : null}
+
+      {/* WHAT THE RUN COULD NOT REACH — ONE banner, however many sources went quiet, polite rather
+          than assertive because it is the result of a button the reviewer just pressed. Two live
+          regions announce over each other; the sources are a list so the count is one glance. */}
+      {unreachable.length > 0 ? (
+        <div className="va-banner" data-tone="warning" role="status">
+          <span className="va-banner-glyph" aria-hidden="true">
+            <Icon name="warning" size="sm" />
+          </span>
+          <span className="va-banner-text">
+            <span className="va-banner-title">
+              {unreachable.length === 1
+                ? `${unreachable[0]!.label} was not read`
+                : `${unreachable.length} of this run\u2019s sources were not read`}
+            </span>
+            <p className="va-banner-body">
+              Nothing was cleared there, so those checks stay yours. Suggestions are withheld for them.
+            </p>
+            <ul className="va-banner-list">
+              {unreachable.map((source) => (
+                <li key={source.id}>
+                  <strong>{source.label}</strong> &mdash; {source.detail}
+                </li>
+              ))}
+            </ul>
+          </span>
+        </div>
+      ) : null}
+
+      {/* THE REGISTER SAID THIS CARRIER DOES NOT EXIST. A clean not-found is an ANSWER, and a strong
+          one on a carrier application — distinct from a lookup that failed, which is the banner above. */}
+      {run?.register.available && run.register.notFound ? (
+        <div className="va-banner" data-tone="danger">
+          <span className="va-banner-glyph" aria-hidden="true">
+            <Icon name="block" size="sm" />
+          </span>
+          <span className="va-banner-text">
+            <span className="va-banner-title">The FMCSA register has no such carrier</span>
+            <p className="va-banner-body">
+              The lookup succeeded and returned nothing for
+              {run.keys.dot ? ` USDOT ${run.keys.dot}` : ''}
+              {run.keys.mc ? `${run.keys.dot ? ' or' : ''} MC ${run.keys.mc}` : ''}. That is an answer,
+              not a failure &mdash; an applicant claiming authority they do not hold.
+            </p>
+          </span>
+        </div>
+      ) : null}
+
+      {/* MORE THAN ONE CANDIDATE IS A QUESTION, NOT A MATCH. The name rung never auto-picks. */}
+      {run && run.register.candidateCount > 0 && run.register.matchedOn === null ? (
+        <p className="va-aside-note">
+          The register matched <strong>{run.register.candidateCount}</strong> carriers by name and no
+          single one by number, so nothing was resolved. Settle the MC or USDOT first.
+        </p>
+      ) : null}
+
+      {/* THE FROZEN FEED, labelled at the point of use. It is corroboration and history, never a
+          current insurance status — the live answer is the register's own BIPD amount. */}
+      {run?.insurance.available && run.insurance.frozen ? (
+        <p className="va-aside-note">
+          Insurance filing history is a <strong>frozen snapshot</strong>
+          {run.insurance.dataAsOf ? ` as of ${run.insurance.dataAsOf}` : ''} and will not update again
+          &mdash; {run.insurance.bipdActive} active BIPD filing
+          {run.insurance.bipdActive === 1 ? '' : 's'}
+          {run.insurance.bipdCoverageDollars === null
+            ? ''
+            : `, newest at ${formatDollars(run.insurance.bipdCoverageDollars)}`}
+          . Treat it as history; current cover is the register&rsquo;s.
+        </p>
+      ) : null}
+
+      {/* TAKE THEM ALL, or take them one at a time on the rows below. The bulk control stays because
+          five agreeing sources are five clicks otherwise, but it is no longer the ONLY way in — a
+          reviewer who agrees with four of five had no way to say so. Never applied on its own either
+          way: the reviewer's name goes on the phase decision, so the marks have to be theirs. */}
       {outstanding.length > 0 ? (
         <div className="va-ask">
           <span className="va-aside-note">
-            The warehouse snapshot answers {outstanding.length} of these {AUTHORITY_CHECKS.length}{' '}
-            checks. Applying fills the mark; the evidence stays on the row.
+            {outstanding.length} of these {AUTHORITY_CHECKS.length} checks have a suggestion. Applying
+            fills the mark; the evidence stays on the row.
           </span>
           <div className="va-ask-actions">
-            <Button variant="secondary" size="sm" icon="check" onClick={applyAll}>
-              Apply {outstanding.length} suggestion{outstanding.length === 1 ? '' : 's'}
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="check"
+              disabled={!canAct}
+              onClick={applyAll}
+            >
+              Apply all {outstanding.length}
             </Button>
           </div>
         </div>
@@ -198,6 +403,8 @@ export function AuthorityPane({
               <div className="va-id-check-copy">
                 <span className="va-id-check-label">
                   {check.label}
+                  {/* A badge is a `<span>`, so it can never be the affordance. It states the
+                      suggestion; the button beside the row takes it. */}
                   {suggestion && mark !== suggestion.mark ? (
                     <Badge intent="info" size="sm" icon="auto_awesome">
                       Suggested: {CHECK_MARKS.find((m) => m.id === suggestion.mark)?.label}
@@ -216,8 +423,19 @@ export function AuthorityPane({
                 ariaLabel={check.label}
                 options={CHECK_MARKS}
                 value={mark ?? null}
+                disabled={!canAct}
                 onChange={(next) => setCheck(check.id, next)}
               />
+              {suggestion && mark !== suggestion.mark && canAct ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="check"
+                  onClick={() => setCheck(check.id, suggestion.mark)}
+                >
+                  Use {CHECK_MARKS.find((m) => m.id === suggestion.mark)?.label}
+                </Button>
+              ) : null}
             </div>
           );
         })}
@@ -229,6 +447,7 @@ export function AuthorityPane({
           <CaseMarkGroup
             ariaLabel="Related-company structure"
             options={STRUCTURE_MARKS}
+            disabled={!canAct}
             value={marks.relatedCompany}
             onChange={(next) => onMarks({ ...marks, relatedCompany: next })}
           />
@@ -241,6 +460,7 @@ export function AuthorityPane({
           <CaseMarkGroup
             ariaLabel="Third-party carrier"
             options={STRUCTURE_MARKS}
+            disabled={!canAct}
             value={marks.thirdParty}
             onChange={(next) => onMarks({ ...marks, thirdParty: next })}
           />

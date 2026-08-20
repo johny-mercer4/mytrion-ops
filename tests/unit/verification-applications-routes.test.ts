@@ -492,6 +492,11 @@ describe('document write emits a verification socket event', () => {
       payload,
     });
     expect(res.statusCode).toBe(201);
+    // The assertion `assertEditMock` was declared for and never given: attaching goes through the
+    // ATTACH gate, so the stricter EDIT gate must not be consulted at all. Without this the route
+    // could quietly go back to the gate that refuses once the case is submitted — which is precisely
+    // what made Pending Documents unusable, and what the comment on the mock describes.
+    expect(assertEditMock).not.toHaveBeenCalled();
     expect(publishVfEventMock).toHaveBeenCalledWith({
       caseId: 'vc_1',
       type: 'verification.application.documents_uploaded',

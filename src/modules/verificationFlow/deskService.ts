@@ -39,7 +39,11 @@ import {
 } from './deskReviews.js';
 import { saveIntakeCorrection } from './deskIntake.js';
 import { documentService } from './documentService.js';
-import { deriveRiskSignals } from './hardStops.js';
+import {
+  deriveRiskSignals,
+  VERIFICATION_POLICY_DEFAULTS,
+  type VerificationPolicyShape,
+} from './hardStops.js';
 import {
   buildRail,
   isPhaseCode,
@@ -49,6 +53,7 @@ import {
   skipReason,
   type StoredPhase,
 } from './phases.js';
+import { runAuthorityLookup } from './deskAuthority.js';
 import { blacklistCaseIdentifiers, runCaseScreening } from './deskScreening.js';
 import { screeningVerdictSummary } from './screening.js';
 import {
@@ -154,24 +159,10 @@ export const deskService = {
       const banking = bundle.banking as unknown as Record<string, never> | null;
       const risk = bundle.risk;
       // A tenant that has never opened the policy screen has no row yet; fall back to the seeded
-      // defaults rather than spending a round trip creating one on a read.
-      const policy = (bundle.policy ?? {
-        strongFactor: '0.800',
-        moderateFactor: null,
-        weakFactor: null,
-        adbReviewThreshold: '500',
-        nsfReviewThreshold: 2,
-        bankFirstTruckMin: 10,
-        wexCardCutoff: 20,
-      }) as unknown as {
-        strongFactor: string | null;
-        moderateFactor: string | null;
-        weakFactor: string | null;
-        adbReviewThreshold: string;
-        nsfReviewThreshold: number;
-        bankFirstTruckMin: number;
-        wexCardCutoff: number;
-      };
+      // defaults rather than spending a round trip creating one on a read. The cast is the one place
+      // the jsonb bundle is claimed to carry the policy shape.
+      const policy = (bundle.policy ??
+        VERIFICATION_POLICY_DEFAULTS) as unknown as VerificationPolicyShape;
 
       const rail = buildRail(phases, row.applicantType);
       const signals = deriveRiskSignals(credit, banking, {
@@ -406,6 +397,21 @@ export const deskService = {
     return withFlowSchemaGuard(async () => {
       const row = await loadScreenable(ctx, caseId);
       await runCaseScreening(ctx, row);
+      return this.detail(ctx, caseId);
+    });
+  },
+
+  /**
+   * Phase 4. Reads the FMCSA register, the Socrata census and the insurance history (deskAuthority.ts).
+   *
+   * `loadScreenable` for the same reason as screening: this is an OBSERVATION, its keys (USDOT, MC,
+   * company name) arrive with the Deal, and gating it behind a complete intake would make it
+   * unreachable — every carrier case in the system is still red. Non-carriers are refused inside.
+   */
+  async runAuthorityLookup(ctx: TenantContext, caseId: string) {
+    return withFlowSchemaGuard(async () => {
+      const row = await loadScreenable(ctx, caseId);
+      await runAuthorityLookup(ctx, row);
       return this.detail(ctx, caseId);
     });
   },

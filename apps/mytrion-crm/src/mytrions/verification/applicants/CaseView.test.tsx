@@ -28,9 +28,14 @@ vi.mock('@/api/verificationFlow', async (importOriginal) => {
 });
 
 const getDeskBrokerSnapshot = vi.fn();
+/**
+ * `runAuthorityLookup` is mocked alongside the snapshot for the reason the snapshot is: Phase 4's Run
+ * control is live on a locked case now, so an unmocked click would reach the real transport from jsdom.
+ */
+const runAuthorityLookup = vi.fn();
 vi.mock('@/api/verificationDeskWrites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationDeskWrites')>();
-  return { ...actual, getDeskBrokerSnapshot };
+  return { ...actual, getDeskBrokerSnapshot, runAuthorityLookup };
 });
 
 let onInboxEvent: ((event: { tag: string | null; type: string; detail?: string | null }) => void) | undefined;
@@ -129,6 +134,7 @@ beforeEach(() => {
   requestDocuments.mockReset();
   getDeskBrokerSnapshot.mockReset();
   getDeskBrokerSnapshot.mockResolvedValue({ match: null });
+  runAuthorityLookup.mockReset();
   getDeskCase.mockResolvedValue(desk());
   getPolicy.mockResolvedValue({
     nsfReviewThreshold: 3,
