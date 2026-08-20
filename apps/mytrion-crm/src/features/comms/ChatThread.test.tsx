@@ -336,3 +336,44 @@ describe('ChatThread — realtime', () => {
     expect(screen.queryByText('Hello there')).not.toBeInTheDocument();
   });
 });
+
+describe('ChatThread — @mentions', () => {
+  it('offers a teammate picker on "@", inserts the name, and sends the mention id', async () => {
+    const user = userEvent.setup();
+    api.postThreadMessage.mockResolvedValue({ message: msg({ id: 'm2', seq: 2, mine: true }) });
+    render(<ChatThread threadId="mth_1" />);
+    const box = await screen.findByLabelText('Message');
+
+    await user.type(box, 'Please check @');
+    // Both worker participants are offered; pick the assignee.
+    await user.click(await screen.findByRole('button', { name: '@Dilnoza Karimova' }));
+    expect(box).toHaveValue('Please check @Dilnoza Karimova ');
+
+    await user.click(screen.getByLabelText('Send'));
+    await waitFor(() => expect(api.postThreadMessage).toHaveBeenCalled());
+    const [, payload] = api.postThreadMessage.mock.calls[0] as [
+      string,
+      { body: string; mentions?: string[] },
+    ];
+    expect(payload.mentions).toEqual(['77']);
+  });
+
+  it('filters the picker by what follows the "@"', async () => {
+    const user = userEvent.setup();
+    render(<ChatThread threadId="mth_1" />);
+    const box = await screen.findByLabelText('Message');
+    await user.type(box, '@Dil');
+    expect(await screen.findByRole('button', { name: '@Dilnoza Karimova' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '@Ali Karimov' })).toBeNull();
+  });
+
+  it('sends no mentions when the message names nobody', async () => {
+    const user = userEvent.setup();
+    api.postThreadMessage.mockResolvedValue({ message: msg({ id: 'm2', seq: 2, mine: true }) });
+    render(<ChatThread threadId="mth_1" />);
+    await user.type(await screen.findByLabelText('Message'), 'no mention here{Enter}');
+    await waitFor(() => expect(api.postThreadMessage).toHaveBeenCalled());
+    const [, payload] = api.postThreadMessage.mock.calls[0] as [string, { mentions?: string[] }];
+    expect(payload.mentions).toBeUndefined();
+  });
+});

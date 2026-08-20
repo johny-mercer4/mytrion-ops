@@ -23,6 +23,7 @@ export const MYTRION_IDS = [
   'recruit',
   'trailhead',
   'customer-service',
+  'desk',
 ] as const;
 
 export type MytrionId = (typeof MYTRION_IDS)[number];
@@ -62,6 +63,7 @@ export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   recruit: 'recruit',
   trailhead: 'trailhead',
   'customer-service': 'customer-service',
+  desk: 'desk',
 };
 
 /**

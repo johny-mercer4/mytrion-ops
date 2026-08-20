@@ -349,9 +349,17 @@ function DetailPanel({
 export function TimeOffWorkspace({
   includeAll = false,
   embedded = false,
+  canApprove = false,
 }: {
   includeAll?: boolean;
   embedded?: boolean;
+  /**
+   * Show the "To approve" inbox tab. Team leads (their own team) and HR/admins (final review) can
+   * approve; a plain employee approves nobody, so the tab is hidden for them. UI-gating only — the
+   * backend re-checks every decision. As a backstop the tab also shows whenever the server actually
+   * handed this caller items to approve, so a real approver is never left without the inbox.
+   */
+  canApprove?: boolean;
 }) {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
@@ -524,7 +532,7 @@ export function TimeOffWorkspace({
     <div className={`${styles.workspace} ${embedded ? styles.embedded : ''}`}>
       <header className={styles.header}>
         <div>
-          <span className={styles.eyebrow}>People · Time off</span>
+          <span className={styles.eyebrow}>People Operations</span>
           <h2>{embedded ? 'Time Off' : 'My time off'}</h2>
           <p>{overview ? `${overview.employee.name} · ${overview.employee.department ?? 'No department'}` : 'Leave and approvals'}</p>
         </div>
@@ -543,7 +551,7 @@ export function TimeOffWorkspace({
       <nav className={styles.tabs} aria-label="Time off views">
         {!personalUnavailable ? <button type="button" className={view === 'summary' ? styles.tabActive : ''} onClick={() => setView('summary')}>Summary</button> : null}
         {!personalUnavailable ? <button type="button" className={view === 'mine' ? styles.tabActive : ''} onClick={() => setView('mine')}>My requests <span>{mine.length}</span></button> : null}
-        {!personalUnavailable ? <button type="button" className={view === 'inbox' ? styles.tabActive : ''} onClick={() => setView('inbox')}>To approve <span>{inbox.length}</span></button> : null}
+        {!personalUnavailable && (canApprove || inbox.length > 0) ? <button type="button" className={view === 'inbox' ? styles.tabActive : ''} onClick={() => setView('inbox')}>To approve <span>{inbox.length}</span></button> : null}
         {includeAll ? <button type="button" className={view === 'all' ? styles.tabActive : ''} onClick={() => setView('all')}>All requests <span>{all.length}</span></button> : null}
       </nav>
       {error ? <p className={styles.error} role="alert">{error}</p> : null}

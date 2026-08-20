@@ -19,6 +19,7 @@ import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpoint
 import { useLoad } from '../_shared/useLoad';
 import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
 import { useWindowedRows } from './useWindowedRows';
+import { outstandingDays, outstandingLast30 } from './invoiceOutstanding';
 
 /** Fixed rendered height of a Data Center deal row (px) — must match `.dc-deal-row { height }`. */
 const DC_ROW_H = 52;
@@ -554,6 +555,7 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
 
   const avgDays = avg.loading ? null : (parseAvgDays(avg.data) ?? deal.avgDays);
   const invoices = inv.data?.invoices ?? [];
+  const outstanding30 = outstandingLast30(invoices);
 
   return (
     <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -595,7 +597,30 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
               }
             />
             <DetailRow label="Billing Cycle" value={deal.cycle || '—'} />
-            <DetailRow label="Billing Verification" value={deal.verify || '—'} />
+            {/*
+              Replaces the old "Billing Verification" row, which read `deal.verify` and rendered an
+              em dash on effectively every deal in the book. This slot now answers a question the
+              panel could not: of the invoices raised in the last 30 days, how many were not paid
+              within their grace day.
+
+              Reads the SAME `outstandingDays` the invoice cards below show, so the summary and the
+              per-invoice chips can never disagree. It waits on the invoice fetch (`inv`), not the
+              avg-days one, and borrows Avg Days to Pay's skeleton so the two rows settle alike.
+            */}
+            <DetailRow
+              label="Outstanding (30d)"
+              value={
+                inv.loading ? (
+                  <span className="dc-skeleton dc-skeleton-narrow" style={{ display: 'inline-block', width: 46, height: 12, verticalAlign: 'middle' }} />
+                ) : outstanding30.total === 0 ? (
+                  <span style={{ color: 'var(--text-muted)' }}>—</span>
+                ) : (
+                  <span style={{ fontFamily: MONO, color: outstanding30.late > 0 ? 'var(--warning-text)' : 'var(--success-text)' }}>
+                    {outstanding30.late} of {outstanding30.total}
+                  </span>
+                )
+              }
+            />
           </div>
 
           {/* §2 Debtor Status — no per-carrier billing touchpoint wired here yet (graceful placeholder). */}
@@ -674,7 +699,7 @@ function fmtPaymentDate(v: unknown): string {
   return d.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
+export function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
   const number = str(pick(inv, ['invoiceNumber', 'invoice_number', 'number', 'name'])) || '—';
   const period = str(pick(inv, ['period', 'date_range', 'dateRange']));
   const status = str(pick(inv, ['status', 'Status'])) || 'Pending';
@@ -685,6 +710,7 @@ function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
   // (searchCarrierInvoices(..., { withPaymentDates: true })) — see cmpReads.ts / avgPaymentDays.js
   // for the same "which payment counts as THE paid date" rule Avg Days to Pay already uses.
   const paymentDate = fmtPaymentDate(pick(inv, ['paymentDate', 'payment_date']));
+  const outstanding = outstandingDays(inv);
   return (
     <div className="dc-detail-invoice-card">
       <div className="tx-invoice-top-row">
@@ -692,7 +718,20 @@ function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
           <span className="tx-invoice-num">#{number}</span>
           {period ? <span className="tx-invoice-period"> {period}</span> : null}
         </div>
-        <span className={`bm-badge ${status.toLowerCase() === 'paid' ? 'bm-badge-success' : 'bm-badge-warning'}`}>{status}</span>
+        {/* The chip and the badge share a right-hand group: `.tx-invoice-top-row` is
+            `justify-content: space-between`, so a third direct child would spread all three across
+            the row instead of keeping the number left and the status right. */}
+        <div className="tx-invoice-status-group">
+          {outstanding != null ? (
+            <span
+              className={`dc-inv-outstanding${outstanding > 0 ? ' dc-inv-outstanding-late' : ''}`}
+              title={`Outstanding ${outstanding} ${outstanding === 1 ? 'day' : 'days'} — paid date minus the day after the invoice was created`}
+            >
+              {outstanding}d
+            </span>
+          ) : null}
+          <span className={`bm-badge ${status.toLowerCase() === 'paid' ? 'bm-badge-success' : 'bm-badge-warning'}`}>{status}</span>
+        </div>
       </div>
       <div className="tx-invoice-amounts">
         <div className="tx-inv-amount-item">

@@ -18,6 +18,8 @@ vi.mock('../../src/repos/recruitRepo.js', () => ({
     updateCandidate: vi.fn(),
     deleteCandidate: vi.fn(),
     convertCandidate: vi.fn(),
+    setCandidateResume: vi.fn(),
+    clearCandidateResume: vi.fn(),
     getSettings: vi.fn(async () => ({
       id: 'rcs_1',
       tenantId: 'octane',
@@ -37,6 +39,25 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
     ...original,
     audit: vi.fn(async () => undefined),
     auditFromContext: vi.fn(async () => undefined),
+  };
+});
+
+// Storage is mocked so tests never reach Dropbox; only the recruit-specific exports are overridden.
+const { putMock, presignMock, deleteMock } = vi.hoisted(() => ({
+  putMock: vi.fn(async () => undefined),
+  presignMock: vi.fn(async () => ({
+    url: 'https://dropbox.example/cv.pdf',
+    expiresAt: new Date('2026-08-19T00:00:00.000Z'),
+  })),
+  deleteMock: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../src/modules/files/storage/index.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/files/storage/index.js')>();
+  return {
+    ...mod,
+    recruitStorageProvider: () => 'dropbox_recruit' as const,
+    storageFor: () => ({ put: putMock, presignGet: presignMock, delete: deleteMock }),
   };
 });
 
@@ -106,6 +127,30 @@ describe('Recruit workspace routes', () => {
     expect(response.json()).toEqual({ items: [] });
   });
 
+  it('gives HR full CRUD in the hiring workspace (co-owned with Recruiters)', async () => {
+    const token = await workerToken('HR', 'recruit-hr');
+    const read = await app.inject({
+      method: 'GET',
+      url: '/v1/recruit/jobs',
+      headers: bearer(token),
+    });
+    expect(read.statusCode).toBe(200);
+
+    repo.createJob.mockResolvedValueOnce({ id: 'rjo_hr' } as never);
+    const write = await app.inject({
+      method: 'POST',
+      url: '/v1/recruit/jobs',
+      headers: bearer(token),
+      payload: { title: 'Backend Engineer', departmentId: 'hrd_1' },
+    });
+    // The write GUARD admitted HR — the point of this test — and their input reached the repo.
+    expect(write.statusCode).not.toBe(403);
+    expect(repo.createJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ title: 'Backend Engineer', departmentId: 'hrd_1' }),
+    );
+  });
+
   it('keeps candidate conversion admin-only', async () => {
     const token = await workerToken('Recruiter', 'recruit-convert-denied');
     const response = await app.inject({
@@ -141,5 +186,109 @@ describe('Recruit workspace routes', () => {
       employeeIdPrefix: 'EMP',
       defaultEmployeeStatus: 'Active',
     });
+  });
+});
+
+function fakeCandidate(overrides: Record<string, unknown> = {}) {
+  const now = new Date('2026-08-01T00:00:00.000Z');
+  return {
+    id: 'rca_1',
+    tenantId: DEFAULT_TENANT_ID,
+    jobOpeningId: 'rjo_1',
+    jobTitle: 'Engineer',
+    departmentId: 'hrd_1',
+    departmentName: 'Engineering',
+    firstName: 'Ada',
+    lastName: 'Byron',
+    email: null,
+    phone: null,
+    stage: 'new',
+    source: null,
+    currentCompany: null,
+    currentTitle: null,
+    notes: null,
+    resumeFileKey: null,
+    resumeFileName: null,
+    resumeContentType: null,
+    resumeStorageProvider: null,
+    resumeUploadedAt: null,
+    appliedAt: now,
+    convertedEmployeeId: null,
+    convertedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function multipartPdf(boundary: string): Buffer {
+  return Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="cv.pdf"\r\n` +
+        'Content-Type: application/pdf\r\n\r\n',
+    ),
+    Buffer.from('%PDF-1.4 test resume'),
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+}
+
+describe('Recruit candidate resumes', () => {
+  it('refuses a resume upload from a worker without Recruit access', async () => {
+    const token = await workerToken('Sales Agent', 'resume-outsider');
+    const boundary = '----recruitTest';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recruit/candidates/rca_1/resume',
+      headers: { ...bearer(token), 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: multipartPdf(boundary),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it('uploads a resume into a per-candidate Dropbox folder for a Recruiter', async () => {
+    repo.getCandidate.mockResolvedValue(
+      fakeCandidate({
+        resumeFileKey: 'candidates/rca_1/cv.pdf',
+        resumeFileName: 'cv.pdf',
+        resumeContentType: 'application/pdf',
+        resumeStorageProvider: 'dropbox_recruit',
+        resumeUploadedAt: new Date('2026-08-02T00:00:00.000Z'),
+      }) as never,
+    );
+    repo.setCandidateResume.mockResolvedValue(fakeCandidate({ resumeFileName: 'cv.pdf' }) as never);
+    const token = await workerToken('Recruiter', 'resume-recruiter');
+    const boundary = '----recruitTest';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recruit/candidates/rca_1/resume',
+      headers: { ...bearer(token), 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: multipartPdf(boundary),
+    });
+    expect(res.statusCode).toBe(200);
+    // New per-candidate folder key, and the bytes went through storage — never straight to Dropbox in a test.
+    expect(putMock).toHaveBeenCalledWith('candidates/rca_1/cv.pdf', expect.any(Buffer), {
+      contentType: 'application/pdf',
+    });
+    expect(res.json().resume).toMatchObject({ fileName: 'cv.pdf' });
+  });
+
+  it('mints a short-lived resume link for HR when one exists', async () => {
+    repo.getCandidate.mockResolvedValue(
+      fakeCandidate({
+        resumeFileKey: 'candidates/rca_1/cv.pdf',
+        resumeFileName: 'cv.pdf',
+        resumeStorageProvider: 'dropbox_recruit',
+      }) as never,
+    );
+    const token = await workerToken('HR', 'resume-hr');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/recruit/candidates/rca_1/resume/link',
+      headers: bearer(token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(presignMock).toHaveBeenCalledWith('candidates/rca_1/cv.pdf', { filename: 'cv.pdf' });
+    expect(res.json()).toMatchObject({ url: 'https://dropbox.example/cv.pdf' });
   });
 });

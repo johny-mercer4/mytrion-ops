@@ -43,6 +43,7 @@ function makeBuilder(): Record<string, unknown> {
     'returning',
     'update',
     'set',
+    'delete',
   ]) {
     builder[method] = record(method);
   }
@@ -86,6 +87,19 @@ describe('search predicate', () => {
     const sql = rendered('where').map((w) => w.sql).join(' ');
     expect(sql).toContain('"company_name"');
     expect(sql).toContain('"name"');
+  });
+
+  it('normalizes phone digits so any formatting matches, not just an exact stored format', () => {
+    void maintenanceCaseRepo.listPage({ search: '(702) 989-4445' });
+    const where = rendered('where')[0];
+    expect(where?.sql).toContain(`regexp_replace("maintenance_cases"."phone", '[^0-9]', '', 'g')`);
+    expect(where?.params).toContain('%7029894445%');
+  });
+
+  it('matches phone on a bare digit substring too, e.g. the last 4 digits', () => {
+    void maintenanceCaseRepo.listPage({ search: '4445' });
+    const where = rendered('where')[0];
+    expect(where?.params).toContain('%4445%');
   });
 
   it('treats a digits-only query as an identifier: exact + prefix carrier match', () => {
@@ -241,6 +255,21 @@ describe('update', () => {
     void maintenanceCaseRepo.update('mtc_abc', { status: 'Completed' });
     const set = calls.find((c) => c.method === 'set')?.args[0] as Record<string, unknown>;
     expect(set.updatedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('deleteById (test-case cleanup only, 2026-08-19)', () => {
+  it('deletes by id and returns the deleted row', async () => {
+    resultRows = [{ id: 'mtc_abc', carrierId: '900001' }];
+    const row = await maintenanceCaseRepo.deleteById('mtc_abc');
+    expect(calls.some((c) => c.method === 'delete')).toBe(true);
+    expect(row).toEqual({ id: 'mtc_abc', carrierId: '900001' });
+  });
+
+  it('returns undefined when the id does not exist', async () => {
+    resultRows = [];
+    const row = await maintenanceCaseRepo.deleteById('mtc_missing');
+    expect(row).toBeUndefined();
   });
 });
 

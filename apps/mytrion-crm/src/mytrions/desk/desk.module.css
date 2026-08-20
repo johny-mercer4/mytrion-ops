@@ -1,0 +1,809 @@
+/* Mytrion Desk — settings/overview panel. Tokens only (theme.css), tint scale for status. */
+
+.settings {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.settingsHead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settingsTitle {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.settingsSub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 46rem;
+}
+
+.skeleton {
+  height: 12rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.error {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  font-size: 0.85rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.cardHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.slaTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.slaTable th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.slaTable td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.slaTable tr:last-child td {
+  border-bottom: none;
+}
+
+.prio {
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.prio[data-prio='critical'] {
+  color: var(--tone-rose);
+}
+.prio[data-prio='high'] {
+  color: var(--tone-orange);
+}
+.prio[data-prio='medium'] {
+  color: var(--tone-amber);
+}
+.prio[data-prio='low'] {
+  color: var(--text-muted);
+}
+
+.deptList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.deptRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.deptName {
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deptFlags {
+  display: flex;
+  gap: 0.35rem;
+  flex: none;
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--tint-neutral-bg);
+  border: 1px solid var(--tint-neutral-bd);
+  color: var(--text-muted);
+}
+
+.flag[data-on='true'] {
+  background: var(--tint-good-bg);
+  border-color: var(--tint-good-bd);
+  color: inherit;
+}
+
+.flag[data-on='true'] svg {
+  color: var(--tone-emerald);
+}
+
+/* ── Compose modal (New ticket / escalation) ─────────────────────────────── */
+
+.composeForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (width < 640px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.composeFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Attachment picker on the create forms. */
+.attachPick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  padding: 0.4rem 0.7rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.attachPick:hover {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+.attachPick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.attachChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.35rem 0.35rem 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font-size: 0.82rem;
+}
+
+.attachChipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18rem;
+}
+
+.attachChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.attachChipRemove:hover {
+  color: inherit;
+  background: var(--surface);
+}
+
+/* ── Escalation ladder actions (in the conversation header) ───────────────── */
+
+.escActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.escLevel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--tone-rose);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
+.escStatus {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.escStatus[data-status='resolved'] {
+  color: var(--tone-emerald);
+}
+
+.escStatus[data-status='rejected'],
+.escStatus[data-status='expired'] {
+  color: var(--tone-rose);
+}
+
+/* ── Ticket lifecycle actions + activity timeline ─────────────────────────── */
+
+.ticketActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ticketActionsError {
+  font-size: 0.72rem;
+  color: var(--tone-rose);
+  max-width: 14rem;
+}
+
+/* Assignment cluster (claim / reassign / release) + priority selector in the header. */
+.assign {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.assignWho {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.assignWho[data-assigned='true'] {
+  color: inherit;
+}
+
+.assignWho svg {
+  color: var(--text-muted);
+}
+
+.assignWho[data-assigned='true'] svg {
+  color: var(--tone-emerald);
+}
+
+/* Keep the inline priority dropdown compact so the header does not sprawl. */
+.priorityWrap {
+  display: inline-flex;
+  min-width: 7.5rem;
+}
+
+.rosterList {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rosterItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.rosterItem:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.rosterItem:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rosterItem[data-current] {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.rosterName {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.rosterRole {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.rosterLoad {
+  flex: none;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.timelineItem {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.timelineDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.timelineBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.timelineType {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.timelineMeta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── Ticket tags editor (dialog) ──────────────────────────────────────────── */
+
+.tagEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.tagChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--tint-info-bg);
+  border: 1px solid var(--tint-info-bd);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.tagRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tagRemove:hover:not(:disabled) {
+  color: var(--tone-rose);
+}
+
+.tagInput {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+/* ── Availability (work mode) picker ──────────────────────────────────────── */
+
+.availList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.9rem;
+}
+
+.availItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.availItem:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.availItem[data-current] {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.availItem:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.availDot {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.availDot[data-status='available'] {
+  background: var(--tone-emerald);
+}
+.availDot[data-status='away'] {
+  background: var(--tone-amber);
+}
+.availDot[data-status='do_not_assign'] {
+  background: var(--tone-rose);
+}
+
+.availText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.availLabel {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.availHint {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+/* ── Analytics & SLA dashboard ────────────────────────────────────────────── */
+
+.aHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.aControls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.aControl {
+  display: inline-flex;
+  min-width: 10rem;
+}
+
+.analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Refresh keeps the numbers on screen and dims them — never a second loader over live content. */
+.analytics[data-stale] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.statValue {
+  font-family: var(--font-head);
+  font-size: 1.5rem;
+  font-weight: 680;
+  line-height: 1.1;
+}
+
+.statLabel {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.stat[data-tone='bad'] {
+  background: var(--tint-bad-bg);
+  border-color: var(--tint-bad-bd);
+}
+.stat[data-tone='warn'] {
+  background: var(--tint-warn-bg);
+  border-color: var(--tint-warn-bd);
+}
+.stat[data-tone='good'] {
+  background: var(--tint-good-bg);
+  border-color: var(--tint-good-bd);
+}
+
+/* Horizontal bar breakdown list (status / priority / department / agents). */
+.barList {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+}
+
+.barLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.barTrack {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  min-width: 0.125rem;
+}
+
+/* Status/priority tints so a bar reads at a glance without a legend. */
+.barRow[data-key='open'] .barFill,
+.barRow[data-key='medium'] .barFill {
+  background: var(--tone-amber);
+}
+.barRow[data-key='escalated'] .barFill,
+.barRow[data-key='critical'] .barFill,
+.barRow[data-key='high'] .barFill {
+  background: var(--tone-rose);
+}
+.barRow[data-key='resolved'] .barFill,
+.barRow[data-key='closed'] .barFill {
+  background: var(--tone-emerald);
+}
+
+.barCount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.barPct {
+  font-style: normal;
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Volume mini bar chart. */
+.legend {
+  display: flex;
+  gap: 0.9rem;
+  margin-top: 0.1rem;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.legendItem::before {
+  content: '';
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.legendItem[data-series='resolved']::before {
+  background: var(--tone-emerald);
+}
+
+.volBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 8rem;
+  margin-top: 0.4rem;
+}
+
+.volCol {
+  flex: 1 1 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  height: 100%;
+  min-width: 0;
+}
+
+.volBar {
+  flex: 1 1 0;
+  max-width: 0.5rem;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  min-height: 1px;
+}
+
+.volBar[data-series='resolved'] {
+  background: var(--tone-emerald);
+}

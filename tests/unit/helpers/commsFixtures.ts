@@ -45,6 +45,7 @@ export function ticketRow(over: Partial<MytrionTicket> = {}): MytrionTicket {
     priority: 'medium',
     status: 'open',
     substatus: null,
+    tags: [],
     requesterKind: 'worker',
     requesterZohoUserId: '42',
     requesterCarrierId: null,

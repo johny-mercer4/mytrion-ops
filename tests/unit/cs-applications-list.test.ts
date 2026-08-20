@@ -9,6 +9,8 @@ import {
   agentNameOf,
   compareRows,
   computeFacets,
+  LOVES_PENDING,
+  lovesStatusOf,
   matchesFilters,
   matchesSearch,
   matchesTab,
@@ -62,13 +64,13 @@ function baseParams(overrides: Partial<ApplicationsQueryParams> = {}): Applicati
     search: '',
     sortKey: 'date',
     sortDir: 'desc',
-    company: '',
     dateFrom: '',
     dateTo: '',
     stage: '',
     biz: '',
     agent: '',
     wex: [],
+    loves: '',
     page: 1,
     perPage: 200,
     ...overrides,
@@ -97,6 +99,18 @@ describe('agentNameOf', () => {
 
   it('uses the resolved owner name', () => {
     expect(agentNameOf(mkRow({ _dealOwner: { id: '1', name: 'Islombek Mamurov' } }))).toBe('Islombek Mamurov');
+  });
+});
+
+describe('lovesStatusOf', () => {
+  it('falls back to the Pending sentinel when blank', () => {
+    expect(lovesStatusOf(mkRow({ Loves_Verification: null }))).toBe(LOVES_PENDING);
+    expect(lovesStatusOf(mkRow({ Loves_Verification: '' }))).toBe(LOVES_PENDING);
+  });
+
+  it('uses the real value when set', () => {
+    expect(lovesStatusOf(mkRow({ Loves_Verification: 'Approved' }))).toBe('Approved');
+    expect(lovesStatusOf(mkRow({ Loves_Verification: 'Not Approved' }))).toBe('Not Approved');
   });
 });
 
@@ -132,10 +146,6 @@ describe('matchesFilters', () => {
     mkRow({ id: '1', Name: 'Acme Hauling', Stage: 'Adjudication', Type_of_Business: 'LLC', _dealOwner: { id: 'a', name: 'Jane' }, WEX_Status: 'Decisioned', Date_Filled: '2026-08-01' }),
     mkRow({ id: '2', Name: 'Bravo Freight', Stage: 'Application', Type_of_Business: 'Corporation', _dealOwner: null, WEX_Status: 'Pending Decision', Date_Filled: '2026-08-15' }),
   ];
-
-  it('matches company name case-insensitively as a substring', () => {
-    expect(rows.filter((r) => matchesFilters(r, { ...baseParams(), company: 'acme' })).map((r) => r.id)).toEqual(['1']);
-  });
 
   it('filters by an exact stage match', () => {
     expect(rows.filter((r) => matchesFilters(r, { ...baseParams(), stage: 'Application' })).map((r) => r.id)).toEqual(['2']);
@@ -174,6 +184,16 @@ describe('matchesFilters', () => {
   it('returns every row when no filter is active', () => {
     expect(rows.filter((r) => matchesFilters(r, baseParams()))).toHaveLength(2);
   });
+
+  it("Love's status filter matches the Pending sentinel for a blank field, and the real value otherwise", () => {
+    const pending = mkRow({ id: 'p', Loves_Verification: null });
+    const approved = mkRow({ id: 'a', Loves_Verification: 'Approved' });
+    const notApproved = mkRow({ id: 'd', Loves_Verification: 'Not Approved' });
+    const all = [pending, approved, notApproved];
+    expect(all.filter((r) => matchesFilters(r, { ...baseParams(), loves: LOVES_PENDING })).map((r) => r.id)).toEqual(['p']);
+    expect(all.filter((r) => matchesFilters(r, { ...baseParams(), loves: 'Approved' })).map((r) => r.id)).toEqual(['a']);
+    expect(all.filter((r) => matchesFilters(r, baseParams()))).toHaveLength(3); // no loves filter active
+  });
 });
 
 describe('computeFacets', () => {
@@ -185,6 +205,12 @@ describe('computeFacets', () => {
   it('agent facet includes the "not assigned" sentinel when relevant rows have no deal owner', () => {
     const rows = [mkRow({ _dealOwner: { id: '1', name: 'Jane' } }), mkRow({ _dealOwner: null })];
     expect(computeFacets(rows).agent).toEqual(['Jane', NOT_ASSIGNED]);
+  });
+
+  it("loves facet is always the field's fixed live-picklist vocabulary, not derived from the data — legacy junk values ('0', 'FALSE') must never appear as options", () => {
+    const rows = [mkRow({ Loves_Verification: '0' }), mkRow({ Loves_Verification: 'FALSE' })];
+    expect(computeFacets(rows).loves).toEqual(['Approved', 'Not Approved', LOVES_PENDING]);
+    expect(computeFacets([]).loves).toEqual(['Approved', 'Not Approved', LOVES_PENDING]); // even with zero rows
   });
 });
 

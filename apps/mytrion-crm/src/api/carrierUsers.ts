@@ -158,6 +158,9 @@ export interface RegisteredCompany {
   cardCount: number | null;
   telegramUserId: string;
   telegramUsername: string | null;
+  /** Octane sales agent copied from the invite that registered this company. */
+  agentName: string | null;
+  agentZohoUserId: string | null;
   status: 'active' | 'revoked';
   revokedAt: string | null;
   createdAt: string;

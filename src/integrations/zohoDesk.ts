@@ -106,11 +106,17 @@ export interface DeskContactInput {
   phone?: string | undefined;
 }
 
+/** Desk's standard `priority` picklist (case-sensitive; this org has no 'Urgent'). Omit → '-None-'. */
+export type DeskPriority = 'Low' | 'Medium' | 'High';
+/** What a priority CHANGE may set — the picklist plus Desk's "no priority" member. */
+export type DeskPriorityValue = DeskPriority | '-None-';
+
 export interface CreateDeskTicketInput {
   subject: string;
   description: string;
   departmentId: string;
   channel?: string;
+  priority?: DeskPriority | undefined;
   contact: DeskContactInput;
   cf?: Record<string, string | undefined>;
 }
@@ -462,6 +468,8 @@ export class ZohoDeskWrapper extends ZohoWrapper {
       departmentId: input.departmentId,
       channel: input.channel ?? 'Ticket Form',
       contact: input.contact,
+      // Standard picklist — top-level, NOT under cf (it is not a custom field).
+      ...(input.priority ? { priority: input.priority } : {}),
       ...(Object.keys(cf).length ? { cf } : {}),
     };
     const res = await this.requestRaw('POST', '/tickets', { body });
@@ -472,6 +480,18 @@ export class ZohoDeskWrapper extends ZohoWrapper {
     const json = text ? (JSON.parse(text) as { id?: string }) : {};
     if (!json.id) throw new Error(`[zoho-desk] POST /tickets returned no id: ${text.slice(0, 200)}`);
     return json.id;
+  }
+
+  /** Change a ticket's priority (`PATCH /tickets/{id}`); returns the value Desk stored. */
+  async updateTicketPriority(ticketId: string, priority: DeskPriorityValue): Promise<string> {
+    const path = `/tickets/${encodeURIComponent(ticketId)}`;
+    const res = await this.requestRaw('PATCH', path, { body: { priority } });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`[zoho-desk] PATCH /tickets/${ticketId} HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const json = text ? (JSON.parse(text) as { priority?: string }) : {};
+    return json.priority ?? priority;
   }
 
   /** List departments — useful both for connectivity checks and mapping a name → departmentId. */
@@ -575,4 +595,6 @@ export const getTicketAttachmentContent = (
   zohoDesk.getTicketAttachmentContent(ticketId, attachmentId);
 export const createDeskTicket = (input: CreateDeskTicketInput): Promise<string> =>
   zohoDesk.createDeskTicket(input);
+export const updateTicketPriority = (ticketId: string, priority: DeskPriorityValue): Promise<string> =>
+  zohoDesk.updateTicketPriority(ticketId, priority);
 export const listDepartments = (limit?: number): Promise<DeskDepartment[]> => zohoDesk.listDepartments(limit);

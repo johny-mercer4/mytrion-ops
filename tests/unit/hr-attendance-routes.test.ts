@@ -170,6 +170,35 @@ async function workerToken(profile: string): Promise<string> {
 
 const bearer = (t: string): Record<string, string> => ({ authorization: `Bearer ${t}` });
 
+describe('HR attendance My Data (self)', () => {
+  it('pulls the caller’s own punches before reading, so My Data is current without a manual Refresh', async () => {
+    employees.findByZohoUserId.mockResolvedValue({ id: 'hre_self' } as never);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/me?weekOf=2026-08-05',
+      headers: bearer(await workerToken('Field Agent')),
+    });
+    expect(res.statusCode).toBe(200);
+    // Scoped to ONE person (their id in the options) — never the whole-window sweep the page load avoids.
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), '2026-08-03', '2026-08-09', {
+      employeeId: 'hre_self',
+    });
+    expect(res.json()).toMatchObject({ employeeId: 'hre_self', from: '2026-08-03', to: '2026-08-09' });
+  });
+
+  it('still serves stored attendance when the warehouse pull fails', async () => {
+    employees.findByZohoUserId.mockResolvedValue({ id: 'hre_self' } as never);
+    syncMock.mockRejectedValueOnce(new Error('DWH busy'));
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/me?weekOf=2026-08-05',
+      headers: bearer(await workerToken('Field Agent')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ employeeId: 'hre_self' });
+  });
+});
+
 describe('HR attendance webhook', () => {
   it('rejects missing secret', async () => {
     const res = await app.inject({

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { DataTable, type DataColumn } from '@/ds';
+import { formatPhone } from '@/lib/phone';
 import { CitiModal } from './CitiModal';
 import { Toast, type ToastState } from './Toast';
 import { fmtDate, localYmd, rangeDays } from './live';
@@ -171,7 +172,7 @@ const CITI_COLUMNS: DataColumn<CitiRow>[] = [
     header: 'Phone',
     sortable: true,
     priority: 3,
-    cell: (row) => <span className="cs-citi-cell-text">{cellValue(row, { key: 'phone', label: '' })}</span>,
+    cell: (row) => <span className="cs-citi-cell-text">{row.phone ? formatPhone(row.phone) : '—'}</span>,
   },
   {
     id: 'email',

@@ -12,6 +12,7 @@ import {
   type ThreadDto,
 } from '@/api/comms';
 import type { CommsFrame } from './useCommsSocket';
+import { CannedReplies } from './CannedReplies';
 import { clockTime, dayKey, dayLabel, formatBytes, initials } from './chatFormat';
 import c from './comms.module.css';
 
@@ -39,6 +40,8 @@ export interface ChatThreadProps {
   onActivity?: (() => void) | undefined;
   disabled?: boolean;
   disabledReason?: string;
+  /** Show the canned-replies control in the composer (worker surfaces only). */
+  cannedReplies?: boolean;
 }
 
 interface Pending {
@@ -51,6 +54,13 @@ interface Pending {
 
 const PAGE = 100;
 
+/** The `@query` being typed at the caret, or null. Unicode-aware so non-ASCII names still match. */
+const MENTION_RE = /@([\p{L}\p{N}._-]*)$/u;
+function mentionQueryAt(value: string, caret: number): string | null {
+  const m = MENTION_RE.exec(value.slice(0, caret));
+  return m ? (m[1] ?? '') : null;
+}
+
 export function ChatThread({
   threadId,
   headerSlot,
@@ -59,6 +69,7 @@ export function ChatThread({
   onActivity,
   disabled = false,
   disabledReason,
+  cannedReplies = false,
 }: ChatThreadProps) {
   const [thread, setThread] = useState<ThreadDto | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
@@ -71,6 +82,9 @@ export function ChatThread({
   const [asNote, setAsNote] = useState(false);
   const [sending, setSending] = useState(false);
   const [linkBusy, setLinkBusy] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  /** The `@` mention query at the caret (null = not mentioning). Drives the teammate picker. */
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -193,8 +207,15 @@ export function ChatThread({
         failed: false,
         ...(opts.file ? { file: opts.file } : {}),
       };
+      // Resolve @mentions from the body: any worker participant whose name is written as `@Name`. The
+      // server re-validates against thread membership, so this can only ever ping people already here.
+      const mentions = participants
+        .filter((p) => p.kind === 'worker' && p.name && body.includes(`@${p.name}`))
+        .map((p) => p.key);
+
       setPending((prev) => [...prev, optimistic]);
       setDraft('');
+      setMentionQuery(null);
       setSending(true);
       stickRef.current = true;
 
@@ -206,7 +227,12 @@ export function ChatThread({
             clientMsgId,
           });
         } else {
-          await postThreadMessage(threadId, { body, isInternal: asNote, clientMsgId });
+          await postThreadMessage(threadId, {
+            body,
+            isInternal: asNote,
+            clientMsgId,
+            ...(mentions.length > 0 ? { mentions } : {}),
+          });
         }
         // The frame usually clears the optimistic row first; this covers the case where our own frame is
         // suppressed (the server excludes the author) so nothing else would remove it.
@@ -223,8 +249,58 @@ export function ChatThread({
         setSending(false);
       }
     },
-    [draft, sending, disabled, asNote, threadId, fillTail, onActivity],
+    [draft, sending, disabled, asNote, threadId, fillTail, onActivity, participants],
   );
+
+  /** Worker participants matching the current `@query` — the mention picker's options. */
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return participants
+      .filter((p) => p.kind === 'worker' && p.state !== 'left' && p.name)
+      .filter((p) => q === '' || (p.name ?? '').toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionQuery, participants]);
+
+  /** Replace the `@query` at the caret with `@Name ` and record nothing — send() re-derives from text. */
+  const insertMention = useCallback(
+    (p: ParticipantDto) => {
+      const el = inputRef.current;
+      const caret = el?.selectionStart ?? draft.length;
+      const before = draft.slice(0, caret).replace(MENTION_RE, `@${p.name} `);
+      const next = before + draft.slice(caret);
+      setDraft(next);
+      setMentionQuery(null);
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(before.length, before.length);
+      });
+    },
+    [draft],
+  );
+
+  // Telegram-style drop: dragging a file (or several — the first is taken) anywhere over the
+  // conversation attaches it. The upload path is the same as the paperclip, so it lands in Dropbox.
+  const onDropFiles = useCallback(
+    (ev: React.DragEvent): void => {
+      ev.preventDefault();
+      setDragging(false);
+      const file = ev.dataTransfer?.files?.[0];
+      if (file && !disabled) void send({ file });
+    },
+    [send, disabled],
+  );
+  const dragProps = {
+    onDragOver: (ev: React.DragEvent): void => {
+      if (disabled) return;
+      ev.preventDefault();
+      setDragging(true);
+    },
+    onDragLeave: (ev: React.DragEvent): void => {
+      if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) setDragging(false);
+    },
+    onDrop: onDropFiles,
+  };
 
   const retry = (p: Pending): void => {
     setPending((prev) => prev.filter((x) => x.clientMsgId !== p.clientMsgId));
@@ -300,7 +376,7 @@ export function ChatThread({
         </p>
       )}
 
-      <div className={c.messages} ref={scrollRef} onScroll={onScroll}>
+      <div className={c.messages} ref={scrollRef} onScroll={onScroll} {...dragProps}>
         {loading ? (
           <div aria-busy="true">
             <span className={c.srOnly} role="status">
@@ -352,22 +428,32 @@ export function ChatThread({
                         )}
                         {files.length > 0 && (
                           <div className={c.attachRow}>
-                            {files.map((a) => (
-                              <button
-                                key={a.id}
-                                type="button"
-                                className={c.attach}
-                                onClick={() => void openAttachment(a)}
-                                disabled={linkBusy === a.id}
-                                title={`${a.name}${a.sizeBytes ? ` · ${formatBytes(a.sizeBytes)}` : ''}`}
-                              >
-                                <PaperclipIcon />
-                                <span className={c.attachName}>{a.name}</span>
-                                {a.sizeBytes != null && (
-                                  <span className={c.attachSize}>{formatBytes(a.sizeBytes)}</span>
-                                )}
-                              </button>
-                            ))}
+                            {files.map((a) =>
+                              isImage(a.mime) ? (
+                                <AttachmentImage
+                                  key={a.id}
+                                  threadId={threadId}
+                                  attachment={a}
+                                  busy={linkBusy === a.id}
+                                  onOpen={(x) => void openAttachment(x)}
+                                />
+                              ) : (
+                                <button
+                                  key={a.id}
+                                  type="button"
+                                  className={c.attach}
+                                  onClick={() => void openAttachment(a)}
+                                  disabled={linkBusy === a.id}
+                                  title={`${a.name}${a.sizeBytes ? ` · ${formatBytes(a.sizeBytes)}` : ''}`}
+                                >
+                                  <PaperclipIcon />
+                                  <span className={c.attachName}>{a.name}</span>
+                                  {a.sizeBytes != null && (
+                                    <span className={c.attachSize}>{formatBytes(a.sizeBytes)}</span>
+                                  )}
+                                </button>
+                              ),
+                            )}
                           </div>
                         )}
                       </div>
@@ -417,7 +503,7 @@ export function ChatThread({
         ))}
       </div>
 
-      <div className={c.composer}>
+      <div className={`${c.composer}${dragging ? ` ${c.composerDrag}` : ''}`} {...dragProps}>
         <div className={c.composerRow}>
           <input
             ref={fileRef}
@@ -443,12 +529,67 @@ export function ChatThread({
           >
             <PaperclipIcon />
           </button>
+          {cannedReplies ? (
+            <CannedReplies
+              department={thread?.department ?? null}
+              currentDraft={draft}
+              onInsert={(b) => setDraft((d) => (d.trim() ? `${d}\n${b}` : b))}
+            />
+          ) : null}
+          {mentionQuery !== null && mentionCandidates.length > 0 ? (
+            <ul className={c.mentionPicker} role="listbox" aria-label="Mention a teammate">
+              {mentionCandidates.map((p, i) => (
+                <li key={p.key}>
+                  <button
+                    type="button"
+                    className={i === 0 ? `${c.mentionItem} ${c.mentionItemActive}` : c.mentionItem}
+                    // mousedown, not click: fire before the textarea blurs so focus + caret are intact.
+                    onMouseDown={(ev) => {
+                      ev.preventDefault();
+                      insertMention(p);
+                    }}
+                  >
+                    @{p.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <textarea
             ref={inputRef}
             className={c.input}
             value={draft}
-            onChange={(ev) => setDraft(ev.target.value)}
+            onChange={(ev) =>
+              {
+                setDraft(ev.target.value);
+                setMentionQuery(
+                  mentionQueryAt(ev.target.value, ev.target.selectionStart ?? ev.target.value.length),
+                );
+              }
+            }
+            onPaste={(ev) => {
+              // Paste a screenshot / copied image straight into the conversation (Telegram-style).
+              const file = ev.clipboardData?.files?.[0];
+              if (file && !disabled) {
+                ev.preventDefault();
+                void send({ file });
+              }
+            }}
             onKeyDown={(ev) => {
+              // While the mention picker is open, Enter/Tab pick the top match instead of sending.
+              if (mentionQuery !== null && mentionCandidates.length > 0) {
+                if (ev.key === 'Enter' || ev.key === 'Tab') {
+                  ev.preventDefault();
+                  const first = mentionCandidates[0];
+                  if (first) insertMention(first);
+                  return;
+                }
+                if (ev.key === 'Escape') {
+                  ev.preventDefault();
+                  setMentionQuery(null);
+                  return;
+                }
+              }
               // Enter sends, Shift+Enter is a newline — the convention every chat user already knows.
               if (ev.key === 'Enter' && !ev.shiftKey) {
                 ev.preventDefault();
@@ -488,11 +629,87 @@ export function ChatThread({
             <span />
           )}
           <span className={c.hint}>
-            {thread?.state === 'archived' ? 'Archived' : 'Enter to send · Shift+Enter for a new line'}
+            {dragging
+              ? 'Drop to attach'
+              : thread?.state === 'archived'
+                ? 'Archived'
+                : 'Enter to send · Shift+Enter for a new line'}
           </span>
         </div>
       </div>
     </>
+  );
+}
+
+function isImage(mime: string | null): boolean {
+  return typeof mime === 'string' && mime.startsWith('image/');
+}
+
+/**
+ * An image attachment rendered inline as a thumbnail. The presigned link is minted on mount — Dropbox
+ * links expire, so they are fetched per view rather than embedded in the list payload — and a click
+ * opens the full image in a new tab via the same on-demand path as a file attachment. A link that
+ * cannot be minted degrades to the file-chip affordance rather than a broken image.
+ */
+function AttachmentImage({
+  threadId,
+  attachment,
+  busy,
+  onOpen,
+}: {
+  threadId: string;
+  attachment: AttachmentDto;
+  busy: boolean;
+  onOpen: (a: AttachmentDto) => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null);
+    setFailed(false);
+    getAttachmentLink(threadId, attachment.id)
+      .then((link) => {
+        if (!cancelled) setUrl(link.url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId, attachment.id]);
+
+  if (failed) {
+    return (
+      <button
+        type="button"
+        className={c.attach}
+        onClick={() => onOpen(attachment)}
+        disabled={busy}
+        title={attachment.name}
+      >
+        <PaperclipIcon />
+        <span className={c.attachName}>{attachment.name}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={c.attachImg}
+      onClick={() => onOpen(attachment)}
+      disabled={busy}
+      title={attachment.name}
+    >
+      {url ? (
+        <img src={url} alt={attachment.name} loading="lazy" />
+      ) : (
+        <span className={c.attachImgLoading} aria-label={`Loading ${attachment.name}`} />
+      )}
+    </button>
   );
 }
 

@@ -1,11 +1,16 @@
 /**
- * Applications/Clients collapsible filter panel — company/date/stage/business type/agent + WEX
- * status chips. Extracted out of Applications.tsx (over the line cap once facets state landed).
- * Option lists (`facets`) come from the server now — computed over the WHOLE dataset, not just the
- * loaded page (see applicationsListQuery.ts) — so a picked Stage no longer makes every OTHER Stage
- * option vanish from this same dropdown.
+ * Applications/Clients collapsible filter panel — date range/stage/business type/agent/Love's
+ * Verification + WEX status chips. Extracted out of Applications.tsx (over the line cap once facets
+ * state landed). Option lists (`facets`) come from the server now — computed over the WHOLE
+ * dataset, not just the loaded page (see applicationsListQuery.ts) — so a picked Stage no longer
+ * makes every OTHER Stage option vanish from this same dropdown.
+ *
+ * No Company Name field here (QA feedback 2026-08-17: it duplicated the header search box, which
+ * already matches on company name) — the date range is one grouped control instead of two separate
+ * fields, for the same reason: fewer, denser controls read better than a long flat row of them.
  */
 import type { CsApplicationsFacets } from '@/api/touchpointTypes';
+import { Select } from '@/ds';
 import { emptyFilters, type AppFilters } from './applicationsFilters';
 
 export function ApplicationsFilterPanel({
@@ -22,33 +27,27 @@ export function ApplicationsFilterPanel({
   return (
     <div className="cs-app-filter-panel">
       <div className="cs-app-filter-row">
-        <div className="cs-app-filter-field">
-          <label className="cs-app-filter-label">Company Name</label>
-          <input
-            type="text"
-            className="cs-form-input"
-            value={filters.company}
-            placeholder="Contains…"
-            onChange={(e) => setFilters((f) => ({ ...f, company: e.target.value }))}
-          />
-        </div>
-        <div className="cs-app-filter-field">
-          <label className="cs-app-filter-label">Date Filled From</label>
-          <input
-            type="date"
-            className="cs-form-input"
-            value={filters.dateFrom}
-            onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
-          />
-        </div>
-        <div className="cs-app-filter-field">
-          <label className="cs-app-filter-label">Date Filled To</label>
-          <input
-            type="date"
-            className="cs-form-input"
-            value={filters.dateTo}
-            onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
-          />
+        <div className="cs-app-filter-field cs-app-filter-daterange">
+          <label className="cs-app-filter-label">Date Filled</label>
+          <div className="cs-app-filter-daterange-inputs">
+            <input
+              type="date"
+              className="cs-form-input"
+              value={filters.dateFrom}
+              aria-label="Date Filled from"
+              onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
+            />
+            <span className="cs-app-filter-daterange-sep" aria-hidden="true">
+              –
+            </span>
+            <input
+              type="date"
+              className="cs-form-input"
+              value={filters.dateTo}
+              aria-label="Date Filled to"
+              onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+            />
+          </div>
         </div>
         <div className="cs-app-filter-field">
           <label className="cs-app-filter-label">Stage</label>
@@ -81,16 +80,26 @@ export function ApplicationsFilterPanel({
           </select>
         </div>
         <div className="cs-app-filter-field">
-          <label className="cs-app-filter-label">Agent (Deal)</label>
+          <Select
+            label="Agent (Deal)"
+            placeholder="All"
+            clearable
+            options={facets.agent.map((a) => ({ value: a, label: a }))}
+            value={filters.agent || null}
+            onChange={(v) => setFilters((f) => ({ ...f, agent: v ?? '' }))}
+          />
+        </div>
+        <div className="cs-app-filter-field">
+          <label className="cs-app-filter-label">Love's Verification</label>
           <select
             className="cs-form-input"
-            value={filters.agent}
-            onChange={(e) => setFilters((f) => ({ ...f, agent: e.target.value }))}
+            value={filters.loves}
+            onChange={(e) => setFilters((f) => ({ ...f, loves: e.target.value }))}
           >
             <option value="">All</option>
-            {facets.agent.map((a) => (
-              <option key={a} value={a}>
-                {a}
+            {facets.loves.map((l) => (
+              <option key={l} value={l}>
+                {l}
               </option>
             ))}
           </select>

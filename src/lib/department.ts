@@ -36,6 +36,7 @@ export const KNOWN_DEPARTMENTS = [
    */
   'hr',
   'recruit',
+  'desk',
 ] as const;
 
 export type KnownDepartment = (typeof KNOWN_DEPARTMENTS)[number];

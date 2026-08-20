@@ -193,7 +193,9 @@ describe('token contract', () => {
 
     // Status colours as text on a card. --success and --warning both FAILED this before the
     // re-baseline (3.29 and 3.43) — a live AA defect, not a hypothetical.
-    for (const name of ['--success', '--warning', '--error']) {
+    // --danger-vivid is the ranked-badge red (Desk ticket priority). It is louder than --error on
+    // purpose, so it owes the same AA floor as text on a card rather than being exempt for it.
+    for (const name of ['--success', '--warning', '--error', '--danger-vivid']) {
       expect(round(ratio(hex(name), surface)), `${name} on --surface`).toBeGreaterThanOrEqual(4.5);
     }
     expect(round(ratio(hex('--on-primary'), hex('--primary-container')))).toBeGreaterThanOrEqual(4.5);

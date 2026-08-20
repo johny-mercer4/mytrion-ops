@@ -49,6 +49,7 @@ export type CommsTicketEventType =
   | 'priority_changed'
   | 'type_changed'
   | 'department_changed'
+  | 'tagged'
   | 'escalated'
   | 'escalation_advanced'
   | 'escalation_resolved'
@@ -158,6 +159,12 @@ export const mytrionTickets = pgTable(
     priority: text('priority').$type<CommsTicketPriority>().notNull().default('medium'),
     status: text('status').$type<CommsTicketStatus>().notNull().default('open'),
     substatus: text('substatus'),
+    /**
+     * Free-form triage labels. Filtered with `tags @> ARRAY[...]` over a GIN index (created in the
+     * migration, not here — the repo hand-writes idempotent migrations). Empty array, never null, so a
+     * reader never has to null-check.
+     */
+    tags: text('tags').array().notNull().default([]),
 
     // --- requester ---
     requesterKind: text('requester_kind').$type<CommsRequesterKind>().notNull(),

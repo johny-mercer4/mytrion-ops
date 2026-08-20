@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { HrEmployeeDto } from '../../api/hr';
 import { clearHrEmployeePhoto, setHrEmployeePhoto } from '../../api/hrPerson';
+import { formatPhone } from '../../lib/phone';
 import { resizeImageToDataUrl } from '../_shared/resizeImageDataUrl';
 import { departmentTone } from './departmentAppearance';
 import { HrAvatar } from './HrAvatar';
@@ -223,7 +224,7 @@ export function HrEmployeeDetail({
             mono
           />
           <Field icon={<Mail size={12} />} label="Email" value={employee.email} mono />
-          <Field icon={<Phone size={12} />} label="Mobile" value={employee.mobile} mono />
+          <Field icon={<Phone size={12} />} label="Mobile" value={formatPhone(employee.mobile)} mono />
           {/* The '@' is presentation only — the column stores the bare handle. */}
           <Field
             icon={<Send size={12} />}

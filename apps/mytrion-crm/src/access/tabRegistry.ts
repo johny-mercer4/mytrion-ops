@@ -45,6 +45,7 @@ import { BILLING_TABS } from '../mytrions/billing/billingTabs';
 import { CS_TABS } from '../mytrions/customer-service/csTabs';
 import { FINANCE_TABS } from '../mytrions/finance/financeTabs';
 import { RECRUIT_TABS } from '../mytrions/recruit/recruitTabs';
+import { DESK_TABS } from '../mytrions/desk/deskTabs';
 import { VERIFICATION_TABS } from '../mytrions/verification/verificationTabs';
 import { TRAILHEAD_TABS } from '../mytrions/trailhead/trailheadTabs';
 import { MARKETING_TAB_DESCRIPTORS } from '../mytrions/marketing/marketingTabs';
@@ -105,7 +106,19 @@ export const MYTRION_TABS: Record<MytrionId, readonly TabDescriptor[]> = {
   admin: ADMIN_TABS,
   sales: fromNav(SALES_NAV),
   billing: BILLING_TABS,
-  collection: fromNav(COLLECTION_TABS),
+  // Two fieldsets in the picker, mirroring the rail's own Desk / Agency split.
+  // The desk redesign kept every existing key (`home`, `cases`, `array`) and added `queue`, so no
+  // stored grant is orphaned — see the rename warning in this file's header for why that mattered.
+  collection: [
+    ...fromNav(
+      COLLECTION_TABS.filter((t) => t.section === 'desk'),
+      'Desk',
+    ),
+    ...fromNav(
+      COLLECTION_TABS.filter((t) => t.section === 'agency'),
+      'Agency',
+    ),
+  ],
   finance: FINANCE_TABS,
   verification: VERIFICATION_TABS,
   manager: MANAGER_TABS,
@@ -114,6 +127,7 @@ export const MYTRION_TABS: Record<MytrionId, readonly TabDescriptor[]> = {
   hr: fromNav(HR_TABS),
   recruit: RECRUIT_TABS,
   trailhead: TRAILHEAD_TABS,
+  desk: DESK_TABS,
   'customer-service': CS_TABS,
 };
 

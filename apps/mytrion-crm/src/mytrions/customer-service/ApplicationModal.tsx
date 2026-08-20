@@ -72,13 +72,31 @@ const MODAL_FIELDS: ModalField[] = [
   { field: 'Date_Filled', label: 'Date Filled', type: 'readonly', get: (a) => a.date },
   { field: '_dealAgent', label: 'Agent (Deal)', type: 'readonly', get: (a) => a.agent || 'not assigned' },
   { field: 'Oldest_Open_Date', label: 'Oldest Open Date', type: 'readonly', get: () => null },
-  { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: () => null },
+  // Still readonly here — editing happens via the bulk Love's-clearance push (Applications.tsx /
+  // LovesBulkBar.tsx), not per-record in this modal. Was hardcoded to null (always '—') because the
+  // live view-model didn't carry it; now that it does (data.ts's lovesVerification), show the real
+  // on-file value instead of a placeholder that stayed blank even after a bulk push set it.
+  { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: (a) => a.lovesVerification || null },
   // Bulk-fetched on the Clients-tab table (see Applications.tsx) — already on the row by the time
   // this modal opens, so no extra lookup here.
   { field: 'Tracking_Number', label: 'Tracking Number', type: 'readonly', get: (a) => a.trackingNumber ?? null },
   { field: 'Verification_Notes', label: 'Verification Notes', type: 'readonly', get: () => null },
   { field: 'Cards_Ordered', label: 'Cards Ordered', type: 'readonly', get: () => null },
   { field: 'Modified_By', label: 'Modified By', type: 'readonly', get: () => null },
+];
+
+/**
+ * Fields that must be non-blank before ANY save goes through (QA feedback, Dina Carter
+ * 2026-08-07: client profiles routinely missing these). Checked against the full current form
+ * state, not just the diff, so an edit to an unrelated field (e.g. a note) still surfaces a
+ * pre-existing gap instead of letting it slide through untouched. Mirrored server-side in
+ * applicationsSave.ts — keep both lists in sync if this changes.
+ */
+const REQUIRED_FIELDS: ReadonlyArray<{ field: string; label: string }> = [
+  { field: 'First_Name', label: 'First Name' },
+  { field: 'Last_Name', label: 'Last Name' },
+  { field: 'City', label: 'City' },
+  { field: 'Zip_Code', label: 'Zip Code' },
 ];
 
 const SPINNER_PATH =
@@ -182,6 +200,14 @@ export function ApplicationModal({
       if (f.type === 'boolean') changes[f.field] = current === true;
       else if (f.type === 'number') changes[f.field] = current === '' ? null : Number(current);
       else changes[f.field] = current === '' ? null : String(current);
+    }
+
+    for (const { field, label } of REQUIRED_FIELDS) {
+      if (errors[field]) continue; // digits-only/number errors above already flagged this field
+      const current = values[field];
+      if (current === undefined || String(current).trim() === '') {
+        errors[field] = `${label} is required`;
+      }
     }
 
     if (Object.keys(errors).length > 0) {

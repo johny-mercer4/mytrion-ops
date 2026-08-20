@@ -37,6 +37,7 @@ const FOLDER: Record<MytrionId, string> = {
   hr: 'hr',
   recruit: 'recruit',
   trailhead: 'trailhead',
+  desk: 'desk',
   'customer-service': 'customer-service',
 };
 

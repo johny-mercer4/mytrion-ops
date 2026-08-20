@@ -1,0 +1,175 @@
+/* =====================================================
+   Collection write dialogs. Scoped under `.ca-*`, mounted inside ds/Dialog's own panel — which
+   owns the surface, the radius and the scrim, so nothing here re-declares them.
+   ===================================================== */
+
+.ca-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ca-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.ca-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  min-width: 0;
+}
+.ca-label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ca-hint {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.ca-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.ca-rule {
+  height: 1px;
+  background: var(--row-line);
+}
+
+/* A block of consequence. Icon-free by design: the border and the words carry it, and a warning
+   triangle on every one of these trains people to stop reading them. */
+.ca-note {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--intent-info-bd);
+  background: var(--intent-info-bg);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+.ca-note[data-tone='warning'] {
+  border-color: var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+}
+.ca-note[data-tone='danger'] {
+  border-color: var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+}
+.ca-note b {
+  font-family: var(--font-num);
+  font-weight: var(--fw-bold);
+}
+
+/* ── Metro 2 readiness list ─────────────────────────────────────────────── */
+.ca-ready {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ca-ready-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+}
+.ca-ready-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--intent-danger-bd);
+  background: var(--intent-danger-bg);
+  font-size: var(--text-sm);
+  color: var(--intent-danger-fg);
+}
+.ca-ready-list li[data-ok] {
+  border-color: var(--border);
+  background: var(--field);
+  color: var(--text-secondary);
+}
+.ca-ready-list li[data-ok] > :first-child {
+  color: var(--success);
+}
+.ca-ready-state {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+}
+
+/* ── Payment plan schedule preview ──────────────────────────────────────── */
+.ca-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+.ca-schedule-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ca-schedule-total {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.ca-schedule-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+.ca-schedule-table th {
+  padding: var(--space-1_5) var(--space-2);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  text-align: start;
+}
+.ca-schedule-table td {
+  padding: var(--space-1_5) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+.ca-schedule-table tr:last-child td {
+  border-bottom: 0;
+}
+.ca-schedule-table .ca-end {
+  text-align: end;
+}
+.ca-schedule-foot {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+@media (width < 640px) {
+  .ca-grid {
+    grid-template-columns: 1fr;
+  }
+}

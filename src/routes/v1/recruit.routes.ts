@@ -5,11 +5,12 @@ import {
   RECRUIT_EMPLOYMENT_TYPES,
   RECRUIT_JOB_STATUSES,
 } from '../../db/schema/index.js';
-import { NotFoundError, RBACError } from '../../lib/errors.js';
+import { AppError, NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { recruitStorageProvider, storageFor } from '../../modules/files/storage/index.js';
 import { recruitRepo } from '../../repos/recruitRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment, requireMytrionWrite } from './helpers.js';
+import { requireContext, withDepartmentAccess } from './helpers.js';
 
 const jobStatus = z.enum(RECRUIT_JOB_STATUSES);
 const employmentType = z.enum(RECRUIT_EMPLOYMENT_TYPES);
@@ -48,12 +49,41 @@ const convertBody = z.object({
   mobile: z.string().max(50).nullable().optional(),
 });
 
+/**
+ * Recruit is co-owned by two departments — Recruiters (the `recruit` grant) and HR — plus admins.
+ * Declared here instead of a bare `requireDepartment('recruit')` so an HR user always reaches the
+ * hiring workspace, whether or not their per-user grant also lists `recruit`: hiring is an HR
+ * function. Anyone with NEITHER department is refused, so this never opens up like `hr` (which is
+ * read-open to every internal worker). A plain employee — and a team lead, who has no `hr`/`recruit`
+ * department of their own — has no way in.
+ */
 function requireRecruitRead(request: FastifyRequest): TenantContext {
-  return requireDepartment(request, 'recruit', 'Recruit workspace');
+  const base = requireContext(request);
+  if (base.audience !== 'internal') throw new RBACError('Recruit workspace is internal-only');
+  const ctx = withDepartmentAccess(base, request);
+  const ok =
+    ctx.role === 'admin' ||
+    ctx.bypassRbac === true ||
+    ctx.allDepartmentAccess ||
+    ctx.departments.includes('recruit') ||
+    ctx.departments.includes('hr');
+  if (!ok) throw new RBACError('Recruit workspace requires Recruiter or HR access');
+  return ctx;
 }
 
+/**
+ * Full CRUD for HR and admins; a dedicated Recruiter writes unless their `recruit` access is
+ * read-only. HR carries no `recruit` access-mode, so they are never the read-only case — hiring CRUD
+ * is theirs by policy.
+ */
 function requireRecruitWrite(request: FastifyRequest): TenantContext {
-  return requireMytrionWrite(request, 'recruit', 'Recruit workspace');
+  const ctx = requireRecruitRead(request);
+  if (ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess) return ctx;
+  if (ctx.departments.includes('hr')) return ctx;
+  if (ctx.mytrionAccessModes?.recruit === 'read') {
+    throw new RBACError('Recruit workspace requires full (write) access — your access is read-only');
+  }
+  return ctx;
 }
 
 function requireRecruitAdmin(request: FastifyRequest): TenantContext {
@@ -74,13 +104,95 @@ function jobDto(row: Awaited<ReturnType<typeof recruitRepo.listJobs>>[number]) {
   };
 }
 
+/** Resumes are small documents; cap well under Dropbox's single-shot limit. */
+const RESUME_MAX_BYTES = 15 * 1024 * 1024;
+const RESUME_ALLOWED_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/rtf',
+  'text/rtf',
+  'text/plain',
+]);
+const RESUME_ALLOWED_EXT = /\.(pdf|docx?|rtf|txt)$/i;
+
+/** Filesystem-safe leaf name. The folder is the candidate id, so only this leaf is user-derived. */
+function sanitizeResumeName(name: string): string {
+  const cleaned = name
+    .replace(/[^\w.\- ]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[._]+/, '')
+    .slice(-120)
+    .trim();
+  const safe = cleaned || 'resume';
+  return RESUME_ALLOWED_EXT.test(safe) ? safe : `${safe}.pdf`;
+}
+
+interface ResumeUpload {
+  name: string;
+  mime: string;
+  buffer: Buffer;
+}
+
+/**
+ * Read ONE resume file from a multipart body. `parts()` not `file()` — same field-ordering trap the
+ * comms attachment route documents. Rejects an empty upload and anything that is not a document.
+ */
+async function readResumeUpload(request: FastifyRequest): Promise<ResumeUpload> {
+  let file: ResumeUpload | null = null;
+  try {
+    for await (const part of request.parts({ limits: { fileSize: RESUME_MAX_BYTES, files: 1 } })) {
+      if (part.type === 'file') {
+        file = {
+          name: part.filename || 'resume',
+          mime: part.mimetype || 'application/octet-stream',
+          buffer: await part.toBuffer(),
+        };
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && /file too large|FST_REQ_FILE_TOO_LARGE/i.test(err.message)) {
+      throw new AppError(`Resume exceeds the ${Math.round(RESUME_MAX_BYTES / 1024 / 1024)}MB limit.`, {
+        statusCode: 413,
+        code: 'RESUME_TOO_LARGE',
+        expose: true,
+      });
+    }
+    throw err;
+  }
+  if (!file || file.buffer.length === 0) throw new ValidationError('No resume file was uploaded');
+  if (!RESUME_ALLOWED_MIME.has(file.mime) && !RESUME_ALLOWED_EXT.test(file.name)) {
+    throw new ValidationError('Resume must be a PDF, Word, RTF, or text document');
+  }
+  return file;
+}
+
 function candidateDto(row: Awaited<ReturnType<typeof recruitRepo.listCandidates>>[number]) {
+  // The storage key + provider stay server-side; the client gets only what it needs to show the
+  // resume and fetch a link. A viewable Dropbox link is minted on demand (it expires) via
+  // GET /recruit/candidates/:id/resume/link.
+  const {
+    resumeFileKey,
+    resumeStorageProvider,
+    resumeContentType,
+    resumeFileName,
+    resumeUploadedAt,
+    ...rest
+  } = row;
   return {
-    ...row,
+    ...rest,
     appliedAt: row.appliedAt.toISOString(),
     convertedAt: row.convertedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    resume: resumeFileKey
+      ? {
+          fileName: resumeFileName,
+          contentType: resumeContentType,
+          uploadedAt: resumeUploadedAt?.toISOString() ?? null,
+        }
+      : null,
   };
 }
 
@@ -233,6 +345,90 @@ export async function recruitRoutes(app: FastifyInstance): Promise<void> {
         detail: { candidateId: result.candidateId },
       });
       return result;
+    },
+  );
+
+  // Upload a resume → a NEW per-candidate folder in the Recruit Dropbox root
+  // (/recruit/candidates/<id>/<file>). Write access (Recruiters/HR/admin) only.
+  app.post<{ Params: { id: string } }>(
+    '/recruit/candidates/:id/resume',
+    auth,
+    async (request) => {
+      const ctx = requireRecruitWrite(request);
+      const candidate = await recruitRepo.getCandidate(ctx, request.params.id);
+      if (!candidate) throw new NotFoundError('Candidate not found');
+      const upload = await readResumeUpload(request);
+      const fileName = sanitizeResumeName(upload.name);
+      const provider = recruitStorageProvider();
+      const key = `candidates/${candidate.id}/${fileName}`;
+      await storageFor(provider).put(key, upload.buffer, { contentType: upload.mime });
+      const updated = await recruitRepo.setCandidateResume(ctx, candidate.id, {
+        fileKey: key,
+        fileName,
+        contentType: upload.mime,
+        storageProvider: provider,
+      });
+      if (!updated) throw new NotFoundError('Candidate not found');
+      await auditFromContext(ctx, {
+        action: 'recruit.candidate.resume.upload',
+        status: 'ok',
+        resourceType: 'recruit_candidate',
+        resourceId: candidate.id,
+        detail: { fileName, bytes: upload.buffer.length, storage: provider },
+      });
+      const enriched = await recruitRepo.getCandidate(ctx, candidate.id);
+      if (!enriched) throw new NotFoundError('Candidate not found after upload');
+      return candidateDto(enriched);
+    },
+  );
+
+  // A short-lived viewable link, minted on demand (Dropbox links expire ~4h). Read access is enough.
+  app.get<{ Params: { id: string } }>(
+    '/recruit/candidates/:id/resume/link',
+    auth,
+    async (request) => {
+      const ctx = requireRecruitRead(request);
+      const candidate = await recruitRepo.getCandidate(ctx, request.params.id);
+      if (!candidate) throw new NotFoundError('Candidate not found');
+      if (!candidate.resumeFileKey) throw new NotFoundError('This candidate has no resume on file');
+      const { url, expiresAt } = await storageFor(candidate.resumeStorageProvider).presignGet(
+        candidate.resumeFileKey,
+        candidate.resumeFileName ? { filename: candidate.resumeFileName } : {},
+      );
+      return { url, expiresAt: expiresAt.toISOString(), fileName: candidate.resumeFileName };
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    '/recruit/candidates/:id/resume',
+    auth,
+    async (request) => {
+      const ctx = requireRecruitWrite(request);
+      const candidate = await recruitRepo.getCandidate(ctx, request.params.id);
+      if (!candidate) throw new NotFoundError('Candidate not found');
+      if (candidate.resumeFileKey) {
+        try {
+          await storageFor(candidate.resumeStorageProvider).delete(candidate.resumeFileKey);
+        } catch (err) {
+          // The bytes may already be gone; detaching the row is what the user asked for.
+          request.log.warn(
+            { err, candidateId: candidate.id },
+            'recruit resume storage delete failed; detaching row anyway',
+          );
+        }
+      }
+      const updated = await recruitRepo.clearCandidateResume(ctx, candidate.id);
+      if (!updated) throw new NotFoundError('Candidate not found');
+      await auditFromContext(ctx, {
+        action: 'recruit.candidate.resume.delete',
+        status: 'ok',
+        resourceType: 'recruit_candidate',
+        resourceId: candidate.id,
+        detail: {},
+      });
+      const enriched = await recruitRepo.getCandidate(ctx, candidate.id);
+      if (!enriched) throw new NotFoundError('Candidate not found after delete');
+      return candidateDto(enriched);
     },
   );
 

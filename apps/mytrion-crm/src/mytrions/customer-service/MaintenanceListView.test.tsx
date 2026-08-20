@@ -1,18 +1,17 @@
 /**
- * Click-to-copy on the Maintenance list view.
+ * Copy button on the Maintenance list view (2026-08-18).
  *
- * This behaviour came from another developer (PR #166, QA feedback 2026-08-11: Company / Carrier ID
- * / Unit # / Amount opened the record modal instead of copying, because those cells had no handler
- * at all) and had to be re-applied by hand when this branch replaced the hand-written table with
- * `ds/DataTable`. A behaviour that survives a merge by hand is exactly the kind that quietly does
- * not, so it is pinned here.
+ * Previously (PR #166, QA feedback 2026-08-11) Company / Carrier ID / Unit # / Amount were
+ * click-to-copy on the WHOLE cell, which meant those four columns — unlike every other column —
+ * could not be clicked into the record. That read as broken, not as a feature: every column now
+ * opens the record on click, and copying gets its own explicit button instead.
  *
- * The two things a careless re-application gets wrong:
- *   - putting the handler on the rendered TEXT rather than the CELL, which leaves the cell's padding
- *     still opening the record — so a click does one thing or the other depending on the pixel;
- *   - dropping `stopPropagation`, so a copy also opens the modal.
+ * The two things a careless re-application of "add a copy affordance" gets wrong here:
+ *   - putting the click handler on the cell/row instead of the button, which blocks opening the
+ *     record from that column;
+ *   - dropping `stopPropagation` on the button, so a copy click also opens the modal.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setViewport } from '../../test/viewport';
 import type { MaintenanceRecord } from './live';
@@ -32,7 +31,7 @@ const ROWS = [
     totalAmount: '1240.55',
     ownerName: 'D. Carter',
   },
-  // No carrier, no unit, no amount: the copy affordance must not appear at all.
+  // No carrier, no unit, no amount: the copy button must not appear at all.
   { id: 'm2', carrierId: null, unitNumber: null, status: 'Completed', totalAmount: null },
 ] as unknown as MaintenanceRecord[];
 
@@ -41,27 +40,13 @@ const cellFor = (container: HTMLElement, row: number, col: number): HTMLElement 
 
 beforeEach(() => copy.mockClear());
 
-describe('Maintenance list — click to copy', () => {
-  it('copies from the WHOLE cell, not just its text', () => {
+describe('Maintenance list — every column opens the record, copy is a separate button', () => {
+  it('opens the record when a copy-enabled cell is clicked outside the button', () => {
     const onOpen = vi.fn();
     const { container } = render(<MaintenanceListView rows={ROWS} onOpen={onOpen} />);
-
-    const carrier = cellFor(container, 0, 1);
-    expect(carrier).toHaveClass('cs-mt-cell-copyable');
-    expect(carrier).toHaveAttribute('title', 'Click to copy Carrier ID');
-
-    fireEvent.click(carrier);
-    expect(copy).toHaveBeenCalledWith('CARR-4821', expect.anything());
-  });
-
-  it('does not open the record when a copy cell is clicked', () => {
-    // The whole point of the original fix. Without stopPropagation the row's onOpen fires too and
-    // the user gets the modal they were trying not to open.
-    const onOpen = vi.fn();
-    const { container } = render(<MaintenanceListView rows={ROWS} onOpen={onOpen} />);
-    fireEvent.click(cellFor(container, 0, 0));
-    expect(copy).toHaveBeenCalledTimes(1);
-    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(cellFor(container, 0, 1)); // Carrier ID
+    expect(onOpen).toHaveBeenCalledWith(ROWS[0]);
+    expect(copy).not.toHaveBeenCalled();
   });
 
   it('still opens the record from a non-copy cell', () => {
@@ -71,17 +56,25 @@ describe('Maintenance list — click to copy', () => {
     expect(onOpen).toHaveBeenCalledWith(ROWS[0]);
   });
 
-  it('offers no copy affordance when there is nothing to copy', () => {
+  it('the copy button copies without opening the record', () => {
+    const onOpen = vi.fn();
+    const { container } = render(<MaintenanceListView rows={ROWS} onOpen={onOpen} />);
+    const btn = within(cellFor(container, 0, 1)).getByRole('button', { name: 'Copy Carrier ID' });
+    fireEvent.click(btn);
+    expect(copy).toHaveBeenCalledWith('CARR-4821', expect.anything());
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('offers no copy button when there is nothing to copy', () => {
     const { container } = render(<MaintenanceListView rows={ROWS} onOpen={vi.fn()} />);
     const emptyCarrier = cellFor(container, 1, 1);
-    expect(emptyCarrier).not.toHaveClass('cs-mt-cell-copyable');
-    expect(emptyCarrier).not.toHaveAttribute('title');
+    expect(within(emptyCarrier).queryByRole('button')).toBeNull();
 
     fireEvent.click(emptyCarrier);
     expect(copy).not.toHaveBeenCalled();
   });
 
-  it('covers all four cells the QA feedback named', () => {
+  it('covers all four columns the request named', () => {
     const { container } = render(<MaintenanceListView rows={ROWS} onOpen={vi.fn()} />);
     for (const [col, label] of [
       [0, 'Company'],
@@ -89,11 +82,11 @@ describe('Maintenance list — click to copy', () => {
       [2, 'Unit #'],
       [9, 'Amount'],
     ] as const) {
-      expect(cellFor(container, 0, col)).toHaveAttribute('title', `Click to copy ${label}`);
+      expect(within(cellFor(container, 0, col)).getByRole('button', { name: `Copy ${label}` })).toBeInTheDocument();
     }
   });
 
-  it('drops the copy handler on a phone, where the card is already the tap target', () => {
+  it('drops the copy button on a phone, where the card is already the tap target', () => {
     // A second click target nested inside the card's button is ambiguous under a thumb. The values
     // are all in the record the card opens.
     setViewport(375);

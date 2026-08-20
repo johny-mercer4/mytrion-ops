@@ -99,6 +99,8 @@ export interface ListTicketsOptions {
   assigneeZohoUserId?: string;
   requesterZohoUserId?: string;
   carrierId?: string;
+  /** Narrow to tickets carrying this exact tag (GIN containment). */
+  tag?: string;
   /** Free text over number, subject, company and type label. */
   search?: string;
   /** Opaque keyset cursor from a previous page. */
@@ -433,6 +435,10 @@ export const commsTicketRepo = {
       where.push(eq(mytrionTickets.requesterZohoUserId, opts.requesterZohoUserId));
     }
     if (opts.carrierId) where.push(eq(mytrionTickets.carrierId, opts.carrierId));
+    if (opts.tag) {
+      // Containment over the GIN index — narrows WITHIN the reader filter, never widens it.
+      where.push(sql`${mytrionTickets.tags} @> ARRAY[${opts.tag}]::text[]`);
+    }
 
     const search = opts.search?.trim();
     if (search) {

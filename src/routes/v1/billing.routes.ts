@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { NotFoundError } from '../../lib/errors.js';
+import { NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
 import { serverCrmPost } from '../../integrations/serverCrm.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
@@ -22,6 +22,7 @@ import {
   reverseMapping,
 } from '../../modules/billing/cmpWrites.js';
 import { searchCarrierInvoices } from '../../modules/billing/cmpReads.js';
+import { canDeletePaymentTransaction } from '../../modules/billing/paymentDeleteAccess.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
 import { amountsMatch, assertReturnMatchable } from '../../modules/billing/returnsMatch.js';
 import { resolveReturnCmpReversal } from '../../modules/billing/returnsCmpReversal.js';
@@ -440,6 +441,44 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     if (b.clearCrm !== 'false') await paymentTransactionRepo.clearMapping(id);
     await auditFromContext(ctx, { action: 'billing.transactions.unmap', status: 'ok', resourceType: 'payment_transaction', resourceId: String(id), detail: { kind: rev.kind, cleared: b.clearCrm !== 'false' } });
     return { status: 'success', reversed: rev.reversed };
+  });
+
+  /**
+   * Hard-delete a manually-entered transaction. Chase is the only rail with no automated feed, so
+   * every Chase row is a manual entry — this is scoped to it explicitly rather than trusting the
+   * grant table alone to decide what's deletable (adding another rail later is a one-line widen).
+   * Gated beyond the normal billing-write check: admins always pass, anyone else needs an explicit
+   * grant (paymentDeleteGrantRepo) for this source. A still-mapped row must be unmapped first —
+   * through the existing, audited unmap route — so a real CMP reversal happens before the row that
+   * recorded it is gone for good.
+   */
+  app.delete('/billing/transactions/:id', guard, async (request) => {
+    const ctx = requireBillingWrite(request);
+    const { id } = txIdParam.parse(request.params);
+    const tx = await paymentTransactionRepo.getById(id);
+    if (!tx) throw new NotFoundError(`Transaction ${id} not found`);
+    if (tx.source !== 'chase') throw new ValidationError('Only manually-entered Chase transactions can be deleted here');
+    if (!(await canDeletePaymentTransaction(ctx, tx.source))) {
+      throw new RBACError('Deleting a Chase transaction requires an explicit grant');
+    }
+    if (tx.isInvoiceMapped) {
+      throw new ValidationError('Unmap this transaction before deleting it — a mapped row still has a live CMP reference');
+    }
+    const deleted = await paymentTransactionRepo.deleteIfUnmapped(id);
+    if (!deleted) {
+      // Lost a race with a concurrent map between the read above and the delete's own WHERE guard.
+      throw new ValidationError('Transaction was mapped by something else — refresh and try again');
+    }
+    await auditFromContext(ctx, {
+      action: 'billing.transactions.delete',
+      status: 'ok',
+      resourceType: 'payment_transaction',
+      resourceId: String(id),
+      // Full snapshot: this is the one place a payment_transactions row is destroyed rather than
+      // corrected in place, so the audit trail is the only remaining record of what it was.
+      detail: { deletedRow: deleted },
+    });
+    return { status: 'success' };
   });
 
   /** Match a return to its original payment: reverse the CMP payment (KEEP the mapping), flag returned. */

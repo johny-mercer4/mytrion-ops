@@ -49,6 +49,8 @@ import { verificationFlowRoutes } from './routes/v1/verificationFlow.routes.js';
 import { verificationPolicyRoutes } from './routes/v1/verificationPolicy.routes.js';
 import { mytrionWatchRoutes } from './routes/v1/mytrionWatch.routes.js';
 import { collectionRoutes } from './routes/v1/collection.routes.js';
+import { collectionActionRoutes } from './routes/v1/collectionActions.routes.js';
+import { collectionAgencyRoutes } from './routes/v1/collectionAgency.routes.js';
 import { verificationFirstRunRoutes } from './routes/v1/verificationFirstRun.routes.js';
 import { verificationStrategiesRoutes } from './routes/v1/verificationStrategies.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
@@ -65,6 +67,9 @@ import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
 import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
 import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
+import { commsAgentRoutes } from './routes/v1/commsAgent.routes.js';
+import { commsAnalyticsRoutes } from './routes/v1/commsAnalytics.routes.js';
+import { commsCannedRepliesRoutes } from './routes/v1/commsCannedReplies.routes.js';
 import { commsQueueRoutes } from './routes/v1/commsQueue.routes.js';
 import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
 import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
@@ -78,6 +83,7 @@ import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csMaintenanceRoutes } from './routes/v1/csMaintenance.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
+import { paymentDeleteGrantsRoutes } from './routes/v1/paymentDeleteGrants.routes.js';
 import { billingLedgerRoutes } from './routes/v1/billingLedger.routes.js';
 import { billingLedgerImportRoutes } from './routes/v1/billingLedgerImport.routes.js';
 import { billingLedgerSectionsRoutes } from './routes/v1/billingLedgerSections.routes.js';
@@ -467,6 +473,9 @@ export async function buildApp(): Promise<FastifyInstance> {
         await comms.register(commsAttachmentsRoutes);
         await comms.register(commsEscalationsRoutes);
         await comms.register(commsQueueRoutes);
+        await comms.register(commsAnalyticsRoutes);
+        await comms.register(commsAgentRoutes);
+        await comms.register(commsCannedRepliesRoutes);
         await comms.register(commsAdminRoutes);
       });
       await v1.register(dataCenterRoutes);
@@ -487,7 +496,12 @@ export async function buildApp(): Promise<FastifyInstance> {
       // their siblings' plugins.
       await v1.register(verificationDocumentPreviewRoutes);
       await v1.register(mytrionWatchRoutes);
+      // Order matters. All three plugins live under /collection; the agency queue goes first so
+      // `/collection/placement-queue` is matched before the parameterised `/collection/cases/:id`
+      // routes get a chance to read "placement-queue" as an id.
+      await v1.register(collectionAgencyRoutes);
       await v1.register(collectionRoutes);
+      await v1.register(collectionActionRoutes);
       await v1.register(verificationCasesRoutes);
       await v1.register(verificationFirstRunRoutes);
       await v1.register(verificationStrategiesRoutes);
@@ -496,6 +510,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(csMaintenanceRoutes);
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
+      await v1.register(paymentDeleteGrantsRoutes);
       await v1.register(billingLedgerRoutes);
       await v1.register(billingLedgerImportRoutes);
       await v1.register(billingLedgerSectionsRoutes);

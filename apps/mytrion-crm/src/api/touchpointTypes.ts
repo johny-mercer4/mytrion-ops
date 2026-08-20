@@ -630,13 +630,13 @@ export interface TouchpointMap {
       perPage?: number;
       sortKey?: 'date' | 'appId' | 'carrierId';
       sortDir?: 'asc' | 'desc';
-      company?: string;
       dateFrom?: string;
       dateTo?: string;
       stage?: string;
       biz?: string;
       agent?: string;
       wex?: string[];
+      loves?: string;
       fresh?: boolean;
     };
     result: CsApplicationsList;
@@ -900,6 +900,7 @@ export interface CsApplicationsFacets {
   biz: string[];
   agent: string[];
   wex: string[];
+  loves: string[];
 }
 
 export interface CsApplicationsList {
