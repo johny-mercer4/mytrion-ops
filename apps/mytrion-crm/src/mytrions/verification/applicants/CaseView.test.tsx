@@ -24,9 +24,12 @@ vi.mock('@/api/verificationFlow', async (importOriginal) => {
     decidePhase,
     requestDocuments,
     reopenPhase,
+    saveRiskAssessment,
   };
 });
 
+/** Phase 9's save. Unmocked, a click would reach the real transport from jsdom. */
+const saveRiskAssessment = vi.fn();
 const getDeskBrokerSnapshot = vi.fn();
 /**
  * `runAuthorityLookup` is mocked alongside the snapshot for the reason the snapshot is: Phase 4's Run
@@ -137,6 +140,7 @@ beforeEach(() => {
   getDeskBrokerSnapshot.mockResolvedValue({ match: null });
   runAuthorityLookup.mockReset();
   saveHighwayReview.mockReset();
+  saveRiskAssessment.mockReset();
   getDeskCase.mockResolvedValue(desk());
   getPolicy.mockResolvedValue({
     nsfReviewThreshold: 3,
@@ -714,6 +718,128 @@ function highwayDesk(over: Partial<VerificationDeskDetail['case']> = {}): Verifi
     ],
   };
 }
+
+/**
+ * PHASE 9. It had no gate — `passReady` never mentioned it, so the phase Phase 10 prices the approval
+ * from could be passed with no assessment at all — and the pane defaulted the tier to `strong`, the
+ * most generous factor in policy.
+ */
+function riskDesk(over: Record<string, unknown> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p9_risk_capacity' },
+    banking: {
+      ...(base.banking ?? {}),
+      recurringWeeklyIncome: '5000',
+      recurringWeeklyExpenses: '3000',
+      avgWeeklyFuelExpense: '800',
+    },
+    credit: { ...(base.credit ?? {}), creditScore: 700 },
+    rail: [
+      phase({ code: 'p9_risk_capacity', label: 'Risk tier', order: 9, status: 'in_progress' }),
+    ],
+    ...over,
+  } as unknown as VerificationDeskDetail;
+}
+
+describe('CaseView Phase 9 risk and capacity', () => {
+  it('shows the three SOP steps before a tier is chosen', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    // 5000 − 3000 = 2000, + 800 fuel = 2800. Visible without saving anything.
+    expect(screen.getByText('$2,000')).toBeInTheDocument();
+    expect(screen.getByText('$2,800')).toBeInTheDocument();
+  });
+
+  /** An owner-operator has neither an authority nor a Highway presence. */
+  it('asks for four inputs on an owner-operator, not six', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    expect(screen.queryByRole('radiogroup', { name: 'Authority age' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Highway data' })).toBeNull();
+  });
+
+  it('keeps Pass off until every input is read and a tier is assigned', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    for (const group of screen
+      .getAllByRole('radiogroup')
+      .filter((g) => g.getAttribute('aria-label') !== 'Risk tier')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /Strong/ }));
+    }
+    // Inputs read, but no tier — still refused.
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    const tiers = screen.getByRole('radiogroup', { name: 'Risk tier' });
+    fireEvent.click(within(tiers).getByRole('radio', { name: /strong/i }));
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  /**
+   * The SOP leaves the moderate and weak factors to approved policy, and the calculator refuses to
+   * guess one — so the pane has to say the tier is assessable but not priceable.
+   */
+  it('says so when the assigned tier has no approved factor', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    const tiers = screen.getByRole('radiogroup', { name: 'Risk tier' });
+    fireEvent.click(within(tiers).getByRole('radio', { name: /weak/i }));
+    expect(screen.getByText(/No approved risk factor is set for the weak tier/i)).toBeInTheDocument();
+    // And the capacity is still known — only the pricing is not.
+    expect(screen.getByText('$2,800')).toBeInTheDocument();
+  });
+
+  it('sends business age and key risks, which the pane never used to', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    saveRiskAssessment.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    // The unit suffix disambiguates the FIELD from the input-read radiogroup of the same name.
+    fireEvent.change(screen.getByLabelText(/Business age · mo/), { target: { value: '30' } });
+    fireEvent.change(screen.getByPlaceholderText(/A risk this file carries/), {
+      target: { value: 'Thin operating history' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Risk tier' })).getByRole('radio', {
+        name: /strong/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Assess risk/ }));
+    await waitFor(() =>
+      expect(saveRiskAssessment).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        expect.objectContaining({
+          riskTier: 'strong',
+          businessAgeMonths: 30,
+          keyRisks: ['Thin operating history'],
+        }),
+      ),
+    );
+  });
+
+  /** "Avoid double-counting fuel" — the server 422s, so the pane must warn before the click. */
+  it('warns when fuel was entered outside recurring expenses', async () => {
+    getDeskCase.mockResolvedValue(
+      riskDesk({
+        banking: {
+          recurringWeeklyIncome: '5000',
+          recurringWeeklyExpenses: '500',
+          avgWeeklyFuelExpense: '800',
+        },
+      }),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText(/Fuel is being double-counted/i)).toBeInTheDocument();
+  });
+});
 
 describe('CaseView Phase 8 Highway', () => {
   it('renders the SOP review items and the consistency verdict', async () => {

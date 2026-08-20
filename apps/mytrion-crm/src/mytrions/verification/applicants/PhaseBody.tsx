@@ -16,7 +16,9 @@ import {
   type VerificationRailPhase,
 } from '@/api/verificationFlow';
 
-import { DecisionPane, RiskPane } from '../flow/ReviewPanes';
+import { DecisionPane } from '../flow/ReviewPanes';
+import { RiskPane } from './CaseRiskPane';
+import type { RiskMarks } from './caseRisk';
 import { IntakePane } from './CaseIntakePane';
 import { IdentityPane } from './CaseIdentityPane';
 import { runAuthorityLookup } from '@/api/verificationDeskWrites';
@@ -47,6 +49,8 @@ export function PhaseBody({
   onHardStopAck,
   highwayMarks,
   onHighwayMarks,
+  riskMarks,
+  onRiskMarks,
   onGoToPhase,
   wexCardCutoff,
   onRun,
@@ -72,6 +76,9 @@ export function PhaseBody({
   /** Phase 8's review. Persisted to the phase findings on save; marks drive the pass gate. */
   highwayMarks: HighwayMarks;
   onHighwayMarks: (next: HighwayMarks) => void;
+  /** Phase 9's six SOP inputs and the tier they point at. */
+  riskMarks: RiskMarks;
+  onRiskMarks: (next: RiskMarks) => void;
   /** Phase 7 sends the reviewer back to Phase 6 when the figure it needs was never recorded. */
   onGoToPhase: (code: string) => void;
   wexCardCutoff: number | null;
@@ -204,8 +211,10 @@ export function PhaseBody({
       return (
         <RiskPane
           detail={detail}
+          marks={riskMarks}
+          onMarks={onRiskMarks}
+          canAct={canAct && idle}
           busy={pending === 'risk'}
-          disabled={!canAct || !idle}
           onSave={(b) => void onRun('risk', () => saveRiskAssessment(caseId, b))}
         />
       );

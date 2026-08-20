@@ -72,6 +72,7 @@ import {
 } from './caseCreditBanking';
 import { hardStopsCanPass, type HardStopAck } from './caseHardStops';
 import { EMPTY_HIGHWAY_MARKS, highwayCanPass, type HighwayMarks } from './caseHighway';
+import { EMPTY_RISK_MARKS, riskCanPass, type RiskMarks } from './caseRisk';
 import { CaseDecideBar } from './CaseDecideBar';
 import { CaseReopenButton } from './CaseReopen';
 import { deskReviewOrder } from './caseRouting';
@@ -163,6 +164,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   const [hardStopAck, setHardStopAck] = useState<HardStopAck | null>(null);
   /** Phase 8's review. Seeded empty and re-seeded per case, like every other phase's marks. */
   const [highwayMarks, setHighwayMarks] = useState<HighwayMarks>(EMPTY_HIGHWAY_MARKS);
+  /** Phase 9's inputs and tier. `tier: null` — a defaulted tier prices at the most generous factor. */
+  const [riskMarks, setRiskMarks] = useState<RiskMarks>(EMPTY_RISK_MARKS);
 
   // Same cache key the queue warms, so the NSF threshold is already in hand on arrival.
   const loadPolicy = useCallback(() => getPolicy(), []);
@@ -202,6 +205,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     setCreditBankingMarks(EMPTY_CREDIT_BANKING);
     setHardStopAck(null);
     setHighwayMarks(EMPTY_HIGHWAY_MARKS);
+    setRiskMarks(EMPTY_RISK_MARKS);
   }, [caseId]);
 
   const refetchLive = useCallback(() => {
@@ -356,6 +360,12 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
    */
   const highwayPhase = active.code === 'p8_highway';
   const highwayReady = !highwayPhase || highwayCanPass(highwayMarks);
+  /**
+   * PHASE 9 HAD NO GATE EITHER, and it is the one that matters most: Phase 10 prices the approval off
+   * the recommended limit, so passing Phase 9 with no assessment is an approval with no basis.
+   */
+  const riskPhase = active.code === 'p9_risk_capacity';
+  const riskReady = !riskPhase || riskCanPass(riskMarks, c.applicantType);
   const hardStopsPhase = active.code === 'p7_hard_stops';
   const hardStopsReady =
     !hardStopsPhase || hardStopsCanPass(hardStopAck, detail.hardStops.passed);
@@ -390,7 +400,9 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                         : 'A stop fired, so a standard unsecured line is off the table. Deposit 1:1, prepaid or manager review.'
                       : highwayPhase
                         ? 'Every item ruled on and consistent passes. A suspicious discrepancy goes to the manager.'
-                        : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
+                        : riskPhase
+                          ? 'Read all six inputs and assign a tier. Phase 10 prices the approval from what this records.'
+                          : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
 
   return (
     <div className="va-case">
@@ -596,6 +608,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 onHardStopAck={setHardStopAck}
                 highwayMarks={highwayMarks}
                 onHighwayMarks={setHighwayMarks}
+                riskMarks={riskMarks}
+                onRiskMarks={setRiskMarks}
                 /* Phase 7's recovery for an unrecorded figure is Phase 6, so it needs the same
                    navigation the spine has. */
                 onGoToPhase={setActiveCode}
@@ -644,7 +658,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             authorityReady &&
             creditBankingReady &&
             hardStopsReady &&
-            highwayReady
+            highwayReady &&
+            riskReady
           }
           pending={pending}
           pendingDocs={pendingDocs.length > 0}
