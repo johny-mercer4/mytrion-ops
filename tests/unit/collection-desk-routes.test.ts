@@ -343,17 +343,54 @@ describe('stage moves', () => {
     expect(insertActivity).not.toHaveBeenCalled();
   });
 
-  it('records where it moved from as well as to', async () => {
+  it('records where it moved from as well as to, in the Blueprint’s own words', async () => {
     await app.inject({
+      method: 'POST',
+      url: '/v1/collection/cases/cc_1/stage',
+      payload: { stage: 'with_agency' },
+      headers: bearer(await workerToken('Collection')),
+    });
+    expect(insertActivity.mock.calls[0]?.[0]).toMatchObject({
+      kind: 'stage',
+      // "Refuses" is what the collector clicked in Zoho; the plain from/to follows it so the
+      // timeline still reads to someone who has never seen the Blueprint.
+      summary: 'Refuses — Stage Connected → With agency',
+      meta: { from: 'connected', to: 'with_agency', transition: 'Refuses' },
+    });
+  });
+
+  /**
+   * The guard rail collection agents are used to. Zoho's Blueprint would not let a case on
+   * Connected jump to Skip Tracing, and neither does this — rejecting in the route rather than
+   * only in the UI, because the desk is not the only caller of the API.
+   */
+  it('refuses a move the Blueprint does not allow, and says what is allowed', async () => {
+    const res = await app.inject({
       method: 'POST',
       url: '/v1/collection/cases/cc_1/stage',
       payload: { stage: 'skip_tracing' },
       headers: bearer(await workerToken('Collection')),
     });
-    expect(insertActivity.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'stage',
-      summary: 'Stage Connected → Skip tracing',
-      meta: { from: 'connected', to: 'skip_tracing' },
-    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('cannot move to skip_tracing');
+    expect(res.json().error.message).toContain('payment_plan');
+    expect(setStage).not.toHaveBeenCalled();
+    expect(insertActivity).not.toHaveBeenCalled();
+  });
+
+  it('allows every move the Blueprint does allow from Connected', async () => {
+    for (const stage of ['payment_plan', 'with_agency', 'closed_successfully'] as const) {
+      vi.clearAllMocks();
+      findById.mockResolvedValue(OPEN_CASE as never);
+      setStage.mockImplementation(async (_id, s) => ({ ...OPEN_CASE, collectionStage: s }) as never);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/collection/cases/cc_1/stage',
+        payload: { stage },
+        headers: bearer(await workerToken('Collection')),
+      });
+      expect(res.statusCode, stage).toBe(200);
+      expect(setStage, stage).toHaveBeenCalledWith('cc_1', stage);
+    }
   });
 });

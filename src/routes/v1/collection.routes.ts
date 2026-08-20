@@ -28,7 +28,10 @@ import {
   collectionActivityRepo,
 } from '../../repos/collectionActivityRepo.js';
 import { COLLECTION_CASES_MAX_LIMIT, collectionCaseRepo } from '../../repos/collectionCaseRepo.js';
+import { buildCaseDossier } from '../../modules/collection/caseDossier.js';
+import { suggestedCourt, transitionsFrom } from '../../modules/collection/stageGraph.js';
 import { collectionPlacementRepo } from '../../repos/collectionPlacementRepo.js';
+import { collectionTaskRepo } from '../../repos/collectionTaskRepo.js';
 import { collectionPlanRepo } from '../../repos/collectionPlanRepo.js';
 import { WORKLIST_MAX_LIMIT, collectionWorklistRepo } from '../../repos/collectionWorklistRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -51,6 +54,9 @@ const caseListQuery = z.object({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
+  /** "My cases", or the unassigned pool when the literal string `unassigned` is passed. */
+  assignee: z.string().trim().min(1).max(80).optional(),
+  currentAgency: z.string().trim().min(1).max(120).optional(),
 });
 
 const arrayListQuery = z.object({
@@ -112,7 +118,13 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/collection/cases', auth, async (request) => {
     const ctx = requireCollectionRead(request);
-    const result = await collectionCaseRepo.list(ctx, caseListQuery.parse(request.query));
+    const { assignee, ...query } = caseListQuery.parse(request.query);
+    const result = await collectionCaseRepo.list(ctx, {
+      ...query,
+      ...(assignee !== undefined
+        ? { assigneeUserId: assignee === 'unassigned' ? null : assignee }
+        : {}),
+    });
     const desk = await collectionWorklistRepo.deskInfoByCase(
       ctx,
       result.items.map((row) => row.id),
@@ -155,13 +167,52 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParams.parse(request.params);
     const row = await collectionCaseRepo.findById(ctx, id);
     if (!row) throw new NotFoundError('Collection case not found');
-    const [plan, promises, tradeline, stageHistory] = await Promise.all([
-      collectionPlanRepo.activePlan(ctx, id),
-      collectionPlanRepo.listPromises(ctx, id),
-      collectionPlacementRepo.latestForCarrier(ctx, row.carrierId),
-      collectionActivityRepo.stageHistory(ctx, id),
-    ]);
-    return { plan, promises, tradeline, stageHistory, policy: DESK_POLICY };
+    const [plan, promises, tradeline, stageHistory, contacts, contactStats, stageChanges, tasks] =
+      await Promise.all([
+        collectionPlanRepo.activePlan(ctx, id),
+        collectionPlanRepo.listPromises(ctx, id),
+        collectionPlacementRepo.latestForCarrier(ctx, row.carrierId),
+        collectionActivityRepo.stageHistory(ctx, id),
+        collectionActivityRepo.lastContactByCase(ctx, [id]),
+        collectionActivityRepo.contactStatsByCase(ctx, [id]),
+        collectionActivityRepo.lastStageChangeByCase(ctx, [id]),
+        collectionTaskRepo.listByCase(ctx, id),
+      ]);
+
+    // The Zoho columns this schema deliberately does not store, computed from what was already
+    // fetched above — no extra queries. See modules/collection/caseDossier.ts.
+    const dossier = buildCaseDossier({
+      totalDebtAmount: row.totalDebtAmount,
+      totalAmountPaid: row.totalAmountPaid,
+      currentAgency: row.currentAgency,
+      promise: promises[0] ? { dueDate: promises[0].dueDate, status: promises[0].status } : null,
+      plan: plan
+        ? {
+            frequency: plan.frequency,
+            instalmentAmount: plan.instalmentAmount,
+            instalments: plan.instalments,
+          }
+        : null,
+      lastContact: contacts.get(id) ?? null,
+      contactStats: contactStats.get(id) ?? null,
+      lastStageChangeAt: stageChanges.get(id) ?? null,
+      caseUpdatedAt: row.updatedAt,
+      caseCreatedDate: row.caseCreatedDate,
+    });
+
+    return {
+      plan,
+      promises,
+      tradeline,
+      stageHistory,
+      tasks,
+      dossier,
+      // The moves the Blueprint allows FROM WHERE THIS CASE IS, in Zoho's own wording. The desk
+      // renders these as the stage buttons instead of offering all sixteen stages.
+      transitions: transitionsFrom(row.collectionStage),
+      suggestedCourt: suggestedCourt(Number(dossier.totalRemainingAmount)),
+      policy: DESK_POLICY,
+    };
   });
 
   app.get('/collection/array-reports/facets', auth, async (request) => {

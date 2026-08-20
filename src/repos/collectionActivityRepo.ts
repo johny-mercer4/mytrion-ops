@@ -129,6 +129,63 @@ export const collectionActivityRepo = {
    * agency first — the stage list is a vocabulary, not a track, and a spine that marks unvisited
    * stages as done is telling the reader something untrue about a debt.
    */
+  /**
+   * The contact rollups Zoho keeps as flat columns — first contact date, attempt count, and the
+   * method and result of the most recent one. Derived rather than stored: a column that has to be
+   * bumped on every contact write is a second source of truth waiting to drift.
+   *
+   * One grouped read for the whole page of cases, never one per row.
+   */
+  async contactStatsByCase(
+    ctx: TenantContext,
+    caseIds: readonly string[],
+  ): Promise<Map<string, { attempts: number; firstContactAt: string | null }>> {
+    const out = new Map<string, { attempts: number; firstContactAt: string | null }>();
+    if (!canReadCollectionSnapshot(ctx) || caseIds.length === 0) return out;
+    const rows = await db
+      .select({
+        caseId: collectionActivity.caseId,
+        attempts: sql<number>`count(*)::int`,
+        firstContactAt: sql<string | null>`min(${collectionActivity.occurredAt})::text`,
+      })
+      .from(collectionActivity)
+      .where(
+        and(
+          eq(collectionActivity.kind, 'contact'),
+          inArray(collectionActivity.caseId, [...caseIds]),
+        ),
+      )
+      .groupBy(collectionActivity.caseId);
+    for (const r of rows) {
+      out.set(r.caseId, { attempts: r.attempts, firstContactAt: r.firstContactAt });
+    }
+    return out;
+  },
+
+  /**
+   * When the stage last moved, and to what. Zoho stores `Last_Stage_Change_Date` and
+   * `Days_In_Current_Stage`; both fall out of the newest `stage` entry in the timeline.
+   */
+  async lastStageChangeByCase(
+    ctx: TenantContext,
+    caseIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (!canReadCollectionSnapshot(ctx) || caseIds.length === 0) return out;
+    const rows = await db
+      .selectDistinctOn([collectionActivity.caseId], {
+        caseId: collectionActivity.caseId,
+        occurredAt: collectionActivity.occurredAt,
+      })
+      .from(collectionActivity)
+      .where(
+        and(eq(collectionActivity.kind, 'stage'), inArray(collectionActivity.caseId, [...caseIds])),
+      )
+      .orderBy(collectionActivity.caseId, desc(collectionActivity.occurredAt));
+    for (const r of rows) out.set(r.caseId, r.occurredAt.toISOString());
+    return out;
+  },
+
   async stageHistory(ctx: TenantContext, caseId: string): Promise<string[]> {
     if (!canReadCollectionSnapshot(ctx)) return [];
     const rows = await db
