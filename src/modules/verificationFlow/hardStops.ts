@@ -126,3 +126,53 @@ export function managerReviewIndicators(
 
   return flags;
 }
+
+/**
+ * The bundle → inputs adapter for the two functions above.
+ *
+ * `deskService.detail` used to spell this mapping out inline, twenty-odd field reads deep inside the
+ * response literal. It lives here because it is the adapter for THESE functions: when a new indicator
+ * is added above, the field that feeds it is named on the line below rather than in another file.
+ *
+ * `credit` and `banking` arrive as jsonb from `verificationFlowBundleRepo` and are untyped by the
+ * time they reach here, so every read is optional and every number goes through the caller's
+ * `toNumber`. A missing review is not a passing one — `evaluateHardStops` decides that, not this.
+ */
+export function deriveRiskSignals(
+  credit: { bureauNoHit?: boolean; recentTrend?: string | null } | null,
+  banking: Record<string, unknown> | null,
+  thresholds: IndicatorThresholds,
+  toNumber: (value: string | number | null | undefined) => number | null,
+): { hardStops: HardStopVerdict; indicators: ReturnType<typeof managerReviewIndicators> } {
+  /**
+   * The jsonb reads, narrowed once. Every column this touches is a numeric, a short text or a
+   * boolean in `verification_banking_reviews`; the per-field casts below name which, and this is the
+   * single `as` that claims the bundle is not carrying something else entirely.
+   */
+  const b = (key: string): string | number | boolean | null =>
+    (banking?.[key] as string | number | boolean | null) ?? null;
+  return {
+    hardStops: evaluateHardStops({
+      avgWeeklyNetCashFlow: toNumber(b('avgWeeklyNetCashFlow') as string | number | null),
+      bureauNoHit: credit?.bureauNoHit ?? false,
+    }),
+    indicators: managerReviewIndicators(
+      {
+        revenueTrend: (b('revenueTrend') as string | null) ?? null,
+        avgDailyBalance: toNumber(b('avgDailyBalance') as string | number | null),
+        negativeBalanceDays: (b('negativeBalanceDays') as number | null) ?? null,
+        overdraftCount: (b('overdraftCount') as number | null) ?? null,
+        nsfCount: (b('nsfCount') as number | null) ?? null,
+        achReturnCount: (b('achReturnCount') as number | null) ?? null,
+        cashFlowVolatility: (b('cashFlowVolatility') as string | null) ?? null,
+        existingDebtPayments: toNumber(b('existingDebtPayments') as string | number | null),
+        oneTimeDeposits: toNumber(b('oneTimeDeposits') as string | number | null),
+        creditRecentTrend: credit?.recentTrend ?? null,
+        unusualTransactions: (b('unusualTransactions') as string | null) ?? null,
+        bankingInconsistentWithOperations:
+          (b('bankingInconsistentWithOperations') as boolean | null) ?? null,
+      },
+      thresholds,
+    ),
+  };
+}

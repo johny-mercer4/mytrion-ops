@@ -37,6 +37,7 @@ export function PhaseBody({
   caseId,
   pending,
   canAct,
+  canScreen,
   wexCardCutoff,
   onRun,
   identityMarks,
@@ -53,6 +54,8 @@ export function PhaseBody({
   caseId: string;
   pending: CaseActionKey | null;
   canAct: boolean;
+  /** Screening runs on a LOCKED case; only a decided one is out of reach. See CaseScreeningPane. */
+  canScreen: boolean;
   wexCardCutoff: number | null;
   onRun: (scope: CaseActionKey, fn: () => Promise<VerificationDeskDetail>) => Promise<void>;
   identityMarks: Record<string, IdentityMark>;
@@ -102,6 +105,7 @@ export function PhaseBody({
           marks={screeningMarks}
           onMarks={onScreeningMarks}
           canAct={canAct}
+          canScreen={canScreen}
           running={pending === 'screening'}
           verdictBusy={pending === 'screening'}
           /* `runScreening` was a route and a client function nothing ever called — this is the door.

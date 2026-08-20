@@ -257,6 +257,15 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
    * `canAct` answers only "is this case open and green".
    */
   const canAct = !locked && !closed;
+  /**
+   * Whether the case may be SCREENED, which is a weaker condition than being decidable.
+   *
+   * Phase 3 runs on a locked case on purpose — the ban list needs a name, an email and a phone, all
+   * of which arrive with the Deal, and knowing an applicant is banned is worth more before the
+   * document chase than after it. The server draws the same line (`loadScreenable`). Only a DECIDED
+   * case is out of reach: re-screening would rewrite the findings the decision rests on.
+   */
+  const canScreen = !closed;
   const idle = pending === null;
   const name = caseName(c);
   const missing = c.intakeMissing?.length ?? 0;
@@ -542,6 +551,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 caseId={caseId}
                 pending={pending}
                 canAct={canAct}
+                canScreen={canScreen}
                 wexCardCutoff={wexCardCutoff}
                 onRun={run}
                 identityMarks={identityMarks}

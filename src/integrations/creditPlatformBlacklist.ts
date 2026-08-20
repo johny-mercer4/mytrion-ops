@@ -14,9 +14,15 @@
  *
  * MATCHING IS ON NORMALISED VALUES, not on our hashes: the credit platform stores plaintext and knows
  * nothing about `sha256(type:value)`. `normalizeIdentifier` is the one normaliser both sides go
- * through, so "Smith  Trucking, LLC" and "smith trucking llc" are the same needle. The CP values are
- * already trimmed and almost entirely lowercase (measured: 1 uppercase EIN, 95 uppercase phones), so
- * the comparison is done on `normalized` in SQL as well, not on the raw column.
+ * through, so "Smith  Trucking, LLC" and "smith trucking llc" are the same needle.
+ *
+ * AND IT NORMALISES PER TYPE ON BOTH SIDES, which is not the same thing as case-folding both sides.
+ * `normalizeIdentifier` reduces a phone or an EIN to DIGITS; it only case-folds the text types. The
+ * first version of this matcher compared `lower(btrim(b.value))` for everything, and the measured
+ * consequence was that the phone probe could not match a single row: all 871 `phone` entries are
+ * stored formatted — `(201)560-8603`, `180-098-6115` — so a digits-only needle never equalled one.
+ * 871 banned phone numbers, 0 reachable, on a check that reported "no match". `storedNormalized`
+ * below is the stored-side mirror of `normalizeIdentifier`, so the two sides meet.
  */
 import { getVerificationPool } from './verificationDb.js';
 import { normalizeIdentifier } from '../modules/verificationFlow/screening.js';
@@ -29,9 +35,25 @@ import { env } from '../config/env.js';
  * CP `type` → ours.
  *
  * `company_name` and `name` both land on `name`, which is what our own screening does too (it screens
- * `companyName` and the person's full name under one type). `carrier_id` is the platform's own carrier
- * key and matches nothing we hold, so it is deliberately absent — a type we cannot produce a needle
- * for would silently never match, and pretending otherwise in the map would hide that.
+ * `companyName` and the person's full name under one type).
+ *
+ * FOUR TYPES ARE DELIBERATELY ABSENT, and each absence is a measured fact rather than an oversight.
+ * A type we cannot produce a needle for would silently never match, and listing it here would hide
+ * that behind an apparently-complete map.
+ *
+ *  - `carrier_id` (875 entries, all 7 digits). `verification_cases.carrier_id` exists but is empty on
+ *    every case (0 of 52 measured), because a carrier id is issued AFTER approval — Zoho even carries
+ *    `Carrier_ID_Added_Date`. A new applicant has none by definition. This becomes screenable the day
+ *    the desk starts re-checking existing carriers, not before.
+ *  - `ip` (697 entries). We never capture the applicant's IP: `collectIdentifiers` is called with
+ *    `applicantIp: null` from both call sites, because no intake surface asks for it.
+ *  - `mc` / `usdot`. No such CP type exists. They are screened against OUR OWN list only, which is
+ *    why `collectIdentifiers` still emits them — see `matchDuplicates` and `blacklistCase`.
+ *  - `ssn`. No such CP type either; the platform files SSNs under `ein`, which we already probe. What
+ *    we CANNOT do is probe with an SSN of our own: the schema stores `ssn_last4` and nothing more
+ *    (deliberately — "Full SSN / DL are never stored"), and 0 of the 870 CP `ein` rows are 4 digits
+ *    long (752 are 9, 98 are 12, 18 are 8). A last-4 needle sent to `ein` would match nothing, ever.
+ *    It is not sent. If a banned SSN is typed into the EIN box, the `ein` probe finds it.
  */
 const CP_TYPE_TO_OURS: Record<string, VerificationIdentifierType> = {
   name: 'name',
@@ -51,6 +73,30 @@ const OURS_TO_CP_TYPES: Partial<Record<VerificationIdentifierType, string[]>> = 
   }
   return out;
 })();
+
+/**
+ * The stored-side mirror of `normalizeIdentifier`, as SQL.
+ *
+ * Digits for the numeric types and case-folding for the rest — the same split the TypeScript
+ * normaliser makes, applied to `blacklist_entries.value`. Without it the numeric probes compare a
+ * digits-only needle against a formatted column and match nothing.
+ *
+ * THE SCIENTIFIC-NOTATION BRANCH IS NOT DEFENSIVE PADDING. 86 of the 871 phone rows are stored as
+ * `2.012839371E9` — a spreadsheet export that turned a 10-digit number into a float. Stripping
+ * non-digits from that yields the 11-character `20128393719`, which matches no real phone, so those
+ * 86 bans would stay unreachable even after the fix above. The regex guard means only a well-formed
+ * float is ever cast, so this cannot raise on the other 785 rows.
+ *
+ * Costs the `(type, value)` index, as the credit-platform team noted when they handed this over. A
+ * sequential scan of 6,803 rows is not worth normalising their data first.
+ */
+const STORED_NORMALIZED = `case
+             when b.type in ('phone', 'ein') then
+               case when b.value ~ '^[0-9]+\\.[0-9]+[eE][0-9]+$'
+                    then trunc(b.value::numeric)::bigint::text
+                    else regexp_replace(b.value, '\\D', '', 'g') end
+             else lower(btrim(b.value))
+           end`;
 
 export interface CreditPlatformBanHit {
   /** `blacklist_entries.id` — the platform's own row, for the reviewer to quote. */
@@ -116,7 +162,7 @@ export async function matchCreditPlatformBanList(
          from unnest($1::text[], $2::text[]) as n(kind, needle)
          join public.blacklist_entries b
            on b.type = n.kind
-          and lower(btrim(b.value)) = n.needle
+          and ${STORED_NORMALIZED} = n.needle
         order by b.added_at desc nulls last
         limit 200`,
       [types, needles],

@@ -16,16 +16,25 @@
  * the ban-list lookup is unavailable it suggests nothing at all, because a failed lookup that reads as
  * a clear is the bug this phase already had. Passing the phase remains a human act either way.
  *
- * CHECK B IS FLAGGED, deliberately. The SOP's pre-stop check is duplicates AND Citifuel, and Citifuel
- * is undefined — so what runs today is a scan for other cases in this tenant sharing an identifier,
- * which is a useful signal and not the check. The pane says so rather than presenting a partial
- * implementation as the finished one.
+ * CHECK B IS THE WHOLE CHECK NOW — duplicates AND Citifuel, which is what the SOP's pre-stop asks
+ * for. Three sources feed it and the pane keeps them apart, because none is a superset of the others:
+ * our own cases are the only place an EIN or a normalised phone can match, Zoho Deals is the only
+ * place an applicant who never reached underwriting exists, and `Deals.citifuel_Status` is the
+ * Citifuel half. An absence from one is not an absence, so a quiet source gets a banner and the
+ * suggestion is withheld — the same rule Check A follows when the ban list cannot be read.
+ *
+ * THE RUN BUTTON IS LIVE ON A LOCKED CASE. Screening is the one desk call that does not need Sales to
+ * have finished: it needs a name, an email and a phone, all of which arrive with the Deal, and the
+ * answer is worth having before a week of document-chasing. `canScreen` is therefore a different prop
+ * from `canAct` — the marks and the verdicts below still need a green case.
  */
 import { Badge, Button, Icon } from '@/ds';
 import type { VerificationDeskDetail, VerificationScreeningHit } from '@/api/verificationFlow';
 import { CaseMarkGroup, type MarkOption } from './CaseMarkGroup';
 import {
   blacklistMarkFromRun,
+  citifuelSentence,
+  duplicateMarkFromRun,
   screeningIdentityFacts,
   screeningRunFrom,
   type ScreeningBlacklistMark,
@@ -143,6 +152,7 @@ export function ScreeningPane({
   marks,
   onMarks,
   canAct,
+  canScreen,
   running,
   verdictBusy,
   onRun,
@@ -152,6 +162,8 @@ export function ScreeningPane({
   marks: ScreeningMarks;
   onMarks: (next: ScreeningMarks) => void;
   canAct: boolean;
+  /** Undecided is enough to SCREEN; `canAct` additionally requires Sales to have submitted. */
+  canScreen: boolean;
   running: boolean;
   verdictBusy: boolean;
   onRun: () => void;
@@ -166,6 +178,44 @@ export function ScreeningPane({
   const blacklistHits = detail.screening.hits.filter((h) => h.checkType === 'blacklist');
   const duplicateHits = detail.screening.hits.filter((h) => h.checkType === 'duplicate');
   const banUnavailable = run?.banList != null && !run.banList.available;
+  /**
+   * WHICH POPULATION a duplicate came from, off the id prefix the run wrote.
+   *
+   * A Deal hit is `deal:<zoho id>` in `matchedEntryId`; a case hit carries `matchedCaseId`. Split
+   * because the two mean different things to a reviewer: another CASE is a live application on this
+   * desk, another DEAL may be a closed application from last quarter that never reached underwriting.
+   */
+  const dealDuplicates = duplicateHits.filter((h) => (h.matchedEntryId ?? '').startsWith('deal:'));
+  const caseDuplicates = duplicateHits.filter((h) => !(h.matchedEntryId ?? '').startsWith('deal:'));
+  const dealsUnavailable = run != null && (!run.duplicateScan || !run.duplicateScan.dealsAvailable);
+  const citifuel = run ? citifuelSentence(run.citifuel) : null;
+  /**
+   * Every source this run did not reach, named with what it costs — so the banner says what is MISSING
+   * rather than repeating "this is not a clear" once per source. Each entry answers the reviewer's real
+   * question: what would I have seen if it had worked?
+   */
+  const unreachable = [
+    banUnavailable
+      ? {
+          id: 'ban',
+          label: 'The ban list',
+          detail:
+            run?.banList?.error ??
+            'the credit platform did not answer, so 6,803 listed identifiers went unchecked',
+        }
+      : null,
+    dealsUnavailable
+      ? {
+          id: 'deals',
+          label: 'Zoho Deals',
+          detail:
+            run?.duplicateScan?.dealsError ??
+            'an earlier application that never reached underwriting would not appear',
+        }
+      : null,
+  ].filter((source): source is { id: string; label: string; detail: string } => source !== null);
+  const suggestedDuplicate = duplicateMarkFromRun(run);
+  const runLabel = run ? 'Run screening again' : 'Run screening';
 
   return (
     <div className="va-stack">
@@ -189,10 +239,10 @@ export function ScreeningPane({
             size="sm"
             icon="restart_alt"
             loading={running}
-            disabled={!canAct}
+            disabled={!canScreen}
             onClick={onRun}
           >
-            {run ? 'Run Check A again' : 'Run Check A'}
+            {runLabel}
           </Button>
         </div>
         <div className="va-figs">
@@ -212,13 +262,19 @@ export function ScreeningPane({
             </span>
           ))}
         </div>
-        {/* WHY THE BUTTON IS OFF, when it is. `runScreening` goes through `loadWorkable`, which refuses
-            a case still with Sales — so a locked case cannot be screened, and a disabled control with no
-            reason is the reviewer's dead end. The marks below stay available either way. */}
-        {!canAct ? (
+        {/* WHY THE BUTTON IS OFF, when it is — and it is now off for one reason only. `runScreening`
+            goes through `loadScreenable`, which allows a case still with Sales and refuses a DECIDED
+            one; re-screening after the fact would rewrite the findings the decision was recorded
+            against. A disabled control with no reason is the reviewer's dead end. */}
+        {!canScreen ? (
           <p className="va-aside-note">
-            Check A cannot run while the case is still with Sales, or once it is decided. Mark it by
-            hand — the phase does not need the automation to pass.
+            This application has been decided, so screening can no longer run — re-running it would
+            rewrite the findings the decision was recorded against.
+          </p>
+        ) : !canAct ? (
+          <p className="va-aside-note">
+            Sales has not submitted this application yet. Screening still runs — that is the point of
+            running it early — but ruling on a hit needs the complete file.
           </p>
         ) : null}
 
@@ -231,19 +287,35 @@ export function ScreeningPane({
         </p>
       </div>
 
-      {/* WHETHER THE LIST WAS READ. A lookup that failed must not read as a clear, so it gets a banner
-          of its own rather than a quiet absence of hits. */}
-      {banUnavailable ? (
-        <div className="va-banner" data-tone="danger" role="alert">
+      {/* WHAT THE RUN COULD NOT REACH — ONE banner, however many sources went quiet.
+          A failed lookup must never read as a clear, and the first version of this said so twice: a
+          `role="alert"` for the ban list and a `role="status"` for the Deal scan, both titled
+          "— this is not a clear". Two live regions announce over each other, and two paragraphs of the
+          same disclaimer is the shape a reviewer learns to skip. One region, polite (this is the
+          result of a button the reviewer just pressed, not an unsolicited alarm), and the sources are
+          a LIST — so "both lists were down" is one glance instead of two banners to compare. */}
+      {unreachable.length > 0 ? (
+        <div className="va-banner" data-tone={banUnavailable ? 'danger' : 'warning'} role="status">
           <span className="va-banner-glyph" aria-hidden="true">
-            <Icon name="error" size="sm" />
+            <Icon name={banUnavailable ? 'error' : 'warning'} size="sm" />
           </span>
           <span className="va-banner-text">
-            <span className="va-banner-title">The ban list could not be read — this is not a clear</span>
+            <span className="va-banner-title">
+              {unreachable.length === 1
+                ? `${unreachable[0]!.label} was not checked`
+                : `${unreachable.length} of this run’s sources were not checked`}
+            </span>
             <p className="va-banner-body">
-              {run?.banList?.error ?? 'The credit platform did not answer.'} Check A found nothing
-              because it could not look, so mark it by hand or run it again.
+              Screening found nothing there because it could not look, so mark those checks by hand or
+              run it again.
             </p>
+            <ul className="va-banner-list">
+              {unreachable.map((source) => (
+                <li key={source.id}>
+                  <strong>{source.label}</strong> — {source.detail}
+                </li>
+              ))}
+            </ul>
           </span>
         </div>
       ) : null}
@@ -286,7 +358,7 @@ export function ScreeningPane({
                 icon="check"
                 onClick={() => onMarks({ ...marks, blacklist: suggested })}
               >
-                Use it
+                Use for Check A
               </Button>
             </div>
           </div>
@@ -306,19 +378,13 @@ export function ScreeningPane({
           data-mark={marks.duplicate === 'no' ? 'ok' : marks.duplicate ? 'inconsistent' : 'unset'}
         >
           <div className="va-id-check-copy">
-            <span className="va-id-check-label">
-              Check B — Active customer / duplicate
-              {/* FLAGGED. The SOP's pre-stop is duplicates AND Citifuel; Citifuel is undefined, so what
-                  runs is an identifier scan over this tenant's other cases. A partial implementation
-                  presented as the finished check is how a gap becomes invisible. */}
-              <Badge intent="warning" size="sm" icon="warning">
-                Pre-stop — not final
-              </Badge>
-            </span>
+            <span className="va-id-check-label">Check B — Active customer / duplicate</span>
             <span className="va-id-check-value">
-              {duplicateHits.length > 0
-                ? `${duplicateHits.length} other case${duplicateHits.length === 1 ? '' : 's'} share an identifier.`
-                : 'The same identifiers against carriers already on the books.'}
+              {run
+                ? duplicateHits.length > 0
+                  ? `${caseDuplicates.length} case${caseDuplicates.length === 1 ? '' : 's'} and ${dealDuplicates.length} Deal${dealDuplicates.length === 1 ? '' : 's'} share an identifier.`
+                  : 'No duplicate across this desk’s cases or the Deal history.'
+                : 'The same identifiers against carriers already on the books, and Citifuel.'}
             </span>
           </div>
           <CaseMarkGroup
@@ -329,26 +395,115 @@ export function ScreeningPane({
           />
         </div>
 
-        <p className="va-aside-note">
-          Check B is a <strong>pre-stop placeholder</strong>. The SOP pairs the duplicate scan with a
-          Citifuel check that is not defined yet, so what runs today is a scan for other cases in this
-          tenant sharing an identifier. Treat the mark as your own judgement, not an automated verdict.
-        </p>
+        {/* CITIFUEL, the other half of the pre-stop. Its own row rather than a sentence appended to the
+            duplicate copy: it is a separate finding with a separate source, and the reviewer needs to
+            see the RAW value — `yes` and `active` both mean an existing relationship, and the check
+            this replaced compared only the exact string `Lead Converted`. */}
+        {citifuel ? (
+          <div
+            className="va-id-check"
+            /* `neutral` is NOT `missing`. Most Deals carry no Citifuel status at all — 83 of
+               thousands — and an amber edge on every one of those trains the reviewer to ignore the
+               colour that means "look at this". Absent gets no edge; only `unknown` and unavailable
+               earn amber. */
+            data-mark={
+              citifuel.tone === 'good'
+                ? 'ok'
+                : citifuel.tone === 'bad'
+                  ? 'inconsistent'
+                  : citifuel.tone === 'warn'
+                    ? 'missing'
+                    : 'unset'
+            }
+          >
+            <div className="va-id-check-copy">
+              <span className="va-id-check-label">
+                Citifuel
+                {run?.citifuel?.status ? (
+                  <Badge
+                    intent={
+                      citifuel.tone === 'good' ? 'success' : citifuel.tone === 'bad' ? 'danger' : 'warning'
+                    }
+                    size="sm"
+                  >
+                    {run.citifuel.status}
+                  </Badge>
+                ) : null}
+              </span>
+              <span className="va-id-check-value">{citifuel.text}</span>
+            </div>
+          </div>
+        ) : null}
 
-        {duplicateHits.length > 0 ? (
+        {/* Check B's suggestion, withheld whenever a source went quiet — see `duplicateMarkFromRun`. */}
+        {suggestedDuplicate && marks.duplicate !== suggestedDuplicate ? (
+          <div className="va-ask">
+            <span className="va-aside-note">
+              The run suggests{' '}
+              <strong>{DUPLICATE.find((d) => d.id === suggestedDuplicate)?.label}</strong> for Check B.
+            </span>
+            <div className="va-ask-actions">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="check"
+                onClick={() => onMarks({ ...marks, duplicate: suggestedDuplicate })}
+              >
+                Use for Check B
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {caseDuplicates.length > 0 ? (
           <div className="va-stack">
             <h4 className="t-eyebrow va-pane-kicker">Cases sharing an identifier</h4>
-            {duplicateHits.map((hit) => (
+            {caseDuplicates.map((hit) => (
               <div className="va-id-check" key={hit.id} data-mark="missing">
                 <div className="va-id-check-copy">
                   <span className="va-id-check-label">
-                    {ENTRY_LABEL[hit.entryType] ?? hit.entryType} · {hit.matchedCaseLabel ?? hit.matchedValueDisplay ?? '—'}
+                    {ENTRY_LABEL[hit.entryType] ?? hit.entryType} ·{' '}
+                    {hit.matchedCaseLabel ?? hit.matchedValueDisplay ?? '—'}
                   </span>
-                  <span className="va-id-check-value">Another application in this tenant</span>
+                  <span className="va-id-check-value">Another application on this desk</span>
                 </div>
               </div>
             ))}
           </div>
+        ) : null}
+
+        {dealDuplicates.length > 0 ? (
+          <div className="va-stack">
+            <h4 className="t-eyebrow va-pane-kicker">Deals sharing an identifier</h4>
+            {dealDuplicates.map((hit) => (
+              <div className="va-id-check" key={hit.id} data-mark="missing">
+                <div className="va-id-check-copy">
+                  <span className="va-id-check-label">
+                    {ENTRY_LABEL[hit.entryType] ?? hit.entryType} ·{' '}
+                    {hit.matchedCaseLabel ?? hit.matchedValueDisplay ?? '—'}
+                  </span>
+                  {/* The note carries the Deal id, its stage, when it was applied for and its own
+                      Citifuel status — everything the reviewer needs to open it in Zoho and judge
+                      whether this is the same applicant twice or two carriers with one name. */}
+                  <span className="va-id-check-value">
+                    {hit.note?.trim() ? hit.note.trim() : 'An earlier Zoho Deal'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {/* WHAT CHECK B CANNOT SEE, stated where it is relevant rather than left to be inferred from a
+            clean result. Zoho Deals has no EIN column and no phone COQL can normalise, so those two
+            identifiers are matched against this desk's cases only — which reach back only as far as
+            the poller's watermark. */}
+        {run ? (
+          <p className="va-aside-note">
+            EIN and phone duplicates are found among this desk’s own cases only — Zoho Deals carries
+            neither in a form the query can compare. The Deal scan matches on email, MC, USDOT and
+            company name{run.duplicateScan?.dealsTruncated ? ', and hit its 50-row cap on this run' : ''}.
+          </p>
         ) : null}
       </div>
     </div>

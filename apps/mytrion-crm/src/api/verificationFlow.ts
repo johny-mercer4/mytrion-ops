@@ -164,6 +164,15 @@ export interface VerificationScreeningHit {
   entryType: string;
   matchedValueDisplay: string | null;
   matchedCaseLabel: string | null;
+  /**
+   * WHICH LIST OR POPULATION the hit came from, carried as a prefix rather than a separate column.
+   *
+   * `cp:<id>` is a credit-platform ban-list row, `deal:<zoho id>` is a Zoho Deal, and anything else is
+   * one of this desk's own blacklist entries. The pane splits Check B's two populations on this — a
+   * duplicate CASE is a live application here, a duplicate DEAL may be a closed one from last
+   * quarter, and the reviewer needs to tell them apart.
+   */
+  matchedEntryId: string | null;
   verdict: VerificationScreeningVerdict;
   note: string | null;
 }

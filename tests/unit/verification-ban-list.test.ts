@@ -58,9 +58,11 @@ describe('the needles it sends', () => {
   });
 
   /**
-   * `carrier_id` is the platform's own carrier key and we hold nothing that could match it, so it is
-   * deliberately absent from the map — and `mc` / `usdot` / `ssn` have no CP type at all. A needle we
-   * cannot produce must not be sent as one that silently never matches.
+   * `mc` / `usdot` have no CP type at all, and `ssn` has none either — the platform files SSNs under
+   * `ein`, but we hold only `ssn_last4` and 0 of the 870 CP `ein` rows are 4 digits long, so a
+   * last-4 needle could never match one. `carrier_id` and `ip` are absent for the same class of
+   * reason: nothing on a new applicant can produce that needle. A needle we cannot produce must not
+   * be sent as one that silently never matches.
    */
   it('sends nothing for identifier types the list does not carry', async () => {
     await matchCreditPlatformBanList([
@@ -87,6 +89,34 @@ describe('the needles it sends', () => {
     expect(types).toHaveLength(needles.length);
     expect(types[needles.indexOf('a@b.test')]).toBe('email');
     expect(types[needles.indexOf('881234567')]).toBe('ein');
+  });
+});
+
+/**
+ * THE STORED SIDE, which is where Check A's phone probe was dying.
+ *
+ * `normalizeIdentifier` reduces a phone to digits. Every one of the 871 `phone` rows on the live list
+ * is stored FORMATTED — `(201)560-8603`, `180-098-6115`, and 86 as the float `2.012839371E9`. Against
+ * `lower(btrim(value))` a digits-only needle matched 0 of them, measured, while the check reported
+ * "no blacklist match". These assertions pin the two halves of the fix so a later tidy-up of the SQL
+ * cannot quietly restore a comparison that can never be true.
+ */
+describe('how it normalises the stored column', () => {
+  it('compares numeric types on digits, not on the formatted value', async () => {
+    await matchCreditPlatformBanList([{ entryType: 'phone', value: '(201) 560-8603' }]);
+    const [sql] = query.mock.calls[0]!;
+    expect(String(sql)).toContain("when b.type in ('phone', 'ein')");
+    expect(String(sql)).toContain("regexp_replace(b.value, '\\D', '', 'g')");
+  });
+
+  it('recovers the phone rows a spreadsheet exported as a float', async () => {
+    await matchCreditPlatformBanList([{ entryType: 'phone', value: '201-283-9371' }]);
+    expect(String(query.mock.calls[0]![0])).toContain('trunc(b.value::numeric)::bigint::text');
+  });
+
+  it('still case-folds the text types rather than digit-stripping them', async () => {
+    await matchCreditPlatformBanList([{ entryType: 'email', value: 'Ops@Kaiser.TEST' }]);
+    expect(String(query.mock.calls[0]![0])).toContain('else lower(btrim(b.value))');
   });
 });
 

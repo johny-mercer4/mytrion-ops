@@ -28,9 +28,19 @@ function cursorShell(command: string, head?: string) {
 }
 
 describe('scripts/git-pre-push.sh', () => {
-  it('allows a feature branch refspec', () => {
+  /**
+   * The hook does TWO things: refuse build/main refspecs, then run the cheap CI gates against the
+   * real branch. Only the first is this file's subject, and only the first is a pure function of
+   * stdin — the gates read the working tree and `origin/build`, so a branch carrying one
+   * non-conventional commit turned this into a red suite for reasons unrelated to push discipline.
+   *
+   * Reaching the "checking BASE...HEAD" line IS passing the refspec guard: the guard's only exit is
+   * `REASON` on stderr before that line is printed.
+   */
+  it('allows a feature branch refspec past the guard', () => {
     const r = prePush('refs/heads/feature/foo abc123 refs/heads/feature/foo def456\n');
-    expect(r.status).toBe(0);
+    expect(r.stderr).not.toMatch(/open a PR instead/i);
+    expect(r.stdout).toMatch(/pre-push: checking/);
   });
 
   it('rejects remote build and main', () => {

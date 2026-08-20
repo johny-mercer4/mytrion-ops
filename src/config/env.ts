@@ -433,6 +433,21 @@ const EnvSchema = z.object({
   GONG_ACCESS_KEY_SECRET: z.string().default(''),
   GONG_BASE_URL: z.string().default('https://api.gong.io'),
 
+  // --- FMCSA QCMobile + Socrata (Verification Phase 4 — authority & operating status) ---
+  // The free QCMobile webKey (register at mobile.fmcsa.dot.gov/QCDevsite). It is a QUERY PARAM on
+  // every call, never a header. NOT IP-bound as far as the docs go — but the FMCSA EDGE is: every
+  // fmcsa.dot.gov host returns a blanket 403 to non-US egress, so this only resolves from the US
+  // Render instance. A 403 is therefore permanent, not throttling; the client must not retry it.
+  FMCSA_API_KEY: z.string().default(''),
+  FMCSA_BASE_URL: z.string().default('https://mobile.fmcsa.dot.gov/qc/services'),
+  // Socrata open data is third-party SaaS (data.transportation.gov CNAMEs to socrata.net), NOT DOT
+  // infrastructure, so it answers from anywhere — which is what makes Phase 4 developable off-Render.
+  SOCRATA_BASE_URL: z.string().default('https://data.transportation.gov'),
+  // OPTIONAL and empty here. Anonymous access works; an app token only raises the rate limit. An
+  // empty value is safe, but a WRONG one is a hard 403 — so the client omits the header entirely
+  // when this is blank rather than sending it empty. Deliberately NOT in assertRuntimeSecrets.
+  SOCRATA_APP_TOKEN: z.string().default(''),
+
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),

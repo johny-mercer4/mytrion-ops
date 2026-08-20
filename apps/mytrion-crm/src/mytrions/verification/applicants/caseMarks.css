@@ -106,15 +106,35 @@
 /* ── The check row it sits in ──────────────────────────────────────────────── */
 /* A 2px edge in the verdict's colour, so a column of seven rows can be read at a glance for the one
    that needs work — the row itself is the summary, not just the control inside it. */
-[data-mytrion='verification'] .va-id-check[data-mark='ok'] {
+/*
+ * THREE TONES, AND EVERY MARK VOCABULARY HAS TO LAND ON ONE OF THEM.
+ *
+ * These selectors used to name only Phase 2's three values, while Phase 4 writes its own
+ * (`inactive` / `unresolved`) and its structure rows write `na` / `needed`. An unlisted value is not
+ * a fallback — it is NO EDGE AT ALL, so "Inactive" (the finding that sends a case to Manager Review,
+ * i.e. the most consequential thing this phase records) rendered as an unmarked row. A reviewer
+ * scanning the column for the one that needs work saw nothing.
+ *
+ * Grouped rather than remapped in the TSX so the semantic name survives in the DOM: `data-mark`
+ * reads as the reviewer's actual verdict in devtools and in a screenshot, and a new mark is one
+ * selector here rather than a branch in every pane.
+ */
+[data-mytrion='verification'] .va-id-check[data-mark='ok'],
+[data-mytrion='verification'] .va-id-check[data-mark='na'] {
   border-color: var(--intent-success-bd);
   box-shadow: inset 2px 0 0 0 var(--success);
 }
-[data-mytrion='verification'] .va-id-check[data-mark='missing'] {
+/* An ASK (a document to request) and an UNSETTLED check both mean "not done yet, and not a finding
+   about the applicant" — the same amber Phase 2 gives `missing`. */
+[data-mytrion='verification'] .va-id-check[data-mark='missing'],
+[data-mytrion='verification'] .va-id-check[data-mark='needed'],
+[data-mytrion='verification'] .va-id-check[data-mark='unresolved'] {
   border-color: var(--intent-warning-bd);
   box-shadow: inset 2px 0 0 0 var(--warning);
 }
-[data-mytrion='verification'] .va-id-check[data-mark='inconsistent'] {
+/* A FINDING about the applicant: the authority is not active, or the two sides disagree. */
+[data-mytrion='verification'] .va-id-check[data-mark='inconsistent'],
+[data-mytrion='verification'] .va-id-check[data-mark='inactive'] {
   border-color: var(--intent-danger-bd);
   box-shadow: inset 2px 0 0 0 var(--danger);
 }

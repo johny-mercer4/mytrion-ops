@@ -12,6 +12,8 @@ import { checklistIsLive, checklistLines, checklistProgress } from './caseCheckl
 import { identityChecksFor, type IdentityMark } from './caseIdentity';
 import {
   blacklistMarkFromRun,
+  citifuelSentence,
+  duplicateMarkFromRun,
   EMPTY_SCREENING_MARKS,
   SCREENING_CHECKLIST,
   screeningRunFrom,
@@ -229,6 +231,105 @@ describe('the screening run', () => {
 
   it('suggests nothing at all before a run', () => {
     expect(blacklistMarkFromRun(null)).toBeNull();
+  });
+});
+
+/**
+ * CHECK B'S SUGGESTION, which has three sources and therefore three ways to be unable to answer.
+ *
+ * The rule is Check A's: a mark of "no duplicate" is a CLEAR, and a clear may only come from sources
+ * that actually spoke. An unreachable Zoho, a Citifuel value this desk cannot read, or a run written
+ * before the Deal scan existed all leave the question open.
+ */
+describe('the duplicate suggestion', () => {
+  const clean = (over: Record<string, unknown> = {}) => ({
+    ranAt: '2026-08-20T09:00:00.000Z',
+    identifiersScreened: 7,
+    blacklistHits: 0,
+    duplicateHits: 0,
+    duplicateScan: {
+      caseHits: 0,
+      dealHits: 0,
+      dealsAvailable: true,
+      dealsError: null,
+      dealsTruncated: false,
+    },
+    citifuel: { source: 'Deals.citifuel_Status', available: true, status: 'no', verdict: 'clear' },
+    ...over,
+  });
+
+  it('suggests No duplicate only when every source answered', () => {
+    expect(duplicateMarkFromRun(screeningRunFrom(clean()))).toBe('no');
+  });
+
+  it('suggests Duplicate on a shared identifier', () => {
+    expect(duplicateMarkFromRun(screeningRunFrom(clean({ duplicateHits: 1 })))).toBe('yes');
+  });
+
+  /** `yes` and `active` are the two values the exact-string check was letting through. */
+  it('suggests Duplicate on a flagged Citifuel status even with no shared identifier', () => {
+    const flagged = clean({
+      citifuel: { available: true, status: 'yes', verdict: 'flagged' },
+    });
+    expect(duplicateMarkFromRun(screeningRunFrom(flagged))).toBe('yes');
+  });
+
+  it('suggests NOTHING when Zoho Deals were not scanned', () => {
+    const noDeals = clean({
+      duplicateScan: { caseHits: 0, dealHits: 0, dealsAvailable: false, dealsError: 'COQL 500', dealsTruncated: false },
+    });
+    expect(duplicateMarkFromRun(screeningRunFrom(noDeals))).toBeNull();
+  });
+
+  it('suggests NOTHING when the Deal scan hit its row cap', () => {
+    const capped = clean({
+      duplicateScan: { caseHits: 0, dealHits: 0, dealsAvailable: true, dealsError: null, dealsTruncated: true },
+    });
+    expect(duplicateMarkFromRun(screeningRunFrom(capped))).toBeNull();
+  });
+
+  it('suggests NOTHING on a Citifuel value it cannot read as yes or no', () => {
+    const unknown = clean({
+      citifuel: { available: true, status: 'App Filled', verdict: 'unknown' },
+    });
+    expect(duplicateMarkFromRun(screeningRunFrom(unknown))).toBeNull();
+  });
+
+  /** A run from before the Deal scan shipped consulted neither Zoho nor Citifuel. */
+  it('suggests NOTHING for a run that predates the Deal scan', () => {
+    const legacy = clean({ duplicateScan: undefined, citifuel: undefined });
+    delete (legacy as Record<string, unknown>).duplicateScan;
+    delete (legacy as Record<string, unknown>).citifuel;
+    expect(duplicateMarkFromRun(screeningRunFrom(legacy))).toBeNull();
+  });
+
+  it('never treats a missing Citifuel block as available', () => {
+    expect(screeningRunFrom(clean({ citifuel: undefined }))?.citifuel).toBeNull();
+  });
+});
+
+describe('the Citifuel sentence', () => {
+  it('names the raw value on a flagged status, so the reviewer sees what Zoho said', () => {
+    const out = citifuelSentence({ available: true, status: 'Lead Converted', verdict: 'flagged' });
+    expect(out.tone).toBe('bad');
+    expect(out.text).toContain('Lead Converted');
+  });
+
+  it('reads an unknown value as a question, not as a clear', () => {
+    const out = citifuelSentence({ available: true, status: 'App Filled', verdict: 'unknown' });
+    expect(out.tone).toBe('warn');
+    expect(out.text).toMatch(/cannot read/i);
+  });
+
+  it('says the status could not be read when the source was unavailable', () => {
+    const out = citifuelSentence({ available: false, status: null, verdict: 'absent' });
+    expect(out.tone).toBe('warn');
+    expect(out.text).toMatch(/not a clear/i);
+  });
+
+  it('distinguishes an explicit no from an absent status', () => {
+    expect(citifuelSentence({ available: true, status: 'no', verdict: 'clear' }).tone).toBe('good');
+    expect(citifuelSentence({ available: true, status: null, verdict: 'absent' }).tone).toBe('neutral');
   });
 });
 

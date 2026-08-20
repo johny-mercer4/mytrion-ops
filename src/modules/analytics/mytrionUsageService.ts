@@ -6,7 +6,6 @@ import { mytrionUsageTelemetryRepo } from '../../repos/mytrionUsageTelemetryRepo
 import type { TenantContext } from '../../types/tenantContext.js';
 import {
   MYTRION_USAGE_TIME_ZONE,
-  resolveMytrionUsageWindow,
   usageDates,
   type MytrionUsageWindow,
 } from './mytrionUsageDates.js';
@@ -220,7 +219,7 @@ export async function computeSalesMytrionUsage(
   }
 
   const dates = usageDates(window.from, window.to);
-  const today = resolveMytrionUsageWindow({ preset: 'today' }).from;
+  const today = window.today;
   if (window.to >= today) {
     if (statuses.presence === 'complete') statuses.presence = 'partial';
     if (statuses.activity === 'complete') statuses.activity = 'partial';

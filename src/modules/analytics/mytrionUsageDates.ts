@@ -9,6 +9,15 @@ export interface MytrionUsageWindow {
   to: string;
   start: Date;
   endExclusive: Date;
+  /**
+   * The zoned calendar date this window was resolved ON, carried so consumers do not re-derive it
+   * from the wall clock. `mytrionUsageService` treats "today" specially — raw telemetry is only
+   * trusted for it, because the nightly rollup has not run yet — and it used to call
+   * `resolveMytrionUsageWindow({ preset: 'today' })` again to find out which date that was. That
+   * silently disagreed with any window resolved from an explicit `now`, so the raw overlay was
+   * dropped for the very day being asked about.
+   */
+  today: string;
 }
 
 function parseIsoDate(date: string): [number, number, number] {
@@ -142,6 +151,7 @@ export function resolveMytrionUsageWindow(input: {
     preset,
     from,
     to,
+    today,
     start: zonedDayStart(from),
     endExclusive: zonedDayStart(addDays(to, 1)),
   };

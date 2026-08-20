@@ -31,7 +31,6 @@ import {
   zohoFromCtx,
   type IntakePatch,
 } from './applicationService.js';
-import { matchCreditPlatformBanList } from '../../integrations/creditPlatformBlacklist.js';
 import { isTierPriceable } from './capacity.js';
 import {
   saveBankingReview,
@@ -40,8 +39,7 @@ import {
 } from './deskReviews.js';
 import { saveIntakeCorrection } from './deskIntake.js';
 import { documentService } from './documentService.js';
-import { evaluateHardStops, managerReviewIndicators } from './hardStops.js';
-import { informCollectionsOfBlacklist } from './notify.js';
+import { deriveRiskSignals } from './hardStops.js';
 import {
   buildRail,
   isPhaseCode,
@@ -51,7 +49,8 @@ import {
   skipReason,
   type StoredPhase,
 } from './phases.js';
-import { collectIdentifiers, screeningVerdictSummary } from './screening.js';
+import { blacklistCaseIdentifiers, runCaseScreening } from './deskScreening.js';
+import { screeningVerdictSummary } from './screening.js';
 import {
   FINAL_DECISIONS,
   resolveDocumentReturnPhase,
@@ -71,6 +70,31 @@ async function loadWorkable(ctx: TenantContext, caseId: string): Promise<Verific
       { statusCode: 409, code: 'VERIFICATION_INTAKE_INCOMPLETE', expose: true },
     );
   }
+  if (row.closedAt) {
+    throw new AppError('This application has already been decided.', {
+      statusCode: 409,
+      code: 'VERIFICATION_CASE_CLOSED',
+      expose: true,
+    });
+  }
+  return row;
+}
+
+/**
+ * The gate for Phase 3 screening, which is the one thing worth doing to a RED case.
+ *
+ * `loadWorkable` refuses a case Sales has not submitted, and for every decision that is right. It is
+ * wrong for the ban list: screening needs a name, an email, a phone and an authority number, all of
+ * which arrive with the Deal, and the answer is most useful BEFORE an agent spends a week collecting
+ * documents for an applicant who was banned the whole time. Nothing here is a decision — the hits
+ * land as `unverified` and a credit agent still rules on each one through `loadWorkable`.
+ *
+ * A DECIDED case is still refused. Re-screening after the fact would rewrite the findings that the
+ * decision was recorded against.
+ */
+async function loadScreenable(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+  const row = await verificationFlowRepo.findById(ctx, caseId);
+  if (!row) throw new NotFoundError('Verification case not found');
   if (row.closedAt) {
     throw new AppError('This application has already been decided.', {
       statusCode: 409,
@@ -150,6 +174,10 @@ export const deskService = {
       };
 
       const rail = buildRail(phases, row.applicantType);
+      const signals = deriveRiskSignals(credit, banking, {
+        adbReviewThreshold: toNumber(policy.adbReviewThreshold) ?? 500,
+        nsfReviewThreshold: policy.nsfReviewThreshold,
+      }, toNumber);
 
       const routing = { bankFirstTruckMin: policy.bankFirstTruckMin, wexCardCutoff: policy.wexCardCutoff };
       const factors = {
@@ -171,30 +199,7 @@ export const deskService = {
         credit: credit ?? null,
         banking: banking ?? null,
         risk: risk ?? null,
-        hardStops: evaluateHardStops({
-          avgWeeklyNetCashFlow: toNumber(banking?.avgWeeklyNetCashFlow),
-          bureauNoHit: credit?.bureauNoHit ?? false,
-        }),
-        indicators: managerReviewIndicators(
-          {
-            revenueTrend: banking?.revenueTrend ?? null,
-            avgDailyBalance: toNumber(banking?.avgDailyBalance),
-            negativeBalanceDays: banking?.negativeBalanceDays ?? null,
-            overdraftCount: banking?.overdraftCount ?? null,
-            nsfCount: banking?.nsfCount ?? null,
-            achReturnCount: banking?.achReturnCount ?? null,
-            cashFlowVolatility: banking?.cashFlowVolatility ?? null,
-            existingDebtPayments: toNumber(banking?.existingDebtPayments),
-            oneTimeDeposits: toNumber(banking?.oneTimeDeposits),
-            creditRecentTrend: credit?.recentTrend ?? null,
-            unusualTransactions: banking?.unusualTransactions ?? null,
-            bankingInconsistentWithOperations: banking?.bankingInconsistentWithOperations ?? null,
-          },
-          {
-            adbReviewThreshold: toNumber(policy.adbReviewThreshold) ?? 500,
-            nsfReviewThreshold: policy.nsfReviewThreshold,
-          },
-        ),
+        ...signals,
         routing: {
           underwritingRoute: resolveUnderwritingRoute(row.fuelCardsRequested, routing),
           reviewOrder: resolveReviewOrder(row.applicantType, row.trucksCount, routing),
@@ -381,126 +386,31 @@ export const deskService = {
       // A blacklist decline must also populate the blacklist, or the next application from the same
       // applicant sails through Check A and the decision means nothing.
       if (input.outcome === 'decline_blacklist') {
-        await this.blacklistCase(ctx, row, input.note);
+        await blacklistCaseIdentifiers(ctx, row, input.note);
       }
       return this.detail(ctx, caseId);
     });
   },
 
   /**
-   * Phase 3. Runs both checks against our own tables and stores the hits.
+   * Phase 3. Runs all four probes and stores the hits (see deskScreening.ts).
+   *
+   * SCREENED THROUGH `loadScreenable`, NOT `loadWorkable` — this is the one desk call a red case
+   * allows. Waiting for Sales to finish intake before asking whether the applicant is banned gets the
+   * answer after the chasing is done; the ban list needs a name, an email and a phone, and a red case
+   * has those. Every other desk call, this phase's own verdicts included, stays on `loadWorkable`.
    *
    * Re-running preserves verdicts an agent already recorded — see `replaceHits`.
    */
   async runScreening(ctx: TenantContext, caseId: string) {
     return withFlowSchemaGuard(async () => {
-      const row = await loadWorkable(ctx, caseId);
-      const identifiers = collectIdentifiers({
-        companyName: row.companyName,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        ein: row.ein,
-        ssnLast4: row.ssnLast4,
-        phone: row.phone,
-        email: row.email,
-        businessAddress: row.businessAddress,
-        residentialAddress: row.residentialAddress,
-        mc: row.mc,
-        dot: row.dot,
-        applicantIp: null,
-      });
-
-      /**
-       * TWO LISTS, and the first one is the one that matters.
-       *
-       * `verification_blacklist_entries` (ours) holds the entries this desk has added itself through
-       * `decline_blacklist` — and nothing else, because nothing else writes it. The list Octane
-       * actually maintains is the credit platform's `public.blacklist_entries`, 6,803 active rows, so
-       * screening against ours alone returned "no match" on every case in the system. Both are matched;
-       * a hit from either goes to a credit agent for a verdict, exactly as the SOP requires.
-       */
-      const [ours, platform] = await Promise.all([
-        verificationScreeningRepo.matchBlacklist(ctx, identifiers.map((i) => i.hash)),
-        matchCreditPlatformBanList(identifiers.map((i) => ({ entryType: i.entryType, value: i.value }))),
-      ]);
-      const byHash = new Map(identifiers.map((i) => [i.hash, i]));
-      const displayByType = new Map(identifiers.map((i) => [i.entryType, i.display]));
-
-      const duplicates = await verificationScreeningRepo.matchDuplicates(ctx, caseId, {
-        ein: row.ein,
-        mc: row.mc,
-        dot: row.dot,
-        email: row.email,
-        phone: row.phone,
-        companyName: row.companyName,
-      });
-
-      const hits = [
-        ...ours.map((entry) => ({
-          checkType: 'blacklist' as const,
-          entryType: entry.entryType,
-          matchedValueDisplay: byHash.get(entry.valueHash)?.display ?? entry.valueDisplay,
-          matchedEntryId: entry.id,
-          verdict: 'unverified' as const,
-        })),
-        ...platform.hits.map((hit) => ({
-          checkType: 'blacklist' as const,
-          entryType: hit.entryType,
-          // The MASKED form of our own identifier, never the platform's stored plaintext — a hit says
-          // "this applicant's email is listed", and printing the listed value adds nothing the
-          // reviewer needs and everything a screenshot should not carry.
-          matchedValueDisplay: displayByType.get(hit.entryType) ?? hit.cpType,
-          // `cp:` prefixed so a platform row can never collide with one of our own text ids, and so
-          // the desk can tell the reviewer which list a hit came from.
-          matchedEntryId: `cp:${hit.entryId}`,
-          note: [
-            `Credit platform ban list (${hit.cpType})`,
-            hit.reason?.trim() ? hit.reason.trim() : null,
-            hit.addedBy?.trim() ? `added by ${hit.addedBy.trim()}` : null,
-          ]
-            .filter(Boolean)
-            .join(' · '),
-          verdict: 'unverified' as const,
-        })),
-        ...duplicates.map((dup) => ({
-          checkType: 'duplicate' as const,
-          entryType: dup.entryType,
-          matchedValueDisplay: dup.display,
-          matchedCaseId: dup.id,
-          matchedCaseLabel: dup.display,
-          verdict: 'unverified' as const,
-        })),
-      ];
-
-      const stored = await verificationScreeningRepo.replaceHits(ctx, caseId, hits);
-      await verificationCaseAssetRepo.upsertPhase(ctx, caseId, {
-        phaseCode: VERIFICATION_PHASE.screening,
-        status: 'in_progress',
-        findings: {
-          ranAt: new Date().toISOString(),
-          identifiersScreened: identifiers.length,
-          blacklistHits: stored.filter((h) => h.checkType === 'blacklist').length,
-          duplicateHits: stored.filter((h) => h.checkType === 'duplicate').length,
-          /**
-           * WHETHER THE BAN LIST WAS ACTUALLY READ.
-           *
-           * A lookup that failed must not read as a clear. The desk shows this verbatim, so "no match"
-           * and "could not reach the list" are different sentences on screen — which is the whole
-           * reason `matchCreditPlatformBanList` returns a flag instead of throwing.
-           */
-          banList: {
-            source: 'credit_platform.public.blacklist_entries',
-            available: platform.available,
-            error: platform.error,
-            platformHits: platform.hits.length,
-            ownHits: ours.length,
-          },
-        },
-      });
+      const row = await loadScreenable(ctx, caseId);
+      await runCaseScreening(ctx, row);
       return this.detail(ctx, caseId);
     });
   },
 
+  /** A verdict is a decision, so it needs a complete case — `loadWorkable`, not `loadScreenable`. */
   async setScreeningVerdict(
     ctx: TenantContext,
     caseId: string,
@@ -517,49 +427,6 @@ export const deskService = {
       if (!updated) throw new NotFoundError('Screening hit not found');
       return this.detail(ctx, caseId);
     });
-  },
-
-  /** Add every identifier of a declined case to the blacklist, so Check A catches the next one. */
-  async blacklistCase(ctx: TenantContext, row: VerificationCase, reason?: string): Promise<number> {
-    const identifiers = collectIdentifiers({
-      companyName: row.companyName,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      ein: row.ein,
-      ssnLast4: row.ssnLast4,
-      phone: row.phone,
-      email: row.email,
-      businessAddress: row.businessAddress,
-      residentialAddress: row.residentialAddress,
-      mc: row.mc,
-      dot: row.dot,
-      applicantIp: null,
-    });
-    const added = await verificationScreeningRepo.addBlacklistEntries(
-      ctx,
-      identifiers.map((i) => ({
-        entryType: i.entryType,
-        valueHash: i.hash,
-        valueLast4: i.last4,
-        valueDisplay: i.display,
-        reason: reason ?? 'Confirmed blacklist match or fraud at underwriting.',
-        sourceCaseId: row.id,
-        addedBy: zohoFromCtx(ctx) ?? ctx.userId,
-      })),
-    );
-
-    // SOP Phase 3: "Decline + Blacklist -> Inform Collections Department." Blacklisting silently
-    // would leave the team that chases money unaware an applicant was refused for fraud.
-    await informCollectionsOfBlacklist(ctx, {
-      caseId: row.id,
-      applicantName:
-        row.companyName ?? [row.firstName, row.lastName].filter(Boolean).join(' ') ?? row.id,
-      identifierCount: added,
-      reason,
-      actorName: ctx.userName || ctx.userId,
-    });
-
-    return added;
   },
 
   // ---- Phase 6 / 9 reviews (see deskReviews.ts) ----
@@ -712,7 +579,7 @@ export const deskService = {
         });
       }
       if (input.decision === 'decline_blacklist') {
-        await this.blacklistCase(ctx, row, input.note);
+        await blacklistCaseIdentifiers(ctx, row, input.note);
       }
       return this.detail(ctx, caseId);
     });

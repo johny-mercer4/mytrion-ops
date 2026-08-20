@@ -5,7 +5,7 @@
  * the same tenant discipline: every method takes `ctx` first and every `where` leads with the
  * tenant predicate on the CHILD table, so a case id guessed from another tenant returns nothing.
  */
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   verificationCaseDocuments,
@@ -134,6 +134,59 @@ export const verificationCaseAssetRepo = {
       })
       .returning();
     return firstOrThrow(rows, 'Failed to upsert verification phase');
+  },
+
+  /**
+   * Record what an AUTOMATION observed, without ever touching what a reviewer decided.
+   *
+   * WHY THIS IS NOT `upsertPhase`. That method's conflict branch writes `outcome`, `note`,
+   * `decidedAt` and `decidedBy` unconditionally as `?? null`, because its job is to RECORD a
+   * decision. An automation calls it with only `{ status: 'in_progress', findings }` — so on a phase
+   * that had already passed, it nulled the outcome and the decider and pushed the status back to
+   * in_progress. Silently: no `phase_reopened` event, no downstream phase reset, and
+   * `verification_cases.phase_code` / `status_code` still pointing forward at the phase after it. The
+   * rail said "in progress" while the case said "past it", and nobody was told the pass had gone.
+   * Withdrawing a verdict is `reopenPhase`'s job, and it demands a reason and writes the event.
+   *
+   * So this writes `findings` and nothing else that matters, and it advances `status` ONLY while the
+   * phase is undecided — the `case` expression is the invariant, in SQL, where the next automation
+   * cannot forget it. A re-run on a decided phase updates its findings and leaves the verdict alone.
+   */
+  async recordPhaseObservation(
+    ctx: TenantContext,
+    caseId: string,
+    input: {
+      phaseCode: string;
+      status: VerificationPhaseStatus;
+      findings: Record<string, unknown>;
+    },
+  ): Promise<VerificationCasePhase> {
+    const now = new Date();
+    const rows = await db
+      .insert(verificationCasePhases)
+      .values({
+        tenantId: ctx.tenantId,
+        caseId,
+        phaseCode: input.phaseCode,
+        status: input.status,
+        findings: input.findings,
+        startedAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          verificationCasePhases.tenantId,
+          verificationCasePhases.caseId,
+          verificationCasePhases.phaseCode,
+        ],
+        set: {
+          status: sql`case when ${verificationCasePhases.outcome} is null then ${input.status} else ${verificationCasePhases.status} end`,
+          findings: input.findings,
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return firstOrThrow(rows, 'Failed to record verification phase observation');
   },
 
   // ---- principals ----
