@@ -14,7 +14,7 @@ answers to the same question.
 
 | Agent | Strength here | Give it |
 | --- | --- | --- |
-| **Gemini 3.1 Pro (Antigravity)** | 2M context, multimodal, whole-repo reads | Cross-cutting reads: "trace this value from Zoho to the UI", screenshot-driven UI diffs, auditing all 77 touchpoints at once, reading `WORKING_NOTES.md` end-to-end |
+| **Gemini 3.1 Pro (Antigravity)** | 2M context, multimodal, whole-repo reads | Cross-cutting reads: "trace this value from Zoho to the UI", screenshot-driven UI diffs, auditing all 77 touchpoints at once. If `WORKING_NOTES.md` exists locally, search by date/keyword — **never load the whole file**. Committed truth is CLAUDE + ONBOARDING + product skills. |
 | **Claude Code** | Instruction adherence, refactors under constraints, tests | Anything touching `repos/`, RBAC, `toolDispatcher`, migrations, jobs — the places where rule 2/3/4/9 violations are expensive. Also the migration-generation dance. |
 | **Cursor / Grok 4.5** | Fast in-editor iteration with live feedback | Horizon CSS propagation, component-level UI work, mechanical typecheck-error burndown, one-file-at-a-time changes with the dev server open |
 
@@ -28,8 +28,8 @@ answers to the same question.
 quietly and get caught in prod, not in review.
 
 **Send to Gemini** when the answer requires reading more than ~15 files, or when the input is an
-image (screenshot review, design comparison), or when you need the *history* of a decision from the
-383 KB working notes.
+image (screenshot review, design comparison). Decision history lives in CLAUDE + ONBOARDING +
+product skills; if `WORKING_NOTES.md` exists locally, search by date/keyword — never load it wholesale.
 
 **Send to Cursor/Grok** when the loop is `edit → look at :5174 → edit again` and the blast radius is
 one module's CSS or one component.
