@@ -33,6 +33,7 @@ function escalationTicket(): TicketDto {
     status: 'escalated',
     substatus: null,
     priority: 'high',
+    tags: [],
     typeCode: null,
     typeLabel: null,
     targetDepartment: 'customer-service',

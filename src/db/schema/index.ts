@@ -65,6 +65,7 @@ export * from './mytrion_worker_tasks.js';
 export * from './mytrion_agent_presence.js';
 export * from './mytrion_threads.js';
 export * from './mytrion_tickets.js';
+export * from './mytrion_canned_replies.js';
 export * from './mytrion_comms_routing.js';
 export * from './mytrion_escalations.js';
 export * from './mytrion_comms_settings.js';

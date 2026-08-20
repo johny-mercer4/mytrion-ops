@@ -130,6 +130,34 @@ export async function postReply(ctx: TenantContext, input: ReplyInput): Promise<
     );
   });
 
+  // @mention notify — a direct ping to each mentioned teammate's own lane.
+  //
+  // Restricted to workers ALREADY on the thread. A mention must never become a way to grant a stranger
+  // read access: a watcher can read the whole conversation, so if an arbitrary `mentions` array could add
+  // people, it would be an IDOR. The composer only offers participants; this is the server enforcing it.
+  const workerMemberKeys = new Set(
+    members.filter((m) => m.memberKind === 'worker' && m.state !== 'left').map((m) => m.memberKey),
+  );
+  const mentioned = [
+    ...new Set((input.mentions ?? []).filter((id) => id && id !== actor && workerMemberKeys.has(id))),
+  ];
+  if (mentioned.length > 0) {
+    publishSafely('comms.thread.mention', () => {
+      for (const id of mentioned) {
+        publishUserEvent(id, {
+          type: 'comms.thread.mention',
+          threadId: thread.id,
+          seq: message.seq,
+          messageId: message.id,
+          byZohoUserId: actor,
+          byName: ctx.userName ?? null,
+          ticketId: owned?.ticket.id ?? null,
+          preview: body.slice(0, 160),
+        });
+      }
+    });
+  }
+
   return { message, thread };
 }
 

@@ -73,6 +73,7 @@ export default defineConfig({
     './src/db/schema/mytrion_agent_presence.ts',
     './src/db/schema/mytrion_threads.ts',
     './src/db/schema/mytrion_tickets.ts',
+    './src/db/schema/mytrion_canned_replies.ts',
     './src/db/schema/mytrion_comms_routing.ts',
     './src/db/schema/mytrion_escalations.ts',
     './src/db/schema/mytrion_comms_settings.ts',

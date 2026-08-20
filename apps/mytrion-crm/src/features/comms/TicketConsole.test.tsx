@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { TicketDto } from '@/api/comms';
 
 const api = vi.hoisted(() => ({
@@ -18,6 +19,9 @@ const api = vi.hoisted(() => ({
   uploadThreadAttachment: vi.fn(),
   markThreadRead: vi.fn(),
   getAttachmentLink: vi.fn(),
+  setTicketStatus: vi.fn(),
+  assignTicket: vi.fn(),
+  releaseTicket: vi.fn(),
 }));
 vi.mock('@/api/comms', () => api);
 
@@ -38,6 +42,7 @@ function ticket(over: Partial<TicketDto> = {}): TicketDto {
     status: 'open',
     substatus: null,
     priority: 'medium',
+    tags: [],
     typeCode: 'C-1',
     typeLabel: 'Card Activation',
     targetDepartment: 'customer-service',
@@ -95,6 +100,9 @@ beforeEach(() => {
   });
   api.listThreadAttachments.mockResolvedValue([]);
   api.markThreadRead.mockResolvedValue({ seq: 1 });
+  api.setTicketStatus.mockResolvedValue({ ticket: ticket({ status: 'resolved' }) });
+  api.assignTicket.mockResolvedValue({ ticket: ticket() });
+  api.releaseTicket.mockResolvedValue({ ticket: ticket() });
 });
 
 describe('TicketConsole — focus after Create', () => {
@@ -175,5 +183,50 @@ describe('TicketConsole — queue vs requester', () => {
     await waitFor(() => expect(api.listTickets).toHaveBeenCalled());
     const params = api.listTickets.mock.calls[0]?.[0] as { kind?: string };
     expect(params.kind).toBe('escalation');
+  });
+});
+
+describe('TicketConsole — bulk actions (opt-in)', () => {
+  const twoTickets = {
+    tickets: [
+      ticket(),
+      ticket({ id: 'mtk_2', threadId: 'mth_2', number: 'T-000002', subject: 'Second', version: 3 }),
+    ],
+    hasMore: false,
+    nextCursor: null,
+  };
+
+  it('shows no checkboxes and no bulk bar by default', async () => {
+    render(<TicketConsole mode="queue" department="customer-service" />);
+    expect(await screen.findByText('Card activation')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('selects rows and resolves them in bulk, each carrying its own version', async () => {
+    const user = userEvent.setup();
+    api.listTickets.mockResolvedValue(twoTickets);
+    render(<TicketConsole mode="queue" department="customer-service" enableBulk />);
+    await screen.findByText('Card activation');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select T-000001' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select T-000002' }));
+    expect(screen.getByText(/2 selected/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Resolve' }));
+    await waitFor(() => {
+      expect(api.setTicketStatus).toHaveBeenCalledWith('mtk_1', 'resolved', 1);
+      expect(api.setTicketStatus).toHaveBeenCalledWith('mtk_2', 'resolved', 3);
+    });
+  });
+
+  it('claims a selection with no explicit target', async () => {
+    const user = userEvent.setup();
+    api.listTickets.mockResolvedValue(twoTickets);
+    render(<TicketConsole mode="queue" department="customer-service" enableBulk />);
+    await screen.findByText('Card activation');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select T-000001' }));
+    await user.click(screen.getByRole('button', { name: 'Claim' }));
+    await waitFor(() => expect(api.assignTicket).toHaveBeenCalledWith('mtk_1'));
   });
 });
