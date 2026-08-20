@@ -17,7 +17,6 @@ import {
   SPINE_MILESTONES,
   caseInitials,
   caseName,
-  nextStage,
   milestoneState,
   stageLabel,
   statusChip,
@@ -37,17 +36,20 @@ export function CaseHeader({
   bundle,
   policy,
   onBack,
-  onAdvance,
+  onMoveStage,
   onLogContact,
 }: {
   row: CollectionCaseRow;
   bundle: CaseDeskBundle | null;
   policy: DeskPolicy | null;
   onBack: () => void;
-  onAdvance: () => void;
+  onMoveStage: () => void;
   onLogContact: () => void;
 }) {
-  const canAdvance = row.status !== 'closed' && nextStage(row.collectionStage) !== null;
+  // The Blueprint decides, and the server computed it. A closed case has no moves offered
+  // until it is reopened, which is a separate decision with its own button on the rail.
+  const moves = bundle?.transitions ?? [];
+  const canMove = row.status !== 'closed' && moves.length > 0;
   const name = caseName(row);
   const chip = statusChip(row);
   const invoiced = Number(row.totalInvoiceAmount) || 0;
@@ -106,10 +108,10 @@ export function CaseHeader({
           <Button
             variant="primary"
             icon="arrow_forward"
-            disabled={!canAdvance}
-            onClick={onAdvance}
+            disabled={!canMove}
+            onClick={onMoveStage}
           >
-            Advance stage
+            Move stage
           </Button>
         </div>
       </div>

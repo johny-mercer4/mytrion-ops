@@ -16,7 +16,7 @@ import {
   type DataColumn,
 } from '@/ds';
 import { getCollectionCase, listCollectionInvoices, type CollectionInvoiceRow } from '@/api/collection';
-import { getCaseDesk, reopenCase, setStage } from '@/api/collectionDesk';
+import { getCaseDesk, reopenCase } from '@/api/collectionDesk';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { CaseActionDialogs, useCaseActions } from '../actions/useCaseActions';
 import {
@@ -26,7 +26,9 @@ import {
   TimelineSkeleton,
 } from '../CollectionSkeletons';
 import { fmtDate, moneyExact } from '../collectionFormat';
+import { CaseFields } from './detail/CaseFields';
 import { CaseHeader } from './detail/CaseHeader';
+import { CaseTasks } from './detail/CaseTasks';
 import { CaseRail } from './detail/CaseRail';
 import { CaseTimeline } from './detail/CaseTimeline';
 import {
@@ -34,7 +36,6 @@ import {
   invoiceCacheKey,
   invoicePageOffset,
   invoicePanelKind,
-  nextStage,
 } from './casesModel';
 import './cases.css';
 import './caseDetail.css';
@@ -90,15 +91,6 @@ export function CaseDetail({
     await reopenCase(caseId);
     refresh();
   }, [caseId, refresh]);
-
-  /** Advance = the next stage in the progression the spine reads left to right. */
-  const advance = useCallback(async () => {
-    if (!row) return;
-    const next = nextStage(row.collectionStage);
-    if (!next) return;
-    await setStage(caseId, { stage: next });
-    refresh();
-  }, [row, caseId, refresh]);
 
   const invoiceCols = useMemo<DataColumn<CollectionInvoiceRow>[]>(
     () => [
@@ -196,12 +188,21 @@ export function CaseDetail({
         bundle={bundle}
         policy={bundle?.policy ?? null}
         onBack={onBack}
-        onAdvance={() => void advance()}
+        onMoveStage={() =>
+          actions.openStage(row, bundle?.transitions ?? [], bundle?.suggestedCourt ?? null)
+        }
         onLogContact={() => actions.openContact(row)}
       />
 
       <div className="cc-case-body">
         <div className="cc-case-main">
+          <CaseTasks
+            caseId={caseId}
+            tasks={bundle?.tasks ?? []}
+            readOnly={row.status === 'closed'}
+            onChanged={refresh}
+          />
+
           <CaseTimeline
             caseId={caseId}
             reloadKey={reloadKey}
@@ -280,11 +281,14 @@ export function CaseDetail({
               </>
             )}
           </section>
+
+          <CaseFields row={row} dossier={bundle?.dossier ?? null} onSaved={refresh} />
         </div>
 
         <CaseRail
           row={row}
           bundle={bundle}
+          onChanged={refresh}
           onLogContact={() => actions.openContact(row)}
           onPlan={() => actions.openPlan(row, bundle?.plan ?? null)}
           onPlacement={() => actions.openPlacement(row)}

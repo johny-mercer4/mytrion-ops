@@ -54,7 +54,10 @@ const caseListQuery = z.object({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
-  /** "My cases", or the unassigned pool when the literal string `unassigned` is passed. */
+  /**
+   * `me` resolves to the caller, `unassigned` to the pool, anything else to that user id. `me`
+   * exists so the browser never has to know what format the token writes a user id in.
+   */
   assignee: z.string().trim().min(1).max(80).optional(),
   currentAgency: z.string().trim().min(1).max(120).optional(),
 });
@@ -122,7 +125,10 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
     const result = await collectionCaseRepo.list(ctx, {
       ...query,
       ...(assignee !== undefined
-        ? { assigneeUserId: assignee === 'unassigned' ? null : assignee }
+        ? {
+            assigneeUserId:
+              assignee === 'unassigned' ? null : assignee === 'me' ? (ctx.userId ?? '') : assignee,
+          }
         : {}),
     });
     const desk = await collectionWorklistRepo.deskInfoByCase(

@@ -78,8 +78,13 @@ const fieldsBody = z.object({
   note: z.string().trim().max(2000).optional(),
 });
 
+/**
+ * Both fields optional: "assign to me" is the overwhelmingly common case, and making the client
+ * send its own id invites an id-format mismatch between what the session stores and what the
+ * token carries. Omit them and the caller takes the case.
+ */
 const assignBody = z.object({
-  userId: z.string().trim().min(1).max(80),
+  userId: z.string().trim().min(1).max(80).optional(),
   name: z.string().trim().max(160).nullable().optional(),
 });
 
@@ -176,19 +181,19 @@ export async function collectionCaseFieldRoutes(app: FastifyInstance): Promise<v
   app.post<{ Params: { id: string } }>('/collection/cases/:id/assignee', auth, async (request) => {
     const { id } = idParams.parse(request.params);
     const { ctx, row } = await requireCase(request, id);
-    const body = assignBody.parse(request.body);
-    const updated = await collectionCaseFieldsRepo.assign(id, {
-      userId: body.userId,
-      name: body.name ?? null,
-    });
+    const body = assignBody.parse(request.body ?? {});
+    const userId = body.userId ?? ctx.userId;
+    if (!userId) throw new ValidationError('No user to assign this case to');
+    const name = body.userId ? (body.name ?? null) : (body.name ?? ctx.userName ?? null);
+    const updated = await collectionCaseFieldsRepo.assign(id, { userId, name });
     if (!updated) throw new NotFoundError('Collection case not found');
     await collectionActivityRepo.insert({
       caseId: id,
       kind: 'note',
       summary: row.assigneeUserId
-        ? `Reassigned to ${body.name ?? body.userId}`
-        : `Assigned to ${body.name ?? body.userId}`,
-      meta: { from: row.assigneeUserId, to: body.userId },
+        ? `Reassigned to ${name ?? userId}`
+        : `Assigned to ${name ?? userId}`,
+      meta: { from: row.assigneeUserId, to: userId },
       ...actor(ctx),
     });
     await auditFromContext(ctx, {
@@ -196,7 +201,7 @@ export async function collectionCaseFieldRoutes(app: FastifyInstance): Promise<v
       status: 'ok',
       resourceType: 'collection_case',
       resourceId: id,
-      detail: { from: row.assigneeUserId, to: body.userId },
+      detail: { from: row.assigneeUserId, to: userId },
     });
     return { case: updated };
   });

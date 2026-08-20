@@ -18,48 +18,23 @@ import {
   statusOf,
 } from './cases/casesModel';
 import { money } from './collectionFormat';
+import { caseRowFixture } from './caseRow.fixture';
 
 function caseRow(over: Partial<CollectionCaseRow> = {}): CollectionCaseRow {
-  return {
-    id: 'cc_1',
+  return caseRowFixture({
     carrierId: '5776662',
     status: 'open',
     collectionStage: 'intake',
     displayName: 'Display',
     debtorCompanyName: 'SANGHA TRANS',
-    debtorFullName: null,
-    debtorEmail: null,
-    debtorSecondaryEmail: null,
-    debtorPhone: null,
-    debtorCellPhone: null,
-    debtorAddress: null,
-    debtorCity: null,
-    debtorState: null,
-    debtorZipCode: null,
-    debtorMcDot: null,
-    debtorDateOfBirth: null,
     totalDebtAmount: '90878.84',
     totalInvoiceAmount: '90878.84',
     totalAmountPaid: '0.00',
     issueInvoiceCount: 2,
     daysPastDue: 90,
-    firstDelinquentDate: null,
-    placementDate: null,
     caseCreatedDate: '2026-01-01',
-    closedAt: null,
-    closedReason: null,
-    zohoDealId: null,
-    zohoRecordId: null,
-    agencyTransferDate: null,
-    firstCollectionAgency: null,
-    assigneeUserId: null,
-    currency: 'USD',
-    reopenCount: 0,
-    lastSyncedAt: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
     ...over,
-  };
+  });
 }
 
 describe('collection cases model', () => {

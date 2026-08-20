@@ -23,13 +23,13 @@ export type CaseScope = 'open' | 'closed' | 'all';
  * Deliberately three, and deliberately not "my cases": nothing writes `assignee_user_id` yet, so
  * an owner filter would be a chip that always returns nothing. It goes in when assignment does.
  */
-export type SavedViewId = 'high_value' | 'never_contacted' | 'long_overdue';
+export type SavedViewId = 'high_value' | 'never_contacted' | 'long_overdue' | 'mine' | 'unowned';
 
 export interface SavedView {
   id: SavedViewId;
   label: string;
   hint: string;
-  filter: { minRemaining?: number; neverContacted?: boolean };
+  filter: { minRemaining?: number; neverContacted?: boolean; assignee?: string };
 }
 
 export const SAVED_VIEWS: readonly SavedView[] = [
@@ -50,6 +50,20 @@ export const SAVED_VIEWS: readonly SavedView[] = [
     label: 'Agency size',
     hint: 'Above the $5,000 agency placement floor',
     filter: { minRemaining: 5_000 },
+  },
+  {
+    id: 'mine',
+    label: 'Mine',
+    hint: 'Cases assigned to you',
+    // Resolved server-side from the caller: the client does not know its own id in the format
+    // the token carries, and teaching it that format is how the two drift apart.
+    filter: { assignee: 'me' },
+  },
+  {
+    id: 'unowned',
+    label: 'Unassigned',
+    hint: 'Nobody has taken these',
+    filter: { assignee: 'unassigned' },
   },
 ];
 export type CaseViewMode = 'list' | 'kanban';

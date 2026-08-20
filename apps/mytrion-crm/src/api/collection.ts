@@ -42,6 +42,36 @@ export const COLLECTION_CLOSED_REASONS = [
 ] as const;
 export type CollectionClosedReason = (typeof COLLECTION_CLOSED_REASONS)[number];
 
+/**
+ * The picklist vocabularies, as the literal strings the data holds — NOT Zoho's configured
+ * `actual_value`, which differs for several entries. Mirrors `src/db/schema/collection.ts`.
+ */
+export const COLLECTION_AGENCIES = [
+  'Trust Altus',
+  'Dustin',
+  'Caine & Weiner',
+  'IC system',
+  'Freight Recovery',
+  'GG&R',
+] as const;
+export type CollectionAgency = (typeof COLLECTION_AGENCIES)[number];
+
+export const CAINE_WEINER_TIERS = ['Standard', 'Forwarded', 'Legal'] as const;
+export const AGENCY_RESPONSE_STATUSES = ['Pending', 'Paid', 'No Response', 'Continue'] as const;
+export const COURT_TYPES = ['Small Claims', 'Civil Court'] as const;
+export const COURT_STATUSES = ['Filed', 'Pending', 'Closed'] as const;
+export const COOPERATION_STATUSES = ['Cooperated', 'Not Cooperated'] as const;
+export const COLLECTION_LOSS_REASONS = [
+  'Bankruptcy',
+  'Deceased',
+  'Statute of Limitations Expired',
+  'Cannot Locate',
+  'Court Loss (Small Claims)',
+  'Court Loss (Civil)',
+  'Settled (Lost Outright)',
+  'Wrong Debtor',
+] as const;
+
 export interface CollectionCaseRow {
   id: string;
   carrierId: string;
@@ -74,7 +104,35 @@ export interface CollectionCaseRow {
   zohoRecordId: string | null;
   agencyTransferDate: string | null;
   firstCollectionAgency: string | null;
+
+  // Desk-owned. The finder writes none of it.
+  currentAgency: string | null;
+  secondCollectionAgency: string | null;
+  caineWeinerTier: string | null;
+  agencyResponseStatus: string | null;
+  legalActionRequired: boolean;
+  courtType: string | null;
+  legalFilingDate: string | null;
+  legalDocumentsAttached: boolean;
+  courtStatus: string | null;
+  skipTraceRequired: boolean;
+  verifiedEmail: string | null;
+  verifiedPhone: string | null;
+  verifiedAddress: string | null;
+  escalationRequired: boolean;
+  escalationDate: string | null;
+  cooperationStatus: string | null;
+  lossReason: string | null;
+  paymentReceived: boolean;
+  paymentReceivedDate: string | null;
+  reminderCycleActive: boolean;
+  earlyBadDebtorFlag: boolean;
+  totalCostIncurred: string;
+  totalMerchantFee: string;
+
   assigneeUserId: string | null;
+  assigneeName: string | null;
+  assignedAt: string | null;
   currency: string;
   reopenCount: number;
   lastSyncedAt: string | null;
@@ -133,6 +191,9 @@ export interface CollectionCaseListFilter {
   minRemaining?: number;
   /** Saved view: no contact attempt has ever been logged. */
   neverContacted?: boolean;
+  /** A user id for "my cases", or the literal `unassigned` for the pool nobody owns. */
+  assignee?: string;
+  currentAgency?: string;
 }
 
 export interface ArrayReportRow {

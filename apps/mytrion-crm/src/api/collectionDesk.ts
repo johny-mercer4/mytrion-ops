@@ -165,12 +165,70 @@ export interface ArrayTradeline {
   validationErrors: string | null;
 }
 
+/** A move the Blueprint allows from where this case is, in Zoho's own wording. */
+export interface StageTransition {
+  label: string;
+  to: CollectionStage;
+  precedence: number;
+  /** Present when the Blueprint gates the move on something beyond judgement — the $8,000 line. */
+  hint?: string;
+}
+
+/**
+ * The Zoho columns the Mytrion schema deliberately does not store, computed server-side from the
+ * relational model. See `src/modules/collection/caseDossier.ts` for why they are not columns.
+ */
+export interface CaseDossier {
+  promiseStatus: 'Kept' | 'Failed' | 'Pending' | null;
+  promiseToPayDate: string | null;
+  paymentPlanCreated: boolean;
+  paymentPlanType: 'Weekly' | 'Monthly' | 'Custom' | null;
+  weeklyPaymentAmount: string | null;
+  nextPaymentDueDate: string | null;
+  firstContactDate: string | null;
+  contactMethod: 'Call' | 'Email' | 'SMS' | 'Mail' | null;
+  contactResult: 'Connected' | 'No Answer' | 'Wrong Number' | 'Refused' | null;
+  totalContactAttempts: number;
+  lastActivityDate: string;
+  lastStageChangeDate: string | null;
+  daysInCurrentStage: number;
+  totalRemainingAmount: string;
+  /** Null when the agency has no rate we can stand behind — renders as "not known", never $0. */
+  agencyFee: string | null;
+  totalDebtWithFee: string;
+}
+
+export type CollectionTaskStatus = 'open' | 'done' | 'cancelled';
+export type CollectionTaskPriority = 'low' | 'normal' | 'high';
+
+export interface CollectionTask {
+  id: string;
+  caseId: string;
+  title: string;
+  note: string | null;
+  dueDate: string;
+  status: CollectionTaskStatus;
+  priority: CollectionTaskPriority;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  completedAt: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  /** Negative while it is still ahead; null once the follow-up is no longer open. */
+  daysLate: number | null;
+}
+
 export interface CaseDeskBundle {
   plan: PaymentPlan | null;
   promises: PromiseRow[];
   tradeline: ArrayTradeline | null;
   /** Stages this case has actually been moved to, oldest first. Drives the spine's done marks. */
   stageHistory: CollectionStage[];
+  tasks: CollectionTask[];
+  dossier: CaseDossier;
+  /** Only the moves allowed from the case's current stage. The desk offers these and no others. */
+  transitions: StageTransition[];
+  suggestedCourt: 'small_claims' | 'civil_court';
   policy: DeskPolicy;
 }
 
@@ -359,4 +417,100 @@ export async function setInstalmentStatus(
     body: { status },
     headers: COLLECTION_HEADERS,
   })) as { plan: PaymentPlan | null };
+}
+
+/** The hand-maintained field blocks. Everything optional; only what is sent is written. */
+export interface CaseFieldPatch {
+  currentAgency?: string | null;
+  secondCollectionAgency?: string | null;
+  caineWeinerTier?: string | null;
+  agencyResponseStatus?: string | null;
+  agencyTransferDate?: string | null;
+  legalActionRequired?: boolean;
+  courtType?: string | null;
+  legalFilingDate?: string | null;
+  legalDocumentsAttached?: boolean;
+  courtStatus?: string | null;
+  skipTraceRequired?: boolean;
+  verifiedEmail?: string | null;
+  verifiedPhone?: string | null;
+  verifiedAddress?: string | null;
+  escalationRequired?: boolean;
+  escalationDate?: string | null;
+  cooperationStatus?: string | null;
+  lossReason?: string | null;
+  paymentReceived?: boolean;
+  paymentReceivedDate?: string | null;
+  reminderCycleActive?: boolean;
+  earlyBadDebtorFlag?: boolean;
+  totalCostIncurred?: string;
+  note?: string;
+}
+
+/**
+ * One save for the whole record, not one per block. The blocks are edited together on the case
+ * page, so five endpoints would mean five round trips and a half-saved record if the third failed.
+ */
+export async function patchCaseFields(
+  caseId: string,
+  patch: CaseFieldPatch,
+): Promise<{ case: CollectionCaseRow }> {
+  return (await request('PATCH', `/collection/cases/${encodeURIComponent(caseId)}/fields`, {
+    body: patch,
+    headers: COLLECTION_HEADERS,
+  })) as { case: CollectionCaseRow };
+}
+
+/**
+ * Take the case. With no body the server assigns it to the caller, which is the only case the
+ * desk has today — there is no collection-team roster endpoint to pick someone else from, and a
+ * picker over the wrong list would be worse than not offering one.
+ */
+export async function assignCase(
+  caseId: string,
+  input: { userId?: string; name?: string | null } = {},
+): Promise<{ case: CollectionCaseRow }> {
+  return (await request('POST', `/collection/cases/${encodeURIComponent(caseId)}/assignee`, {
+    body: input,
+    headers: COLLECTION_HEADERS,
+  })) as { case: CollectionCaseRow };
+}
+
+export async function unassignCase(caseId: string): Promise<{ case: CollectionCaseRow }> {
+  return (await request('DELETE', `/collection/cases/${encodeURIComponent(caseId)}/assignee`, {
+    headers: COLLECTION_HEADERS,
+  })) as { case: CollectionCaseRow };
+}
+
+export async function createCaseTask(
+  caseId: string,
+  input: {
+    title: string;
+    dueDate: string;
+    note?: string | null;
+    priority?: CollectionTaskPriority;
+    assigneeUserId?: string | null;
+    assigneeName?: string | null;
+  },
+): Promise<{ task: CollectionTask }> {
+  return (await request('POST', `/collection/cases/${encodeURIComponent(caseId)}/tasks`, {
+    body: input,
+    headers: COLLECTION_HEADERS,
+  })) as { task: CollectionTask };
+}
+
+export async function updateCaseTask(
+  taskId: string,
+  patch: {
+    title?: string;
+    note?: string | null;
+    dueDate?: string;
+    priority?: CollectionTaskPriority;
+    status?: CollectionTaskStatus;
+  },
+): Promise<{ task: CollectionTask }> {
+  return (await request('PATCH', `/collection/tasks/${encodeURIComponent(taskId)}`, {
+    body: patch,
+    headers: COLLECTION_HEADERS,
+  })) as { task: CollectionTask };
 }

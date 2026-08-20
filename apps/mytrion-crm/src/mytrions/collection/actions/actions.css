@@ -173,3 +173,65 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Stage moves — one button per Blueprint transition ───────────────────── */
+[data-mytrion='collection'] .cd-moves {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+[data-mytrion='collection'] .cd-moves-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cd-move {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+  text-align: start;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  transition:
+    border-color 0.15s cubic-bezier(0.2, 0, 0, 1),
+    background 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+[data-mytrion='collection'] .cd-move:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+[data-mytrion='collection'] .cd-move[data-chosen='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+[data-mytrion='collection'] .cd-move:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+[data-mytrion='collection'] .cd-move-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cd-move-to {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+[data-mytrion='collection'] .cd-move-hint,
+[data-mytrion='collection'] .cd-move-flag {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+/* The court the $8,000 line points at. A nudge, never a block — the balance moves. */
+[data-mytrion='collection'] .cd-move-flag {
+  color: var(--success);
+  font-weight: var(--fw-semibold);
+}

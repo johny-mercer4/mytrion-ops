@@ -8,14 +8,20 @@
  */
 import { useState } from 'react';
 import type { CollectionCaseRow } from '@/api/collection';
-import type { ContactChannel, PaymentPlan, PlacementRow } from '@/api/collectionDesk';
+import type {
+  ContactChannel,
+  PaymentPlan,
+  PlacementRow,
+  StageTransition,
+} from '@/api/collectionDesk';
 import { CloseCaseDialog } from './CloseCaseDialog';
 import { LogContactDialog } from './LogContactDialog';
 import { PaymentPlanDialog } from './PaymentPlanDialog';
 import { PlacementDialog } from './PlacementDialog';
+import { StageMoveDialog } from './StageMoveDialog';
 import './actions.css';
 
-type ActionKind = 'contact' | 'plan' | 'placement' | 'close';
+type ActionKind = 'contact' | 'plan' | 'placement' | 'close' | 'stage';
 
 interface OpenState {
   kind: ActionKind;
@@ -26,6 +32,9 @@ interface OpenState {
   plan: PaymentPlan | null;
   /** Only the placement dialog needs it, and only when the caller has the queue's verdict. */
   placement: PlacementRow | null;
+  /** The Blueprint moves allowed from this case's stage, as the server computed them. */
+  transitions: StageTransition[];
+  suggestedCourt: 'small_claims' | 'civil_court' | null;
 }
 
 export interface CaseActions {
@@ -33,6 +42,11 @@ export interface CaseActions {
   openPlan: (row: CollectionCaseRow, existing?: PaymentPlan | null) => void;
   openPlacement: (row: CollectionCaseRow, placement?: PlacementRow | null) => void;
   openClose: (row: CollectionCaseRow) => void;
+  openStage: (
+    row: CollectionCaseRow,
+    transitions: StageTransition[],
+    suggestedCourt?: 'small_claims' | 'civil_court' | null,
+  ) => void;
   dismiss: () => void;
   state: OpenState | null;
   onDone: () => void;
@@ -41,13 +55,24 @@ export interface CaseActions {
 export function useCaseActions({ onDone }: { onDone: () => void }): CaseActions {
   const [state, setState] = useState<OpenState | null>(null);
   const open = (kind: ActionKind, row: CollectionCaseRow, extra: Partial<OpenState> = {}): void => {
-    setState({ kind, row, plan: null, placement: null, channel: 'call', ...extra });
+    setState({
+      kind,
+      row,
+      plan: null,
+      placement: null,
+      channel: 'call',
+      transitions: [],
+      suggestedCourt: null,
+      ...extra,
+    });
   };
   return {
     openContact: (row, channel = 'call') => open('contact', row, { channel }),
     openPlan: (row, existing = null) => open('plan', row, { plan: existing }),
     openPlacement: (row, placement = null) => open('placement', row, { placement }),
     openClose: (row) => open('close', row),
+    openStage: (row, transitions, suggestedCourt = null) =>
+      open('stage', row, { transitions, suggestedCourt }),
     dismiss: () => setState(null),
     state,
     onDone,
@@ -75,6 +100,15 @@ export function CaseActionDialogs({ actions }: { actions: CaseActions }) {
       return <PlacementDialog key={key} placement={state.placement} {...shared} />;
     case 'close':
       return <CloseCaseDialog key={key} {...shared} />;
+    case 'stage':
+      return (
+        <StageMoveDialog
+          key={key}
+          transitions={state.transitions}
+          suggestedCourt={state.suggestedCourt}
+          {...shared}
+        />
+      );
     default:
       return null;
   }
