@@ -5,6 +5,12 @@
  * the agent sees the desk's own progress, not a third vertical list. `onPick` is optional: omit
  * it and the steps are not buttons.
  *
+ * THE CONNECTOR IS CSS, PER SEGMENT. Each step draws the link to its left from `data-linked` on the
+ * step before it — see `.va-steps > li + li::before`. There is no absolutely-positioned progress bar
+ * any more; one existed, it began and ended inside the end dots rather than on their centres, and it
+ * sat underneath the row where an opaque step background could bury it. Which is exactly what
+ * happened when Phase 6's wizard borrowed the `.va-step` class name.
+ *
  * `labels` is optional and defaults to the desk's `PHASE_SHORT`. Sales passes its own map, because
  * "Hard stops" / "Highway" / "Risk tier" name the CHECK rather than the stage, and what is being
  * looked for is the credit desk's business — see `SALES_PHASE_LABEL`.
@@ -30,8 +36,6 @@ export function PhaseSpine({
   onPick?: (code: string) => void;
   labels?: Record<string, string>;
 }) {
-  const lastPassed = rail.reduce((acc, p, i) => (p.status === 'passed' ? i : acc), -1);
-  const pct = rail.length <= 1 ? 0 : Math.max(0, (lastPassed / (rail.length - 1)) * 100);
   const interactive = onPick != null;
 
   return (
@@ -58,9 +62,6 @@ export function PhaseSpine({
       </div>
 
       <div className="va-spine-track">
-        <span className="va-spine-line" aria-hidden="true">
-          <span className="va-spine-fill" style={{ width: `${pct}%` }} />
-        </span>
         <ol className="va-steps">
           {rail.map((p) => {
             const isActive = p.code === activeCode;
@@ -82,7 +83,13 @@ export function PhaseSpine({
               </>
             );
             return (
-              <li key={p.code}>
+              /*
+               * `data-linked` is THIS phase's state, read by the NEXT step to colour the link between
+               * them. The connector belongs to a pair of phases, not to one, and a single
+               * percentage-width bar could not express that: it said how far along the row the last
+               * pass fell, which is the same number whether the phase before it passed or was skipped.
+               */
+              <li key={p.code} data-linked={state}>
                 {interactive ? (
                   <button
                     type="button"

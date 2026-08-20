@@ -301,10 +301,22 @@ describe('Phase 7 hard stops', () => {
     expect(evaluateHardStops({ avgWeeklyNetCashFlow: 0, bureauNoHit: false }).passed).toBe(false);
   });
 
-  it('fires when net cash flow has not been recorded', () => {
+  /**
+   * UNRECORDED IS ITS OWN CODE, not the negative one. Both block a standard unsecured line, but one is
+   * a finding about the applicant and the other is unfinished work in Phase 6 — and the pane sends the
+   * reviewer somewhere different for each. Reported as "negative cash flow", a case nobody had filled
+   * in read as a case that had failed.
+   */
+  it('separates an unrecorded net cash flow from a negative one', () => {
     const verdict = evaluateHardStops({ avgWeeklyNetCashFlow: null, bureauNoHit: false });
     expect(verdict.passed).toBe(false);
-    expect(verdict.triggered[0]?.detail).toMatch(/not been recorded/i);
+    expect(verdict.triggered.map((t) => t.code)).toEqual(['cash_flow_unrecorded']);
+    expect(verdict.triggered[0]?.label).not.toMatch(/negative/i);
+    expect(verdict.triggered[0]?.detail).toMatch(/unanswered, not failed/i);
+
+    // And a real negative still reports as a negative.
+    const negative = evaluateHardStops({ avgWeeklyNetCashFlow: -300, bureauNoHit: false });
+    expect(negative.triggered.map((t) => t.code)).toEqual(['negative_cash_flow']);
   });
 
   it('fires on no credit-bureau record', () => {

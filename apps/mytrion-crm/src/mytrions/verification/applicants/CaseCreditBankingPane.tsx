@@ -13,6 +13,10 @@
  * ground, so the label beside them collapsed to one word per line and the option labels clipped. One
  * full-width step per review removes the squeeze rather than papering over it.
  *
+ * ITS CLASSES ARE `.va-review-step*`, NOT `.va-step*`. The ten-phase spine owns the latter, and this
+ * pane first shipped reusing them — which silently restyled every phase on the spine, because the
+ * later rule with equal specificity wins. Two components, two namespaces.
+ *
  * BOTH STEPS STAY REACHABLE. The sequence is guidance, not a lock: a reviewer who has the statements
  * open and the credit report still loading must be able to start on either, and a correction to a
  * saved step cannot require walking the whole flow again.
@@ -96,26 +100,26 @@ export function CreditBankingPane({
 
       {/* THE STEPS. A real tablist, so arrow keys and screen readers get the sequence too — not two
           divs that only look like tabs. */}
-      <div className="va-steps" role="tablist" aria-label="Phase 6 reviews">
+      <div className="va-review-steps" role="tablist" aria-label="Phase 6 reviews">
         {sequence.map((step, index) => (
           <button
             key={step}
             type="button"
             role="tab"
             id={`va-p6-tab-${step}`}
-            className="va-step"
+            className="va-review-step"
             aria-selected={active === step}
             aria-controls={`va-p6-panel-${step}`}
             data-active={active === step || undefined}
             data-done={done[step] || undefined}
             onClick={() => setActive(step)}
           >
-            <span className="va-step-index" aria-hidden="true">
+            <span className="va-review-step-index" aria-hidden="true">
               {done[step] ? <Icon name="check" size="sm" /> : index + 1}
             </span>
-            <span className="va-step-copy">
-              <span className="va-step-label">{label[step]}</span>
-              <span className="va-step-note">
+            <span className="va-review-step-copy">
+              <span className="va-review-step-label">{label[step]}</span>
+              <span className="va-review-step-note">
                 {step === 'credit'
                   ? done.credit
                     ? 'Passes this side'
@@ -135,7 +139,7 @@ export function CreditBankingPane({
         role="tabpanel"
         id={`va-p6-panel-${active}`}
         aria-labelledby={`va-p6-tab-${active}`}
-        className="va-step-panel"
+        className="va-review-step-panel"
       >
         {active === 'credit' ? (
           <CreditReviewStep

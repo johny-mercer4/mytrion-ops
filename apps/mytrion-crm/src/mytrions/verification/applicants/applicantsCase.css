@@ -268,22 +268,49 @@
 [data-mytrion='verification'] .va-spine-track {
   position: relative;
 }
-/* The progress line sits behind the dots, at their vertical centre (32px dot → 15px). */
-[data-mytrion='verification'] .va-spine-line {
+/*
+ * THE CONNECTOR IS PER SEGMENT, DRAWN BETWEEN THE DOTS IT JOINS.
+ *
+ * It used to be one absolutely-positioned bar from 5% to 95% behind the whole row, with a fill sized
+ * by percentage. Two things were wrong with that even before anything covered it: it began and ended
+ * INSIDE the first and last dots rather than at their centres, so the ends floated; and a single
+ * percentage fill cannot say which particular link is complete — it can only say how far along the
+ * row the last pass happened to fall, which is the same number for a skipped phase and a passed one.
+ *
+ * Each step now draws the link to its LEFT as a `::before` spanning exactly the gap between its dot
+ * and the previous one, and colours it from the phase behind it. So a run of passes reads as one
+ * continuous green line, a skipped phase reads as a dashed link rather than a hole, and nothing can
+ * paint over it because it is part of the step rather than a layer underneath.
+ */
+[data-mytrion='verification'] .va-spine-line,
+[data-mytrion='verification'] .va-spine-fill {
+  display: none;
+}
+[data-mytrion='verification'] .va-steps > li {
+  position: relative;
+}
+[data-mytrion='verification'] .va-steps > li + li::before {
+  content: '';
   position: absolute;
-  left: 5%;
-  right: 5%;
+  /* Half the 32px dot, so the link starts and stops on the two centres it joins. */
   top: 15px;
+  right: calc(50% + 16px + var(--space-1));
+  left: calc(-50% + 16px);
   height: 2px;
   border-radius: var(--va-r-pill);
   background: var(--field);
-  overflow: hidden;
+  transition: background var(--dur-base) var(--hz-ease);
 }
-[data-mytrion='verification'] .va-spine-fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--va-r-pill);
-  background: var(--ramp);
+/* Complete when the phase BEHIND the link has passed — the link belongs to the pair, not the step. */
+[data-mytrion='verification'] .va-steps > li[data-linked='passed'] + li::before {
+  background: var(--success);
+}
+/* A phase that does not apply is not a gap in the flow, so its link stays drawn — just quieter, and
+   dashed, which is the same language the skipped dot already uses. */
+[data-mytrion='verification'] .va-steps > li[data-linked='skipped'] + li::before {
+  background: none;
+  border-top: 2px dashed var(--border-strong);
+  height: 0;
 }
 /* Flex rather than a 10-track grid: the same equal split here, and under the density line the
    steps take a fixed basis and scroll instead of crushing ten labels — one primitive, both jobs. */
@@ -1010,7 +1037,21 @@
   }
   [data-mytrion='verification'] .va-spine-track {
     overflow-x: auto;
+    /* Stops a swipe past the last phase from back-navigating out of the app. */
     overscroll-behavior-x: contain;
+    /*
+     * A SCROLLER HAS TO LOOK LIKE ONE. Ten phases do not fit below the density line, so this strip
+     * scrolls — and with scrollbars hidden there was nothing to say so: the row simply appeared to
+     * end mid-phase. The mask fades both edges, which is the one affordance that reads as "there is
+     * more this way" without adding a control. Cheap, and no extra composited layer.
+     */
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--space-4),
+      #000 calc(100% - var(--space-4)),
+      transparent 100%
+    );
   }
   /* 9ch is the narrowest a step can be and still read as a label rather than an ellipsis. */
   [data-mytrion='verification'] .va-steps > li {
@@ -1175,7 +1216,15 @@
   flex-direction: column;
   gap: 2px;
 }
+/* Inline-flex with a gap because this label routinely CARRIES A BADGE — "…not recorded" + Unanswered,
+   "…file exists" + Clear, "Check B" + a suggestion. As a plain span the badge butted straight against
+   the last word with no space at all, on every pane that uses the pattern. Wraps, so a long label
+   plus a badge drops the badge to the next line rather than squeezing the text. */
 [data-mytrion='verification'] .va-id-check-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
@@ -1263,16 +1312,23 @@
 }
 /* ── Phase 6 review steps ─────────────────────────────────────────────────── */
 /*
+ * NAMESPACED `.va-review-step*`, NOT `.va-step*`, and that is not a style preference. The ten-phase
+ * SPINE above already owns `.va-steps` / `.va-step` / `.va-step-label`. This block first shipped
+ * reusing those names, and since it sits later in the file with identical specificity it won: every
+ * phase on the spine gained a 1px border, an opaque `--surface` background and a 16rem flex basis,
+ * which is what buried the progress line behind ten opaque cards and inflated the phase labels two
+ * type steps. A component that borrows another's class names is a regression waiting for the next edit.
+ *
  * A real two-step sequence, replacing the `.va-cb-cols` two-column layout. The order Phase 5 decides
  * is the order of these steps; putting both reviews on screen at once made that decision decorative,
  * and squeezed each `.va-id-check` into the collapse fixed above.
  */
-[data-mytrion='verification'] .va-steps {
+[data-mytrion='verification'] .va-review-steps {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-[data-mytrion='verification'] .va-step {
+[data-mytrion='verification'] .va-review-step {
   flex: 1 1 16rem;
   min-width: 0;
   display: flex;
@@ -1290,15 +1346,15 @@
     border-color 0.2s cubic-bezier(0.2, 0, 0, 1),
     background 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
-[data-mytrion='verification'] .va-step:hover {
+[data-mytrion='verification'] .va-review-step:hover {
   border-color: var(--border);
   background: var(--surface-alt);
 }
-[data-mytrion='verification'] .va-step[data-active] {
+[data-mytrion='verification'] .va-review-step[data-active] {
   border-color: var(--accent);
   background: var(--surface-raised);
 }
-[data-mytrion='verification'] .va-step-index {
+[data-mytrion='verification'] .va-review-step-index {
   flex: none;
   display: grid;
   place-items: center;
@@ -1310,31 +1366,31 @@
   font-size: var(--text-xs);
   font-weight: var(--fw-bold);
 }
-[data-mytrion='verification'] .va-step[data-active] .va-step-index {
+[data-mytrion='verification'] .va-review-step[data-active] .va-review-step-index {
   background: var(--intent-info-bg);
   color: var(--text-primary);
 }
 /* Done carries a glyph as well as a colour — the tick is rendered in the markup for that reason. */
-[data-mytrion='verification'] .va-step[data-done] .va-step-index {
+[data-mytrion='verification'] .va-review-step[data-done] .va-review-step-index {
   background: var(--intent-success-bg);
   color: var(--success);
 }
-[data-mytrion='verification'] .va-step-copy {
+[data-mytrion='verification'] .va-review-step-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
-[data-mytrion='verification'] .va-step-label {
+[data-mytrion='verification'] .va-review-step-label {
   font-size: var(--text-sm);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
 }
-[data-mytrion='verification'] .va-step-note {
+[data-mytrion='verification'] .va-review-step-note {
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
-[data-mytrion='verification'] .va-step-panel {
+[data-mytrion='verification'] .va-review-step-panel {
   padding-top: var(--space-2);
 }
 

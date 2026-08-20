@@ -46,7 +46,11 @@ export interface HardStopVerdict {
   /** True when neither hard stop fired — the case may continue to Phase 8/9 on standard terms. */
   passed: boolean;
   /** Which stops fired, in SOP order. */
-  triggered: Array<{ code: 'negative_cash_flow' | 'no_credit_bureau_record'; label: string; detail: string }>;
+  triggered: Array<{
+    code: 'negative_cash_flow' | 'cash_flow_unrecorded' | 'no_credit_bureau_record';
+    label: string;
+    detail: string;
+  }>;
   /** What Phase 7 should record. Never `decline` — a hard stop is a terms change, not a rejection. */
   outcome: Extract<VerificationPhaseOutcome, 'pass' | 'deposit_prepaid'>;
 }
@@ -56,14 +60,25 @@ export function evaluateHardStops(inputs: HardStopInputs): HardStopVerdict {
 
   // Strictly greater than zero. Exactly $0 is not a positive net cash flow and does not support an
   // unsecured line — the SOP asks "> $0", not ">= $0".
-  if (inputs.avgWeeklyNetCashFlow === null || !(inputs.avgWeeklyNetCashFlow > 0)) {
+  if (inputs.avgWeeklyNetCashFlow === null) {
+    /*
+     * NOT RECORDED IS NOT NEGATIVE, and it used to be reported as such: one branch pushed the label
+     * "Negative average weekly net cash flow" whether the figure was below zero or simply absent, so
+     * a case where nobody had filled the banking review yet read as a finding about the applicant's
+     * cash flow. Its own code, so the pane can send the reviewer back to Phase 6 instead of offering
+     * them a deposit for a number nobody has looked at.
+     */
+    triggered.push({
+      code: 'cash_flow_unrecorded',
+      label: 'Average weekly net cash flow not recorded',
+      detail:
+        'Phase 6 has no recurring weekly income and expenses for this case, so the cash-flow hard stop cannot be evaluated. It is unanswered, not failed.',
+    });
+  } else if (!(inputs.avgWeeklyNetCashFlow > 0)) {
     triggered.push({
       code: 'negative_cash_flow',
       label: 'Negative average weekly net cash flow',
-      detail:
-        inputs.avgWeeklyNetCashFlow === null
-          ? 'Average weekly net cash flow has not been recorded in the banking review.'
-          : `Average weekly net cash flow is ${inputs.avgWeeklyNetCashFlow.toFixed(2)}, which is not above $0.`,
+      detail: `Average weekly net cash flow is ${inputs.avgWeeklyNetCashFlow.toFixed(2)}, which is not above $0.`,
     });
   }
 

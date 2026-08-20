@@ -15,11 +15,13 @@ import {
   type VerificationDeskDetail,
   type VerificationRailPhase,
 } from '@/api/verificationFlow';
-import { HardStopsPane } from '../flow/PhasePanes';
+
 import { DecisionPane, RiskPane } from '../flow/ReviewPanes';
 import { IntakePane } from './CaseIntakePane';
 import { IdentityPane } from './CaseIdentityPane';
 import { runAuthorityLookup } from '@/api/verificationDeskWrites';
+import { HardStopsPane } from './CaseHardStopsPane';
+import type { HardStopAck } from './caseHardStops';
 import { ScreeningPane } from './CaseScreeningPane';
 import { AuthorityPane } from './CaseAuthorityPane';
 import { CreditBankingPane } from './CaseCreditBankingPane';
@@ -39,6 +41,9 @@ export function PhaseBody({
   pending,
   canAct,
   canScreen,
+  hardStopAck,
+  onHardStopAck,
+  onGoToPhase,
   wexCardCutoff,
   onRun,
   identityMarks,
@@ -57,6 +62,11 @@ export function PhaseBody({
   canAct: boolean;
   /** Screening runs on a LOCKED case; only a decided one is out of reach. See CaseScreeningPane. */
   canScreen: boolean;
+  /** Phase 7's own record. The stops are derived; the reviewer's read of them was captured nowhere. */
+  hardStopAck: HardStopAck | null;
+  onHardStopAck: (next: HardStopAck) => void;
+  /** Phase 7 sends the reviewer back to Phase 6 when the figure it needs was never recorded. */
+  onGoToPhase: (code: string) => void;
   wexCardCutoff: number | null;
   onRun: (scope: CaseActionKey, fn: () => Promise<VerificationDeskDetail>) => Promise<void>;
   identityMarks: Record<string, IdentityMark>;
@@ -162,7 +172,15 @@ export function PhaseBody({
       );
     }
     case 'p7_hard_stops':
-      return <HardStopsPane detail={detail} />;
+      return (
+        <HardStopsPane
+          detail={detail}
+          ack={hardStopAck}
+          onAck={onHardStopAck}
+          canAct={canAct}
+          onGoToPhase={onGoToPhase}
+        />
+      );
     case 'p9_risk_capacity':
       return (
         <RiskPane

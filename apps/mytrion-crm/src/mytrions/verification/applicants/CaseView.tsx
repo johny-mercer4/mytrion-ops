@@ -70,6 +70,7 @@ import {
   missingBankingDocs,
   type CreditBankingMarks,
 } from './caseCreditBanking';
+import { hardStopsCanPass, type HardStopAck } from './caseHardStops';
 import { CaseDecideBar } from './CaseDecideBar';
 import { CaseReopenButton } from './CaseReopen';
 import { deskReviewOrder } from './caseRouting';
@@ -157,6 +158,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   const [screeningMarks, setScreeningMarks] = useState<ScreeningMarks>(EMPTY_SCREENING_MARKS);
   const [authorityMarks, setAuthorityMarks] = useState<AuthorityMarks>(EMPTY_AUTHORITY_MARKS);
   const [creditBankingMarks, setCreditBankingMarks] = useState<CreditBankingMarks>(EMPTY_CREDIT_BANKING);
+  /** Phase 7's record. The two stops are derived; the reviewer's read of them had nowhere to go. */
+  const [hardStopAck, setHardStopAck] = useState<HardStopAck | null>(null);
 
   // Same cache key the queue warms, so the NSF threshold is already in hand on arrival.
   const loadPolicy = useCallback(() => getPolicy(), []);
@@ -194,6 +197,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     setScreeningMarks(EMPTY_SCREENING_MARKS);
     setAuthorityMarks(EMPTY_AUTHORITY_MARKS);
     setCreditBankingMarks(EMPTY_CREDIT_BANKING);
+    setHardStopAck(null);
   }, [caseId]);
 
   const refetchLive = useCallback(() => {
@@ -335,6 +339,14 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   const screeningReady = !screeningPhase || screeningCanPass(screeningMarks);
   const authorityReady = !authorityPhase || authorityCanPass(authorityMarks);
   const creditBankingReady = !creditBankingPhase || creditBankingCanPass(creditBankingMarks);
+  /**
+   * PHASE 7 HAD NO GATE AT ALL. `passReady` did not mention it, so "Pass phase" was enabled on a case
+   * with a negative average weekly net cash flow — the single thing this phase exists to prevent. It
+   * now needs a recorded outcome, and `Continue` only counts when neither stop fired.
+   */
+  const hardStopsPhase = active.code === 'p7_hard_stops';
+  const hardStopsReady =
+    !hardStopsPhase || hardStopsCanPass(hardStopAck, detail.hardStops.passed);
   const pendingDocs = identityPhase
     ? missingIdentityDocs(identityChecks, identityMarks)
     : authorityPhase
@@ -360,7 +372,11 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                   ? 'Confirm the order. Passing stores it for Credit & banking.'
                   : creditBankingPhase
                     ? 'Strong or Acceptable credit plus complete banking passes. Borderline goes to the manager. Unacceptable is deposit / prepaid.'
-                    : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
+                    : hardStopsPhase
+                      ? detail.hardStops.passed
+                        ? 'Neither stop fired — record Continue to pass. A hard stop is never a decline.'
+                        : 'A stop fired, so a standard unsecured line is off the table. Deposit 1:1, prepaid or manager review.'
+                      : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
 
   return (
     <div className="va-case">
@@ -562,6 +578,11 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 onAuthorityMarks={setAuthorityMarks}
                 creditBankingMarks={creditBankingMarks}
                 onCreditBankingMarks={setCreditBankingMarks}
+                hardStopAck={hardStopAck}
+                onHardStopAck={setHardStopAck}
+                /* Phase 7's recovery for an unrecorded figure is Phase 6, so it needs the same
+                   navigation the spine has. */
+                onGoToPhase={setActiveCode}
               />
             )}
           </div>
@@ -601,10 +622,18 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           showDecide={showDecide}
           canAct={canAct}
           idle={idle}
-          passReady={identityReady && screeningReady && authorityReady && creditBankingReady}
+          passReady={
+            identityReady && screeningReady && authorityReady && creditBankingReady && hardStopsReady
+          }
           pending={pending}
           pendingDocs={pendingDocs.length > 0}
-          showDeposit={creditBankingPhase && creditBankingMarks.credit === 'unacceptable'}
+          /* Phase 7's prescribed door, which the bar did not offer AT ALL — `showDeposit` was true
+             only on Phase 6 with unacceptable credit, so on the phase whose outcome IS deposit /
+             prepaid the reviewer could not record it. */
+          showDeposit={
+            (creditBankingPhase && creditBankingMarks.credit === 'unacceptable') ||
+            (hardStopsPhase && hardStopAck === 'restricted')
+          }
           onDecide={onDecide}
           onRequestDocs={() =>
             void run('request', () =>
