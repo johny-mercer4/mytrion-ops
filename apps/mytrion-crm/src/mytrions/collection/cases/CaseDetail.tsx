@@ -27,6 +27,7 @@ import {
 } from '../CollectionSkeletons';
 import { fmtDate, moneyExact } from '../collectionFormat';
 import { CaseFields } from './detail/CaseFields';
+import { CaseFiles } from './detail/CaseFiles';
 import { CaseHeader } from './detail/CaseHeader';
 import { CaseTasks } from './detail/CaseTasks';
 import { CaseRail } from './detail/CaseRail';
@@ -283,6 +284,8 @@ export function CaseDetail({
           </section>
 
           <CaseFields row={row} dossier={bundle?.dossier ?? null} onSaved={refresh} />
+
+          <CaseFiles caseId={caseId} readOnly={row.status === 'closed'} />
         </div>
 
         <CaseRail

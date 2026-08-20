@@ -9,7 +9,7 @@
  * Money stays a STRING end to end. Numerics leave Postgres as strings and are formatted at the
  * edge; a float in the middle is how a cent goes missing.
  */
-import { request } from './transport';
+import { request, requestMultipart } from './transport';
 import type { CollectionCaseRow, CollectionStage } from './collection';
 
 const COLLECTION_HEADERS = { 'x-department-access': 'collection' } as const;
@@ -513,4 +513,71 @@ export async function updateCaseTask(
     body: patch,
     headers: COLLECTION_HEADERS,
   })) as { task: CollectionTask };
+}
+
+export const COLLECTION_ATTACHMENT_KINDS = [
+  'agency_letter',
+  'court_filing',
+  'usps_proof',
+  'payment_proof',
+  'correspondence',
+  'other',
+] as const;
+export type CollectionAttachmentKind = (typeof COLLECTION_ATTACHMENT_KINDS)[number];
+
+export interface CollectionAttachment {
+  id: string;
+  caseId: string;
+  fileName: string;
+  mime: string;
+  sizeBytes: number;
+  kind: CollectionAttachmentKind | null;
+  uploadedByName: string | null;
+  createdAt: string;
+}
+
+export async function listCaseAttachments(
+  caseId: string,
+): Promise<{ items: CollectionAttachment[] }> {
+  return (await request('GET', `/collection/cases/${encodeURIComponent(caseId)}/attachments`, {
+    headers: COLLECTION_HEADERS,
+  })) as { items: CollectionAttachment[] };
+}
+
+export async function uploadCaseAttachment(
+  caseId: string,
+  file: File,
+  kind?: CollectionAttachmentKind,
+): Promise<{ attachment: CollectionAttachment }> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+  return (await requestMultipart(
+    `/collection/cases/${encodeURIComponent(caseId)}/attachments${query}`,
+    form,
+    { headers: COLLECTION_HEADERS },
+  )) as { attachment: CollectionAttachment };
+}
+
+/** A short-lived signed URL. The bytes never come back through the API. */
+export async function getCaseAttachmentUrl(
+  caseId: string,
+  attachmentId: string,
+): Promise<{ id: string; name: string; url: string; expiresAt: string }> {
+  return (await request(
+    'GET',
+    `/collection/cases/${encodeURIComponent(caseId)}/attachments/${encodeURIComponent(attachmentId)}/download`,
+    { headers: COLLECTION_HEADERS },
+  )) as { id: string; name: string; url: string; expiresAt: string };
+}
+
+export async function deleteCaseAttachment(
+  caseId: string,
+  attachmentId: string,
+): Promise<{ id: string; deleted: boolean }> {
+  return (await request(
+    'DELETE',
+    `/collection/cases/${encodeURIComponent(caseId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    { headers: COLLECTION_HEADERS },
+  )) as { id: string; deleted: boolean };
 }
