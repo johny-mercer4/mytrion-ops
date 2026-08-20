@@ -676,3 +676,14 @@
   min-width: 0;
   flex: 1;
 }
+
+/* A tel: link where the softphone cannot dial — on a phone this is the better affordance. */
+[data-mytrion="collection"] .co-tel {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+[data-mytrion="collection"] .co-tel:hover {
+  text-decoration: underline;
+}

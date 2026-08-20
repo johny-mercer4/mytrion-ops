@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Badge, Button, Icon, useToast } from '@/ds';
 import type { CollectionCaseRow } from '@/api/collection';
 import { assignCase, unassignCase, type CaseDeskBundle, type PaymentPlan } from '@/api/collectionDesk';
+import { CallButton, callPhone } from '../../CollectionCall';
 import { PlanPips } from '../../CollectionBits';
 import { fmtDate, money, moneyExact } from '../../collectionFormat';
 
@@ -154,11 +155,16 @@ export function CaseRail({
         </header>
         <dl className="cc-dl cc-dl-1">
           <Row k="Contact">{row.debtorFullName ?? '—'}</Row>
-          <Row k="Email">{row.debtorEmail ?? '—'}</Row>
-          <Row k="Phone">{row.debtorPhone ?? row.debtorCellPhone ?? '—'}</Row>
+          <Row k="Email">{row.verifiedEmail ?? row.debtorEmail ?? '—'}</Row>
+          <Row k="Phone">{callPhone(row) ?? '—'}</Row>
           <Row k="Address">{addressOf(row)}</Row>
           <Row k="Date of birth">{fmtDate(row.debtorDateOfBirth)}</Row>
         </dl>
+        {callPhone(row) ? (
+          <div className="cc-rail-actions">
+            <CallButton caseId={row.id} phone={callPhone(row)} label="Call the debtor" size="md" />
+          </div>
+        ) : null}
       </section>
 
       <section className="cc-pane">
@@ -267,3 +273,4 @@ function CaseOwner({ row, onChanged }: { row: CollectionCaseRow; onChanged: () =
     </section>
   );
 }
+
