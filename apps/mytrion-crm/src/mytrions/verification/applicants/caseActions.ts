@@ -12,6 +12,8 @@ export type CaseActionKey =
   | 'screening'
   /** Phase 4's register lookup — its own key so only the Authority pane's control reports. */
   | 'authority'
+  /** Phase 8's Highway review — its own key, so a failed save reports beside that pane. */
+  | 'highway'
   | 'credit'
   | 'banking'
   | 'risk'

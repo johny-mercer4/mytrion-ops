@@ -71,6 +71,7 @@ import {
   type CreditBankingMarks,
 } from './caseCreditBanking';
 import { hardStopsCanPass, type HardStopAck } from './caseHardStops';
+import { EMPTY_HIGHWAY_MARKS, highwayCanPass, type HighwayMarks } from './caseHighway';
 import { CaseDecideBar } from './CaseDecideBar';
 import { CaseReopenButton } from './CaseReopen';
 import { deskReviewOrder } from './caseRouting';
@@ -160,6 +161,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
   const [creditBankingMarks, setCreditBankingMarks] = useState<CreditBankingMarks>(EMPTY_CREDIT_BANKING);
   /** Phase 7's record. The two stops are derived; the reviewer's read of them had nowhere to go. */
   const [hardStopAck, setHardStopAck] = useState<HardStopAck | null>(null);
+  /** Phase 8's review. Seeded empty and re-seeded per case, like every other phase's marks. */
+  const [highwayMarks, setHighwayMarks] = useState<HighwayMarks>(EMPTY_HIGHWAY_MARKS);
 
   // Same cache key the queue warms, so the NSF threshold is already in hand on arrival.
   const loadPolicy = useCallback(() => getPolicy(), []);
@@ -198,6 +201,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     setAuthorityMarks(EMPTY_AUTHORITY_MARKS);
     setCreditBankingMarks(EMPTY_CREDIT_BANKING);
     setHardStopAck(null);
+    setHighwayMarks(EMPTY_HIGHWAY_MARKS);
   }, [caseId]);
 
   const refetchLive = useCallback(() => {
@@ -344,6 +348,14 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
    * with a negative average weekly net cash flow — the single thing this phase exists to prevent. It
    * now needs a recorded outcome, and `Continue` only counts when neither stop fired.
    */
+  /**
+   * PHASE 8 HAD NO GATE EITHER, because it had no pane: it fell through to the generic recorded
+   * summary, so "Pass phase" was enabled on a carrier nobody had reviewed in Highway at all. Passing
+   * now needs every SOP item ruled on and the consistency verdict `consistent`; a suspicious
+   * discrepancy takes the manager door instead, exactly as the SOP asks.
+   */
+  const highwayPhase = active.code === 'p8_highway';
+  const highwayReady = !highwayPhase || highwayCanPass(highwayMarks);
   const hardStopsPhase = active.code === 'p7_hard_stops';
   const hardStopsReady =
     !hardStopsPhase || hardStopsCanPass(hardStopAck, detail.hardStops.passed);
@@ -376,7 +388,9 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                       ? detail.hardStops.passed
                         ? 'Neither stop fired — record Continue to pass. A hard stop is never a decline.'
                         : 'A stop fired, so a standard unsecured line is off the table. Deposit 1:1, prepaid or manager review.'
-                      : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
+                      : highwayPhase
+                        ? 'Every item ruled on and consistent passes. A suspicious discrepancy goes to the manager.'
+                        : `Passing advances to phase ${Math.min(10, active.order + 1)}.`;
 
   return (
     <div className="va-case">
@@ -580,6 +594,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 onCreditBankingMarks={setCreditBankingMarks}
                 hardStopAck={hardStopAck}
                 onHardStopAck={setHardStopAck}
+                highwayMarks={highwayMarks}
+                onHighwayMarks={setHighwayMarks}
                 /* Phase 7's recovery for an unrecorded figure is Phase 6, so it needs the same
                    navigation the spine has. */
                 onGoToPhase={setActiveCode}
@@ -623,7 +639,12 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           canAct={canAct}
           idle={idle}
           passReady={
-            identityReady && screeningReady && authorityReady && creditBankingReady && hardStopsReady
+            identityReady &&
+            screeningReady &&
+            authorityReady &&
+            creditBankingReady &&
+            hardStopsReady &&
+            highwayReady
           }
           pending={pending}
           pendingDocs={pendingDocs.length > 0}

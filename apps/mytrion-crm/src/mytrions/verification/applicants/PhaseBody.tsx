@@ -21,6 +21,8 @@ import { IntakePane } from './CaseIntakePane';
 import { IdentityPane } from './CaseIdentityPane';
 import { runAuthorityLookup } from '@/api/verificationDeskWrites';
 import { HardStopsPane } from './CaseHardStopsPane';
+import { HighwayPane } from './CaseHighwayPane';
+import type { HighwayMarks } from './caseHighway';
 import type { HardStopAck } from './caseHardStops';
 import { ScreeningPane } from './CaseScreeningPane';
 import { AuthorityPane } from './CaseAuthorityPane';
@@ -43,6 +45,8 @@ export function PhaseBody({
   canScreen,
   hardStopAck,
   onHardStopAck,
+  highwayMarks,
+  onHighwayMarks,
   onGoToPhase,
   wexCardCutoff,
   onRun,
@@ -65,6 +69,9 @@ export function PhaseBody({
   /** Phase 7's own record. The stops are derived; the reviewer's read of them was captured nowhere. */
   hardStopAck: HardStopAck | null;
   onHardStopAck: (next: HardStopAck) => void;
+  /** Phase 8's review. Persisted to the phase findings on save; marks drive the pass gate. */
+  highwayMarks: HighwayMarks;
+  onHighwayMarks: (next: HighwayMarks) => void;
   /** Phase 7 sends the reviewer back to Phase 6 when the figure it needs was never recorded. */
   onGoToPhase: (code: string) => void;
   wexCardCutoff: number | null;
@@ -179,6 +186,18 @@ export function PhaseBody({
           onAck={onHardStopAck}
           canAct={canAct}
           onGoToPhase={onGoToPhase}
+        />
+      );
+    case 'p8_highway':
+      return (
+        <HighwayPane
+          detail={detail}
+          caseId={caseId}
+          marks={highwayMarks}
+          onMarks={onHighwayMarks}
+          canAct={canAct}
+          busy={pending === 'highway'}
+          onSaved={(run) => void onRun('highway', run)}
         />
       );
     case 'p9_risk_capacity':

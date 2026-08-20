@@ -19,7 +19,6 @@ import {
   VERIFICATION_PHASE,
   VERIFICATION_STATUS,
   type VerificationCase,
-  type VerificationDocType,
   type VerificationPhaseOutcome,
   type VerificationRiskTier,
   type VerificationScreeningVerdict,
@@ -38,7 +37,6 @@ import {
   saveRiskAssessment,
 } from './deskReviews.js';
 import { saveIntakeCorrection } from './deskIntake.js';
-import { documentService } from './documentService.js';
 import {
   deriveRiskSignals,
   VERIFICATION_POLICY_DEFAULTS,
@@ -54,11 +52,12 @@ import {
   type StoredPhase,
 } from './phases.js';
 import { runAuthorityLookup } from './deskAuthority.js';
+import { saveHighwayReview, type HighwayReviewInput } from './deskHighway.js';
+import { requestDocuments, resumeAfterDocuments } from './deskDocuments.js';
 import { blacklistCaseIdentifiers, runCaseScreening } from './deskScreening.js';
 import { screeningVerdictSummary } from './screening.js';
 import {
   FINAL_DECISIONS,
-  resolveDocumentReturnPhase,
   resolvePhaseDecision,
   resolveReviewOrder,
   resolveUnderwritingRoute,
@@ -66,7 +65,7 @@ import {
 } from './stateMachine.js';
 
 /** Red cases are visible to the desk but not workable — Sales still owes intake. */
-async function loadWorkable(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+export async function loadWorkable(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
   const row = await verificationFlowRepo.findById(ctx, caseId);
   if (!row) throw new NotFoundError('Verification case not found');
   if (!row.verificationProcess) {
@@ -108,6 +107,27 @@ async function loadScreenable(ctx: TenantContext, caseId: string): Promise<Verif
     });
   }
   return row;
+}
+
+/**
+ * The shape every "record what the reviewer worked out" call shares: the workable gate, the schema
+ * guard, the delegate, and a fresh detail on the way out.
+ *
+ * Four of these had the same five lines written out four times, and the fifth (Phase 8) would have
+ * made five. Folding them means the gate for a reviewer's own recording is decided in ONE place — and
+ * that mattered the moment Phase 8 had to answer the same question, because getting it wrong there
+ * would have let a red case be underwritten.
+ */
+async function gatedWrite<T>(
+  ctx: TenantContext,
+  caseId: string,
+  write: (row: VerificationCase) => Promise<T>,
+) {
+  return withFlowSchemaGuard(async () => {
+    const row = await loadWorkable(ctx, caseId);
+    await write(row);
+    return deskService.detail(ctx, caseId);
+  });
 }
 
 export const deskService = {
@@ -416,6 +436,17 @@ export const deskService = {
     });
   },
 
+  /**
+   * Phase 8. Stores the Highway operational review the agent read by hand (deskHighway.ts).
+   *
+   * `loadWorkable`, NOT `loadScreenable`: unlike screening and the register lookup this is not an
+   * observation of an external source we can make at any time — it is the reviewer's own reading, so
+   * it belongs with the decisions and needs a complete case. Non-carriers are refused inside.
+   */
+  async saveHighwayReview(ctx: TenantContext, caseId: string, input: HighwayReviewInput) {
+    return gatedWrite(ctx, caseId, (row) => saveHighwayReview(ctx, row, input));
+  },
+
   /** A verdict is a decision, so it needs a complete case — `loadWorkable`, not `loadScreenable`. */
   async setScreeningVerdict(
     ctx: TenantContext,
@@ -438,19 +469,11 @@ export const deskService = {
   // ---- Phase 6 / 9 reviews (see deskReviews.ts) ----
 
   async saveCreditReview(ctx: TenantContext, caseId: string, input: Record<string, unknown>) {
-    return withFlowSchemaGuard(async () => {
-      await loadWorkable(ctx, caseId);
-      await saveCreditReview(ctx, caseId, input);
-      return this.detail(ctx, caseId);
-    });
+    return gatedWrite(ctx, caseId, () => saveCreditReview(ctx, caseId, input));
   },
 
   async saveBankingReview(ctx: TenantContext, caseId: string, input: Record<string, unknown>) {
-    return withFlowSchemaGuard(async () => {
-      await loadWorkable(ctx, caseId);
-      await saveBankingReview(ctx, caseId, input);
-      return this.detail(ctx, caseId);
-    });
+    return gatedWrite(ctx, caseId, () => saveBankingReview(ctx, caseId, input));
   },
 
   async saveRiskAssessment(
@@ -464,83 +487,14 @@ export const deskService = {
       keyRisks?: string[] | undefined;
     },
   ) {
-    return withFlowSchemaGuard(async () => {
-      await loadWorkable(ctx, caseId);
-      await saveRiskAssessment(ctx, caseId, input);
-      return this.detail(ctx, caseId);
-    });
+    return gatedWrite(ctx, caseId, () => saveRiskAssessment(ctx, caseId, input));
   },
 
-  // ---- documents ----
 
-  async requestDocuments(
-    ctx: TenantContext,
-    caseId: string,
-    input: { phaseCode: string; items: Array<{ docType: VerificationDocType; label?: string | undefined }>; note?: string | undefined },
-  ) {
-    return withFlowSchemaGuard(async () => {
-      const row = await loadWorkable(ctx, caseId);
-      for (const item of input.items) {
-        await documentService.request(ctx, caseId, {
-          docType: item.docType,
-          label: item.label,
-          phaseCode: input.phaseCode,
-        });
-      }
-      // Recording the ask as a phase decision is what parks the case on `pending_docs` and stamps
-      // `requested_in_phase` — the two halves of the return-to-the-phase-that-asked rule.
-      const patch = resolvePhaseDecision({
-        phase: isPhaseCode(input.phaseCode) ? input.phaseCode : VERIFICATION_PHASE.intake,
-        outcome: 'pending_docs',
-        applicantType: row.applicantType,
-        note: input.note ?? `Requested ${input.items.length} document(s) from Sales.`,
-      });
-      await verificationFlowRepo.applyTransition(ctx, caseId, {
-        ...patch,
-        decidedPhase: input.phaseCode,
-        outcome: 'pending_docs',
-        eventType: 'docs_requested',
-        actorZohoUserId: zohoFromCtx(ctx),
-        actorName: ctx.userName || ctx.userId,
-        ...(patch.eventNotes === undefined ? {} : { eventNotes: patch.eventNotes }),
-      });
-      return this.detail(ctx, caseId);
-    });
-  },
+  // ---- documents (see deskDocuments.ts) ----
 
-  /**
-   * Resume once the outstanding asks are fulfilled. Returns the case to the phase that RAISED the
-   * request, per the SOP, rather than to the start of the flow.
-   */
-  async resumeAfterDocuments(ctx: TenantContext, caseId: string) {
-    return withFlowSchemaGuard(async () => {
-      const row = await loadWorkable(ctx, caseId);
-      const outstanding = await verificationCaseAssetRepo.listOutstandingRequests(ctx, caseId);
-      if (outstanding.length > 0) {
-        throw new AppError(
-          `${outstanding.length} requested document(s) are still outstanding.`,
-          { statusCode: 409, code: 'VERIFICATION_DOCS_OUTSTANDING', expose: true },
-        );
-      }
-      const documents = await verificationCaseAssetRepo.listDocuments(ctx, caseId);
-      const lastRequestPhase =
-        documents.find((d) => d.requestedInPhase)?.requestedInPhase ?? row.phaseCode;
-      const target = resolveDocumentReturnPhase(lastRequestPhase, row.applicantType);
-
-      await verificationFlowRepo.applyTransition(ctx, caseId, {
-        phaseCode: target,
-        statusCode: VERIFICATION_STATUS.inReview,
-        phaseStatus: 'in_progress',
-        decidedPhase: target,
-        closed: false,
-        eventType: 'docs_received',
-        eventNotes: `Documents received — resumed at ${phaseByCode(target)?.label ?? target}.`,
-        actorZohoUserId: zohoFromCtx(ctx),
-        actorName: ctx.userName || ctx.userId,
-      });
-      return this.detail(ctx, caseId);
-    });
-  },
+  requestDocuments,
+  resumeAfterDocuments,
 
   // ---- Phase 10 ----
 

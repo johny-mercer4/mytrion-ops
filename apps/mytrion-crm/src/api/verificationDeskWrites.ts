@@ -38,6 +38,21 @@ export async function runAuthorityLookup(id: string): Promise<VerificationDeskDe
   )) as VerificationDeskDetail;
 }
 
+/**
+ * Phase 8 — the Highway operational review, typed by hand.
+ *
+ * Lands on the phase's own `findings`, which is where the underwriting summary already looks for its
+ * "Highway findings" line. No table, because that column is already the summary's source.
+ */
+export async function saveHighwayReview(
+  id: string,
+  body: Record<string, unknown>,
+): Promise<VerificationDeskDetail> {
+  return (await request('POST', `/verification/flow/cases/${id}/highway-review`, {
+    body,
+  })) as VerificationDeskDetail;
+}
+
 export async function addDeskPrincipal(
   id: string,
   body: { fullName: string },

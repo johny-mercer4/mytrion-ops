@@ -1,13 +1,13 @@
 /**
- * Phase 4's authority lookup — its own route plugin, deliberately.
+ * The two CARRIER-ONLY phase surfaces — Phase 4's authority lookup and Phase 8's Highway review.
  *
- * `verificationFlow.routes.ts` is already 631 lines against the house 600-line cap, so it cannot take
- * another endpoint without making a failing CI gate worse. This is one route with one guard and one
- * audit line; a sibling file is the honest place for it, and it keeps the FMCSA/Socrata surface
- * findable rather than buried at line 600 of the desk's route table.
+ * Both belong to the phases that apply to carriers alone, and both were kept out of
+ * `verificationFlow.routes.ts` because that file already sits over the house 600-line cap and cannot
+ * take another endpoint without making a failing gate worse. Grouping them here also keeps the carrier
+ * surface findable rather than buried at line 600 of the desk's route table.
  *
- * WRITE-GATED even though the lookup itself only reads. It spends an outbound call to a federal
- * register and it writes the phase's findings row, so `requireMytrionWrite` is the right door — and
+ * WRITE-GATED, both of them. Phase 4 spends an outbound call to a federal register; Phase 8 writes the
+ * findings the underwriting summary reads. Either way `requireMytrionWrite` is the right door — and
  * `auditFromContext` records it, which `/screening/run` still does not.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -22,6 +22,34 @@ const idParams = z.object({ id: z.string().min(1) });
 function requireVerificationWrite(request: FastifyRequest): TenantContext {
   return requireMytrionWrite(request, 'verification', 'Verification underwriting');
 }
+
+/**
+ * Phase 8's review, typed by hand off Highway. Optional and nullable throughout: it is filled over
+ * more than one sitting, and a figure Highway does not show has to be storable as absent rather than
+ * as zero. `passthrough` is deliberate — the field set mirrors the warehouse Highway snapshot's
+ * columns and will grow when a parser lands, and a strict object would reject the pane the day it does.
+ */
+const highwayBody = z
+  .object({
+    safetyRating: z.string().trim().max(120).nullable().optional(),
+    safetyCsaPercentile: z.coerce.number().min(0).max(100).nullable().optional(),
+    safetyTotalViolations: z.coerce.number().int().min(0).max(100_000).nullable().optional(),
+    safetyTrend: z.enum(['improving', 'stable', 'deteriorating']).nullable().optional(),
+    bluewireScore: z.coerce.number().min(0).max(1000).nullable().optional(),
+    observedPowerUnits: z.coerce.number().int().min(0).max(100_000).nullable().optional(),
+    reportedPowerUnits: z.coerce.number().int().min(0).max(100_000).nullable().optional(),
+    connectedTrucks: z.coerce.number().int().min(0).max(100_000).nullable().optional(),
+    eldStatus: z.enum(['connected', 'not_connected', 'unknown']).nullable().optional(),
+    insuranceLimit: z.coerce.number().min(0).max(1_000_000_000).nullable().optional(),
+    insuranceExpiry: z.string().trim().max(40).nullable().optional(),
+    authorityAgeMonths: z.coerce.number().int().min(0).max(2400).nullable().optional(),
+    operatingStatus: z.string().trim().max(160).nullable().optional(),
+    currentActivity: z.enum(['active', 'limited', 'none']).nullable().optional(),
+    checks: z.record(z.enum(['ok', 'concern', 'missing'])).nullable().optional(),
+    verdict: z.enum(['consistent', 'discrepancy']).nullable().optional(),
+    note: z.string().trim().max(2000).nullable().optional(),
+  })
+  .passthrough();
 
 export async function verificationAuthorityRoutes(app: FastifyInstance): Promise<void> {
   const auth = { onRequest: [app.authenticate] };
@@ -60,6 +88,32 @@ export async function verificationAuthorityRoutes(app: FastifyInstance): Promise
           census: source('census'),
           insurance: source('insurance'),
         },
+      });
+      return detail;
+    },
+  );
+
+  /**
+   * Phase 8 — store the Highway operational review.
+   *
+   * The underwriting summary the SOP enumerates already reads this phase's `findings` for its
+   * "Highway findings" line, and nothing has ever written it. This is the writer.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/verification/flow/cases/:id/highway-review',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id } = idParams.parse(request.params);
+      const body = highwayBody.parse(request.body ?? {});
+      const detail = await deskService.saveHighwayReview(ctx, id, body);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.highway_review_saved',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        // The verdict is the load-bearing part: it decides pass versus manager review.
+        detail: { verdict: body.verdict ?? null, fields: Object.keys(body).length },
       });
       return detail;
     },

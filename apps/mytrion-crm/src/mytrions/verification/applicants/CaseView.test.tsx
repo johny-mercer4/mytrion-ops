@@ -33,9 +33,10 @@ const getDeskBrokerSnapshot = vi.fn();
  * control is live on a locked case now, so an unmocked click would reach the real transport from jsdom.
  */
 const runAuthorityLookup = vi.fn();
+const saveHighwayReview = vi.fn();
 vi.mock('@/api/verificationDeskWrites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationDeskWrites')>();
-  return { ...actual, getDeskBrokerSnapshot, runAuthorityLookup };
+  return { ...actual, getDeskBrokerSnapshot, runAuthorityLookup, saveHighwayReview };
 });
 
 let onInboxEvent: ((event: { tag: string | null; type: string; detail?: string | null }) => void) | undefined;
@@ -135,6 +136,7 @@ beforeEach(() => {
   getDeskBrokerSnapshot.mockReset();
   getDeskBrokerSnapshot.mockResolvedValue({ match: null });
   runAuthorityLookup.mockReset();
+  saveHighwayReview.mockReset();
   getDeskCase.mockResolvedValue(desk());
   getPolicy.mockResolvedValue({
     nsfReviewThreshold: 3,
@@ -680,6 +682,125 @@ function creditDesk(
           ],
   };
 }
+
+/**
+ * PHASE 8, which had no pane at all: it fell through `PhaseBody`'s switch to the generic recorded-so-far
+ * summary, so the phase the SOP gives eleven review items had nothing to review with and "Pass phase"
+ * was enabled on a carrier nobody had opened in Highway.
+ *
+ * It is CARRIER-ONLY, and the one live case in the system is an owner-operator with every carrier case
+ * still behind the Sales gate — so this suite is the only place the pane is exercised. It proves
+ * structure, not geometry; jsdom does no layout.
+ */
+function highwayDesk(over: Partial<VerificationDeskDetail['case']> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: {
+      ...base.case,
+      applicantType: 'carrier',
+      phaseCode: 'p8_highway',
+      fuelCardsRequested: 12,
+      ...over,
+    },
+    rail: [
+      phase({
+        code: 'p8_highway',
+        label: 'Carrier Operational Review (Highway)',
+        order: 8,
+        status: 'in_progress',
+        applies: true,
+      }),
+    ],
+  };
+}
+
+describe('CaseView Phase 8 Highway', () => {
+  it('renders the SOP review items and the consistency verdict', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Highway consistency' });
+    // Nine review rows plus the verdict — "overall consistency" IS the verdict, never a row too.
+    expect(screen.getAllByRole('radiogroup')).toHaveLength(10);
+    expect(screen.getByRole('radiogroup', { name: 'Safety score' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Authority age' })).toBeInTheDocument();
+  });
+
+  it('keeps Pass off until every item is ruled on AND the verdict is consistent', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Highway consistency' });
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    // Verdict alone is not enough — the nine rows are the review.
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Highway consistency' })).getByRole('radio', {
+        name: /Consistent/,
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    for (const group of screen
+      .getAllByRole('radiogroup')
+      .filter((g) => g.getAttribute('aria-label') !== 'Highway consistency')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /^OK/ }));
+    }
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  /** The SOP's failure branch is Manager Review, so a discrepancy must not enable Pass. */
+  it('refuses to pass on a suspicious discrepancy however complete the review', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Highway consistency' });
+    for (const group of screen
+      .getAllByRole('radiogroup')
+      .filter((g) => g.getAttribute('aria-label') !== 'Highway consistency')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /^OK/ }));
+    }
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Highway consistency' })).getByRole('radio', {
+        name: /Suspicious/,
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    expect(screen.getByText(/goes to Manager Review, not to a decline/i)).toBeInTheDocument();
+  });
+
+  /**
+   * THE SOP'S CAVEAT ON SCREEN. Cards against fleet is an indicator and the pane has to say so — it is
+   * the single easiest thing on this phase to read as a cap.
+   */
+  it('reads cards against fleet as an indicator, and says it is not a cap', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    const observed = await screen.findByLabelText(/Power units observed/);
+    fireEvent.change(observed, { target: { value: '4' } });
+    expect(screen.getByText(/more cards than trucks/i)).toBeInTheDocument();
+    expect(screen.getByText(/do not cap the limit/i)).toBeInTheDocument();
+  });
+
+  /** Owner-operators never reach it, and the pane must not appear for them. */
+  it('does not render for a non-carrier', async () => {
+    getDeskCase.mockResolvedValue({
+      ...highwayDesk({ applicantType: 'owner_operator' }),
+      rail: [
+        phase({
+          code: 'p8_highway',
+          label: 'Carrier Operational Review (Highway)',
+          order: 8,
+          status: 'not_started',
+          applies: false,
+        }),
+      ],
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    // Two things say "Not applicable" on this screen — the skipped pane and the decision note — so
+    // the query has to name which, or it throws on the ambiguity rather than failing the assertion.
+    await screen.findByText('Not applicable to this applicant');
+    expect(screen.queryByRole('radiogroup', { name: 'Highway consistency' })).toBeNull();
+  });
+});
 
 describe('CaseView Phase 5 routing', () => {
   it('shows banking-first for a 10+ truck carrier and stores that order on Pass', async () => {
