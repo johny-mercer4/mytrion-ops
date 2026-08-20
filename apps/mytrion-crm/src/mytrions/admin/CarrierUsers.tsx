@@ -37,7 +37,17 @@ const VIEWS = {
 
 /** Bar width per column — uneven, tracking the shape of real rows: a company name, a pill, an id,
  * a @handle, a date, a button. */
-const REG_SKELETON = ['62%', '76px', '54%', '68%', '60%', '58%', '52px'] as const;
+const REG_SKELETON = ['62%', '76px', '54%', '68%', '68%', '60%', '58%', '52px'] as const;
+
+/** Same cell Invitations uses — name is the scan, Zoho id is the tooltip. */
+function AgentCell({ name, zohoUserId }: { name: string | null | undefined; zohoUserId: string | null | undefined }) {
+  const label = name?.trim();
+  return (
+    <span className={s.cellSub} role="cell" title={zohoUserId ?? undefined}>
+      {label || '—'}
+    </span>
+  );
+}
 
 /** A destructive action held until the admin confirms it. */
 interface PendingConfirm {
@@ -398,8 +408,9 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
       g.companyName ?? '',
       g.carrierId ?? '',
       g.owner?.telegramUsername ?? '',
-      ...g.managers.map((m) => m.telegramUsername ?? ''),
-      ...g.drivers.map((d) => d.telegramUsername ?? ''),
+      g.owner?.agentName ?? '',
+      ...g.managers.flatMap((m) => [m.telegramUsername ?? '', m.agentName ?? '']),
+      ...g.drivers.flatMap((d) => [d.telegramUsername ?? '', d.agentName ?? '']),
     ]
       .join(' ')
       .toLowerCase();
@@ -521,7 +532,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           // announced as "12 of 40" — a name that changes on every keystroke.
           aria-label="Filter registered companies"
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter — company, carrier id, telegram username…"
+          placeholder="Filter — company, carrier id, telegram username, sales agent…"
         />
         {/* Counts companies, matching what the table actually lists — the old chip counted raw
             registration rows against a table grouped by company. */}
@@ -556,6 +567,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           <span role="columnheader">Company</span>
           <span role="columnheader">Type</span>
           <span role="columnheader">Carrier</span>
+          <span role="columnheader">Sales agent</span>
           <span role="columnheader">Telegram</span>
           <span role="columnheader">Bot group</span>
           <span role="columnheader">Registered</span>
@@ -594,6 +606,10 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                 <span className={s.mono} role="cell">
                   {g.carrierId ?? '—'}
                 </span>
+                <AgentCell
+                  name={g.ownerVisible ? g.owner?.agentName : null}
+                  zohoUserId={g.ownerVisible ? g.owner?.agentZohoUserId : null}
+                />
                 <span className={s.cellSub} role="cell">
                   {g.ownerVisible && g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}
                 </span>
@@ -637,11 +653,12 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   <span className={s.mono} role="cell">
                     {m.carrierId ?? '—'}
                   </span>
+                  <AgentCell name={m.agentName} zohoUserId={m.agentZohoUserId} />
                   <span className={s.cellSub} role="cell">
                     @{m.telegramUsername ?? m.telegramUserId}
                   </span>
                   {/* Bot group is carrier-level (see the owner row), but the cell still has to exist:
-                      a 6-cell row in a 7-track grid slides the date under "Bot group" and Revoke
+                      a short row in an 8-track grid slides the date under "Bot group" and Revoke
                       under "Registered", and pairs every announced cell with the wrong header. */}
                   <span className={s.cellSub} role="cell">
                     —
@@ -684,6 +701,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   <span className={s.mono} role="cell">
                     {d.carrierId ?? '—'}
                   </span>
+                  <AgentCell name={d.agentName} zohoUserId={d.agentZohoUserId} />
                   <span className={s.cellSub} role="cell">
                     @{d.telegramUsername ?? d.telegramUserId}
                   </span>

@@ -360,8 +360,28 @@
 /* Column ratios belong here, not in a JSX style prop: an inline grid-template-columns outranks every
    media query, so the carrier tables had no way to adapt and simply squashed. */
 .tCarrier {
-  /* +Bot group column (2026-07-23) between Telegram and Registered. */
-  grid-template-columns: 2fr 1.1fr 1fr 1.2fr 1.3fr 1fr 0.9fr;
+  /* +Sales agent between Carrier and Telegram. Actions is minmax so Revoke cannot be crushed
+     off-screen by the extra column (the previous 0.9fr share vanished at typical panel width). */
+  grid-template-columns: 1.8fr 1fr 0.9fr 1.1fr 1.1fr 0.9fr 0.8fr minmax(5.75rem, 0.9fr);
+}
+/* Pin Revoke to the right edge of the scrollport — adding Sales agent pushed Actions out of view
+   and the only way to reach it was an unmarked sideways scroll. */
+.tCarrier > :last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--hz-pane);
+  box-shadow: -10px 0 12px -8px color-mix(in srgb, var(--text) 16%, transparent);
+}
+.tHead.tCarrier > :last-child {
+  background: var(--hz-pane-alt);
+  z-index: calc(var(--z-sticky) + 1);
+}
+.tRow.tCarrier:hover > :last-child {
+  background: var(--hz-glass-hover);
+}
+.tRowRevoked.tCarrier > :last-child {
+  background: color-mix(in srgb, var(--danger) 6%, var(--hz-pane));
 }
 .tInvite {
   /* +Agent column (2026-07-23) between Carrier and Status. */
