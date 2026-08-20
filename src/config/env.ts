@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import { z } from 'zod';
 import { horizonTelegramEnvShape } from './envHorizon.js';
+import { featureFlagEnvShape } from './envFeatureFlags.js';
+import { inboundSecretsEnvShape } from './envInboundSecrets.js';
 import { operationalEnvShape } from './envOperational.js';
+import { storageEnvShape } from './envStorage.js';
 
 /** Parse a '0'/'1'/'true'/'false' style flag into a boolean, with a default. */
 const flag = (def: '0' | '1') =>
@@ -485,129 +488,8 @@ const EnvSchema = z.object({
   // Widget hardcodes hooks.zapier.com/hooks/catch/21602064/433y0ax/ — set the same URL here.
   ZAPIER_TICKET_WEBHOOK_URL: z.string().default(''),
 
-  // --- Inbound server API key (callers present this to reach this engine) ---
-  API_KEY: z.string().default(''),
-
-  // --- Telegram support-bot gateway (service-to-service only) ---
-  // Deliberately separate from API_KEY: compromise of the bot process must not grant access to
-  // unrelated admin/API routes. The gateway presents this only as x-support-bot-key.
-  SUPPORT_BOT_GATEWAY_API_KEY: z.string().default(''),
-  // Render URL for the separately deployed gateway monitor, plus the gateway's MONITOR_TOKEN.
-  // The backend injects the token server-side after authenticating an Octane admin/service caller.
-  SUPPORT_BOT_GATEWAY_MONITOR_URL: z.string().url().or(z.literal('')).default(''),
-  SUPPORT_BOT_GATEWAY_MONITOR_TOKEN: z.string().default(''),
-
-  // --- Billing payment-ingest webhook (Zapier → payment_transactions). A dedicated shared
-  //     secret, scoped to just the ingest endpoint (NOT the full API_KEY). ---
-  BILLING_INGEST_SECRET: z.string().default(''),
-
-  // --- Inbox-message webhook (Zoho CRM Org_Module → mytrion_inbox_messages). A dedicated shared
-  //     secret in the `x-inbox-secret` header, scoped to just that endpoint (NOT the full API_KEY). ---
-  INBOX_WEBHOOK_SECRET: z.string().default(''),
-
-  // --- HR attendance webhook (Hikvision / servercrm → hr_attendance_punches). Header
-  //     `x-attendance-webhook-secret`. Blank → route answers 503 (boot still succeeds). ---
-  HR_ATTENDANCE_WEBHOOK_SECRET: z.string().default(''),
-
-  // --- Rejection-report webhook (Zoho Desk Deluge → mytrion_rejection_reports). A dedicated shared
-  //     secret in the `x-rejection-secret` header, scoped to just that endpoint (NOT the full
-  //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
-  REJECTION_WEBHOOK_SECRET: z.string().default(''),
-
-  // --- Manager EFS Console (proxies servercrm /api/efs/console) ---
-  // Two flags, not one. The master switch defaults OFF, and even with it on nothing is sent unless
-  // the action's key is listed in MANAGER_EFS_LIVE_ACTIONS. Arming is therefore one money-moving
-  // call at a time rather than ~30 at once, none of which has ever been sent to EFS.
-  // Note this is OUR gate; servercrm has its own (EFS_TOUCHPOINTS_WRITES_ENABLED) which we do not
-  // control and which currently reports writesEnabled: true.
-  FF_MANAGER_EFS_WRITES_ENABLED: flag('0'),
-  /** Comma-separated action keys, e.g. `cards.pin,moneyCodes.void`. Empty means none. */
-  MANAGER_EFS_LIVE_ACTIONS: z.string().default(''),
-
-  // --- Sales KPI collection + external worker-task intake ---
-  // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.
-  FF_KPI_COLLECTION_ENABLED: flag('0'),
-  // Local Sales Mytrion presence/activity collection and usage rollups. Independent from the
-  // external KPI collectors, whose four kpi.sales.* queues remain parked.
-  FF_MYTRION_USAGE_COLLECTION_ENABLED: flag('0'),
-  KPI_REPORTING_TZ: z.string().default('America/New_York'),
-  // One rotatable, task-create-only HMAC credential for trusted external automations.
-  MYTRION_TASK_WEBHOOK_KEY_ID: z.string().default('external-automation'),
-  MYTRION_TASK_WEBHOOK_SECRET: z.string().default(''),
-
-  // --- File storage: Cloudflare R2 (S3-compatible) ---
-  R2_ACCOUNT_ID: z.string().default(''),
-  R2_ACCESS_KEY_ID: z.string().default(''),
-  R2_SECRET_ACCESS_KEY: z.string().default(''),
-  R2_BUCKET: z.string().default(''),
-  // Defaults to https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com when blank.
-  R2_ENDPOINT: z.string().default(''),
-  // Optional public/custom-domain base for serving uploaded files.
-  R2_PUBLIC_BASE_URL: z.string().default(''),
-  // R2 ignores region but the S3 SDK requires one; 'auto' is correct for R2.
-  R2_REGION: z.string().default('auto'),
-
-  // --- File storage: MinIO (self-hosted, S3-compatible). R2 swaps in later via env only:
-  // set S3_ENDPOINT to the R2 endpoint, S3_REGION=auto, S3_FORCE_PATH_STYLE=0.
-  S3_ENDPOINT: z.string().default(''),
-  S3_ACCESS_KEY_ID: z.string().default(''),
-  S3_SECRET_ACCESS_KEY: z.string().default(''),
-  S3_BUCKET: z.string().default(''),
-  S3_REGION: z.string().default('us-east-1'),
-  // MinIO requires path-style addressing (bucket in the path, not the host).
-  S3_FORCE_PATH_STYLE: flag('1'),
-  S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
-  // Hard cap for uploads AND generated artifacts.
-  FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
-
-  // --- Dropbox: storage for comms chat attachments and the general file pipeline ---
-  //
-  // Which provider a NEW comms attachment lands on. Per-provider rather than global because every
-  // existing file_assets row is on S3 and must keep resolving there — the row records its own provider, so
-  // flipping this only changes where the next upload goes.
-  COMMS_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
-  // Where a NEW file in the GENERAL pipeline lands: `POST /v1/files/upload` (import) and every generated
-  // artifact (file.generate_csv / _excel / _pdf export). Separate from COMMS_STORAGE_PROVIDER so chat
-  // attachments and business documents can live in different stores — a customer's chat file and an
-  // internal revenue export are not the same retention problem.
-  //
-  // Safe to flip at any time: `storeFile` records the resolved provider on the `file_assets` row and every
-  // read/delete goes back through `storageFor(row.storageProvider)`, so files already written stay
-  // readable wherever they are. It does NOT retroactively move anything.
-  //
-  // This deliberately does NOT govern `getStorage()` — see the note in modules/files/storage/index.ts.
-  FILE_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
-  // Refresh-token grant. Dropbox access tokens last ~4h, so the refresh token is the durable credential;
-  // there is no place to persist a rotated one, which is why rotation must stay off on the Dropbox app.
-  DROPBOX_APP_KEY: z.string().default(''),
-  DROPBOX_APP_SECRET: z.string().default(''),
-  DROPBOX_REFRESH_TOKEN: z.string().default(''),
-  // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
-  // serve every tenant without their files interleaving.
-  DROPBOX_ROOT_PATH: z.string().default('/comms'),
-  // Which provider a NEW Maintenance attachment lands on. Separate from COMMS_STORAGE_PROVIDER because
-  // Maintenance attachments are a distinct table (maintenance_case_attachments), not file_assets.
-  MAINTENANCE_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_maintenance']).default('s3'),
-  // Maintenance gets its OWN Dropbox folder, not DROPBOX_ROOT_PATH (CS feedback 2026-08-06: don't dump
-  // every service into one shared folder) — same app key/secret/refresh token, different root prefix.
-  DROPBOX_MAINTENANCE_ROOT_PATH: z.string().default('/maintenance'),
-  // Which provider a NEW Verification applicant document lands on. Defaults to Dropbox, unlike comms
-  // and Maintenance: verification_case_documents is a new table with no pre-existing S3 rows, so there
-  // are no reads a Dropbox default could repoint at bytes that are not there.
-  VERIFICATION_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_verification']).default('dropbox_verification'),
-  // Verification's own Dropbox folder — bank statements, SSN cards, licences, lease agreements. Kept
-  // separate so the later LLM underwriting review has one addressable root, and so applicant PII never
-  // lands in the comms or Maintenance folder.
-  DROPBOX_VERIFICATION_ROOT_PATH: z.string().default('/verification'),
-  /** Employee photos and HR documents — their own folder, never mixed into `/comms`. */
-  DROPBOX_HR_ROOT_PATH: z.string().default('/hr'),
-  HR_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_hr']).default('dropbox_hr'),
-  // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
-  // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
-  // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.
-  COMMS_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().max(2048).default(50),
-  // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
-  PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+  ...inboundSecretsEnvShape,
+  ...storageEnvShape,
 
   // --- Realtime WebSocket (GET /v1/realtime + GET /v1/carrier/mini-app/realtime) ---
   // Server-side protocol-ping interval, which is also the reap deadline: a socket that has not
@@ -643,91 +525,7 @@ const EnvSchema = z.object({
   // Simple in-memory per-toolkit rate limit for Composio executions.
   COMPOSIO_RATE_PER_MIN: z.coerce.number().int().positive().default(30),
 
-  // --- Feature flags ---
-  FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
-  FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
-  // Mini-app self-service WRITE actions (C-16 override, C-1/C-3 activate/deactivate, C-4/5 limits,
-  // C-26 unit/driver, C-10 fraud request) — carrier-scoped, rate-limited, audit-logged. Off by
-  // default: enable per environment once the pilot carrier is briefed.
-  FF_MINIAPP_CARD_WRITES_ENABLED: flag('0'),
-  // Postgres-backed idempotency/fencing for support-bot writes. Enable only after migration 0058
-  // and the gateway operation-metadata rollout; metadata headers are mandatory when ON.
-  FF_SUPPORT_BOT_IDEMPOTENCY: flag('0'),
-  /** Comma-separated carrier ids piloted for notification pollers (card_status diff). Empty =
-   *  the cron job no-ops — per-carrier rollout, Onzmove first (see notification ultraplan). */
-  NOTIFY_POLL_CARRIERS: z.string().default(''),
-  // Mini-app C-17 money-code preview/draw (servercrm owns the limit math). Off by default.
-  FF_MINIAPP_MONEY_CODE_ENABLED: flag('0'),
-  /** Mini-app "add a manager" invite creation. OFF by owner decision 2026-07-22 — managers are
-   *  onboarded by Octane agents only; the roster (list/revoke) in the mini-app stays available. */
-  FF_MINIAPP_MANAGER_INVITES_ENABLED: flag('0'),
-  // Cap on a single mini-app limit CHANGE (C-4/5). Bigger adjustments go through CS.
-  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().max(350).default(350),
-  // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
-  FF_RAG_ENABLED: flag('1'),
-  // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
-  FF_RAG_HYBRID: flag('0'),
-  // Agentic retrieval loop (multi-query planning + CRAG grade + refine/fallback + citations).
-  FF_AGENTIC_RAG: flag('1'),
-  // Optional LLM rerank of fused candidates (adds a model call per retrieval).
-  FF_RAG_RERANK: flag('0'),
-  // Expose Zoho MCP tools to the chat agent (read tools only unless FF_ZOHO_MCP_WRITES). Off by default.
-  FF_ZOHO_MCP_ENABLED: flag('0'),
-  // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
-  FF_ZOHO_MCP_WRITES: flag('0'),
-  // Connect the hosted dbt MCP (warehouse analytics + query-memory RAG). ON by default — agents
-  // reach the DWH only through dbt MCP (not the direct DWH_DATABASE_URL pool). Requires
-  // DBT_MCP_URL + client credentials. See integrations/dbtMcp.ts + dbtMcpTools.ts.
-  FF_DBT_MCP_ENABLED: flag('1'),
-  // Expose dbt MCP WRITE tools (`run` / `test`). Off by default (read-only posture).
-  FF_DBT_MCP_WRITES: flag('0'),
-  FF_AUDIT_LOG_ENABLED: flag('1'),
-  // Dev-only route that mints a validly-signed Telegram initData for a fake user (local mini-app
-  // testing without a real Telegram client). Off by default — gating solely on NODE_ENV!=='production'
-  // is not enough, since NODE_ENV defaults to 'development' when unset (a misconfigured staging/
-  // preview env sharing the prod bot token would otherwise expose it). Explicit opt-in required.
-  FF_DEV_MOCK_TELEGRAM_ENABLED: flag('0'),
-  // Dev-only: the Zoho user id the static API_KEY session should present as. The API_KEY context
-  // has no Zoho identity (userId: 'system'), so every owner-scoped read — CS Home tiles, retention
-  // desk quota — fails closed locally with "No Zoho user id on the request for owner-scoped data".
-  // A real Zoho login sets `zoho:<id>` and is unaffected. Blank = off, and it is IGNORED in
-  // production regardless (see systemContext) — same reasoning as FF_DEV_MOCK_TELEGRAM_ENABLED:
-  // NODE_ENV alone is not a sufficient gate, so this must also be set explicitly.
-  DEV_MOCK_ZOHO_USER_ID: z.string().default(''),
-  // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
-  // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
-  FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),
-  // DeepAgents orchestrator endpoint (POST /v1/agent/deep). Off by default; lazy-loaded when on.
-  FF_DEEP_AGENTS_ENABLED: flag('0'),
-  // Composio external tool-calling (adds the external-tools subagent + /v1/integrations/composio/*).
-  FF_COMPOSIO_ENABLED: flag('1'),
-  // Expose Composio WRITE/destructive tools (create/update/delete/…) to the agent. Off = read-only
-  // (hard-rule #7), mirroring FF_ZOHO_MCP_WRITES. Even when on, the subagent stays admin-gated.
-  FF_COMPOSIO_WRITES: flag('0'),
-  // Expose the native Telegram toolkit (send/get tools) to the agent. Sends are write-risk →
-  // admin-gated by the dispatcher regardless; this just registers the toolkit.
-  FF_TELEGRAM_ENABLED: flag('1'),
-  // Strict customer isolation: requests carrying customer markers (carrier_id / application_id /
-  // chat_id) get a locked-down 'customer' context — client-supplied department_scope /
-  // allDepartments / profile / role / user_name are IGNORED and scope derives solely from the
-  // company id. ON by default (hardening pass 2026-07): set to 0 only as a temporary rollback
-  // while a legacy client (Telegram shim) still sends worker-style scope fields.
-  FF_CUSTOMER_SCOPE_STRICT: flag('1'),
-  // Strict worker departments: bound a verified NON-admin worker's department view by the
-  // departments derived from their Zoho profile/role (deriveWorkerDepartments). Off until the
-  // profile→department mapping is validated against the live Zoho roster — an unmapped profile
-  // would silently drop the worker to Global-only knowledge.
-  FF_WORKER_DEPT_STRICT: flag('0'),
-  // Session-authoritative department access on the direct routes (Desk / Data Center /
-  // RingCentral / Retention / Knowledge): verified sessions IGNORE the x-department-access /
-  // x-all-departments headers; a non-admin worker's departments are derived from their Zoho
-  // profile/role. ON by default (security fix 2026-07: header trust let any authenticated user
-  // self-elevate). Set to 0 ONLY as an emergency rollback if live Zoho profiles don't map onto
-  // KNOWN_DEPARTMENTS (watch the "department claims ignored" warn log).
-  FF_SESSION_DEPT_AUTHORITATIVE: flag('1'),
-  // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
-  // ON by default — the portal always expects Zoho OAuth; set to 0 only for emergency static-key bypass.
-  FF_ZOHO_OAUTH_ENABLED: flag('1'),
+  ...featureFlagEnvShape,
   ...operationalEnvShape,
 });
 

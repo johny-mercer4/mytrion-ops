@@ -700,21 +700,54 @@ describe('CaseView Phase 5 routing', () => {
     );
   });
 
-  it('shows credit-first for an owner-operator and for a carrier under 10 trucks', async () => {
+  it('shows credit-first for an owner-operator whatever the truck count', async () => {
     getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'owner_operator', trucksCount: 25 }));
-    const { unmount } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
-    unmount();
-    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: 9 }));
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
   });
 
-  it('assumes credit-first when trucks are missing and does not invent 10', async () => {
+  /**
+   * THE THRESHOLD COMES FROM THE POLICY, and this fixture proves the old pane ignored it: it has set
+   * `bankFirstTruckMin: 5` all along while the client compared against a hard-coded 10. So a 9-truck
+   * carrier tested as credit-first when the state machine would have routed it banking-first — the
+   * pane and the server disagreeing, silently, on the one thing this phase exists to decide.
+   */
+  it('honours the policy threshold rather than a hard-coded 10', async () => {
+    // 9 is under 10 but at or above the fixture's real policy of 5 -> banking first.
+    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: 9 }));
+    const { unmount } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Banking → Credit')).toBeInTheDocument();
+    expect(screen.getByText(/5-truck policy/)).toBeInTheDocument();
+    unmount();
+
+    // 4 is below it -> credit first, and the copy names the same policy number.
+    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: 4 }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
+  });
+
+  it('assumes credit-first when trucks are missing and does not invent the threshold', async () => {
     getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: null }));
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
-    expect(screen.getByText(/treated as fewer than 10/)).toBeInTheDocument();
+    expect(screen.getByText(/counted as 0/)).toBeInTheDocument();
+  });
+
+  /**
+   * THE OTHER HALF OF ROUTING, which this pane never showed: fuel cards against the WEX cutoff decide
+   * whether Octane underwrites the case at all. The server has been sending it on `detail.routing`
+   * the whole time.
+   */
+  it('shows the underwriting route and the card cutoff it was decided against', async () => {
+    getDeskCase.mockResolvedValue(routingDesk({ fuelCardsRequested: 25 }));
+    const { unmount } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('WEX')).toBeInTheDocument();
+    expect(screen.getByText(/above the 20-card cutoff/)).toBeInTheDocument();
+    unmount();
+
+    getDeskCase.mockResolvedValue(routingDesk({ fuelCardsRequested: 8 }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Octane internal')).toBeInTheDocument();
   });
 
   it('patches type and truck count from the routing pane', async () => {

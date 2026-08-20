@@ -12,15 +12,18 @@
 import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
-  verificationCaseEvents,
+  appendEvent,
+  applyTransition,
+  listEvents,
+  reopenTo,
+} from './verificationFlowTransitions.js';
+import {
   verificationCases,
   verificationStatuses,
   type VerificationCase,
-  type VerificationCaseEvent,
   type VerificationPhaseStatus,
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
-import { verificationCaseAssetRepo } from './verificationCaseAssetRepo.js';
 import { firstOrThrow, firstOrUndefined, normalizePagination } from './util.js';
 
 /** Columns the list views project. Excludes `zoho_raw` — it is large and nothing in a list reads it. */
@@ -412,144 +415,11 @@ export const verificationFlowRepo = {
     return row;
   },
 
-  /**
-   * THE transition. Moves the case, stamps the phase row the decision was made on, and writes the
-   * event — one call, so none of the three can happen without the others.
-   */
-  /**
-   * Move a case BACK to a phase, withdrawing the decision that carried it forward.
-   *
-   * Deliberately not a flag on `applyTransition`: that method exists to RECORD a decision, and it
-   * hardcodes `decidedAt: now` on the phase row it writes. A reopen has to clear those fields, so
-   * folding it in would mean every forward caller carrying a concept it never uses. The phase rows
-   * themselves are `verificationCaseAssetRepo.reopenPhase`'s — this is the case row and the event.
-   *
-   * `outcomeCode` / `decidedAt` / `decidedBy` / `closedAt` are all cleared: a case that has re-entered
-   * phase 3 has no outcome, and leaving a stale `decidedAt` on it is what makes a reopened file still
-   * read as decided in every list that sorts on it.
-   */
-  async reopenTo(
-    ctx: TenantContext,
-    id: string,
-    input: {
-      phaseCode: string;
-      statusCode: string;
-      reason: string;
-      actorZohoUserId?: string | undefined;
-      actorName?: string | undefined;
-    },
-  ): Promise<VerificationCase | undefined> {
-    const before = await this.findById(ctx, id);
-    if (!before) return undefined;
-
-    const now = new Date();
-    const rows = await db
-      .update(verificationCases)
-      .set({
-        phaseCode: input.phaseCode,
-        statusCode: input.statusCode,
-        phaseChangedAt: now,
-        closedAt: null,
-        outcomeCode: null,
-        decidedAt: null,
-        decidedBy: null,
-        updatedAt: now,
-      })
-      .where(and(tenant(ctx), eq(verificationCases.id, id)))
-      .returning();
-    const row = firstOrUndefined(rows);
-    if (!row) return undefined;
-
-    await appendEvent(ctx, {
-      caseId: id,
-      fromPhase: before.phaseCode,
-      toPhase: row.phaseCode,
-      fromStatus: before.statusCode,
-      toStatus: row.statusCode,
-      eventType: 'phase_reopened',
-      actorZohoUserId: input.actorZohoUserId ?? null,
-      actorName: input.actorName ?? null,
-      notes: input.reason,
-    });
-
-    return row;
-  },
-
-  async applyTransition(
-    ctx: TenantContext,
-    id: string,
-    input: TransitionInput,
-  ): Promise<VerificationCase | undefined> {
-    const before = await this.findById(ctx, id);
-    if (!before) return undefined;
-
-    const now = new Date();
-    const set: Partial<typeof verificationCases.$inferInsert> = {
-      phaseCode: input.phaseCode,
-      statusCode: input.statusCode,
-      updatedAt: now,
-    };
-    if (before.phaseCode !== input.phaseCode) set.phaseChangedAt = now;
-    // closed_at is derived from terminality, and CLEARED when a case reopens — otherwise a
-    // reopened application keeps a close date and drops out of every open-case filter.
-    set.closedAt = input.closed ? now : null;
-    if (input.closed) {
-      set.outcomeCode = input.statusCode;
-      set.decidedAt = now;
-      if (input.actorZohoUserId) set.decidedBy = input.actorZohoUserId;
-    }
-
-    const rows = await db
-      .update(verificationCases)
-      .set(set)
-      .where(and(tenant(ctx), eq(verificationCases.id, id)))
-      .returning();
-    const row = firstOrUndefined(rows);
-    if (!row) return undefined;
-
-    await verificationCaseAssetRepo.upsertPhase(ctx, id, {
-      phaseCode: input.decidedPhase,
-      status: input.phaseStatus,
-      outcome: input.outcome ?? null,
-      decidedAt: now,
-      decidedBy: input.actorZohoUserId ?? null,
-      note: input.eventNotes ?? null,
-      findings: input.findings,
-    });
-
-    await appendEvent(ctx, {
-      caseId: id,
-      fromPhase: before.phaseCode,
-      toPhase: row.phaseCode,
-      fromStatus: before.statusCode,
-      toStatus: row.statusCode,
-      eventType: input.eventType,
-      actorZohoUserId: input.actorZohoUserId ?? null,
-      actorName: input.actorName ?? null,
-      notes: input.eventNotes ?? null,
-    });
-
-    return row;
-  },
-
-  // ---- events ----
-
-  async listEvents(
-    ctx: TenantContext,
-    caseId: string,
-    limit = 100,
-  ): Promise<VerificationCaseEvent[]> {
-    return db
-      .select()
-      .from(verificationCaseEvents)
-      .where(
-        and(eq(verificationCaseEvents.tenantId, ctx.tenantId), eq(verificationCaseEvents.caseId, caseId)),
-      )
-      .orderBy(desc(verificationCaseEvents.occurredAt))
-      .limit(Math.min(Math.max(limit, 1), 500));
-  },
 
   appendEvent,
+  listEvents,
+  reopenTo,
+  applyTransition,
 
   /** Case labels for duplicate hits, resolved in one query rather than per hit. */
   async labelsFor(ctx: TenantContext, caseIds: string[]): Promise<Map<string, string>> {
@@ -571,35 +441,3 @@ export const verificationFlowRepo = {
     );
   },
 };
-
-/**
- * Append-only. Exported through the repo object as well so callers never reach for the table.
- * Tenant id comes from ctx, never from the caller's payload.
- */
-async function appendEvent(
-  ctx: TenantContext,
-  input: {
-    caseId: string;
-    fromPhase?: string | null;
-    toPhase?: string | null;
-    fromStatus?: string | null;
-    toStatus?: string | null;
-    eventType: string;
-    actorZohoUserId?: string | null;
-    actorName?: string | null;
-    notes?: string | null;
-  },
-): Promise<void> {
-  await db.insert(verificationCaseEvents).values({
-    tenantId: ctx.tenantId,
-    caseId: input.caseId,
-    fromPhase: input.fromPhase ?? null,
-    toPhase: input.toPhase ?? null,
-    fromStatus: input.fromStatus ?? null,
-    toStatus: input.toStatus ?? null,
-    eventType: input.eventType,
-    actorZohoUserId: input.actorZohoUserId ?? null,
-    actorName: input.actorName ?? null,
-    notes: input.notes ?? null,
-  });
-}
