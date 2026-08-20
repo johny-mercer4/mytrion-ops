@@ -24,7 +24,7 @@ const REASON_COPY: Record<CollectionClosedReason, { label: string; description: 
   },
   below_threshold: {
     label: 'Below threshold',
-    description: 'What is left has fallen under the $100 the finder opens a case at.',
+    description: 'Too little left to be worth working.',
   },
   left_cmp: {
     label: 'Left CMP',

@@ -4,14 +4,23 @@
  * needs attention today.
  *
  * ⚠ EVERY NUMBER IN `DESK_POLICY` IS A PLACEHOLDER THE BUSINESS HAS NOT CONFIRMED.
- * The only real threshold in this pipeline is `remaining >= 0.01`, the floor at which
- * `servercrm/jobs/collectionCaseFinder.js` opens a case — verified against the source on
- * 2026-08-20. (An earlier version of this comment claimed a $100 floor and that the finder
- * deletes cases below it. Both are false: the finder never deletes, it zeroes the money fields
- * and leaves the row.) The values below came out of the redesign as plausible defaults so the
- * screens had something to render; they are gathered in one object, named, and exported so
- * changing them is a one-line edit and a grep finds every consumer — not scattered as literals
- * through five components the way the mockups had them.
+ *
+ * The real thresholds live in the finder, not here, and there are two of them depending on which
+ * finder is running (both read on 2026-08-20):
+ *
+ *   - LIVE ON PROD — `servercrm/jobs/collectionCaseFinder.js` on `build`, writing Zoho. Opens a
+ *     case at `remaining >= 0.01` and NEVER closes or deletes one: when a carrier settles or
+ *     leaves CMP it zeroes the money fields and leaves the row ("No case deletion (history
+ *     preserved)").
+ *   - COMING — servercrm PR #187 `feature/collection-cases-ops-db` moves the finder onto THIS
+ *     Postgres and raises the bar to `remaining > 100`, closing cases as `below_threshold` /
+ *     `paid_in_full` / `left_cmp` and reopening them (bumping `reopen_count`) when the debt
+ *     re-qualifies. Still no deletion.
+ *
+ * Whichever is live, neither finder carries an agency floor, a promise grace, a silent window or
+ * an intake SLA — every number below is invented. They are gathered in one object, named, and
+ * exported so changing them is a one-line edit and a grep finds every consumer — not scattered
+ * as literals through five components the way the mockups had them.
  *
  * Pure by design: no db import, no I/O. `tests/unit/collection-desk-policy.test.ts` exercises the
  * whole lane matrix without Postgres.

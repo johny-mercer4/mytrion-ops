@@ -60,7 +60,7 @@ export function CasesKanban({
         description={
           filtered
             ? 'Nothing matches these filters. Clear them to see the board.'
-            : 'Cases appear once a carrier owes anything at all — the finder opens one at $0.01.'
+            : 'Cases appear here when the finder opens one for a carrier that owes.'
         }
       />
     );

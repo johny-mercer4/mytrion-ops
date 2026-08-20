@@ -6,8 +6,11 @@
 -- Every statement is IF NOT EXISTS so a re-run on an environment that already has these tables is
 -- a no-op and a fresh `pnpm db:migrate` creates them.
 --
--- All four cascade off collection_cases: the finder deletes a case once remaining debt falls below
--- $100, and desk history for a debt that no longer exists is not worth orphaning.
+-- All four cascade off collection_cases so desk history cannot outlive the case row it hangs on.
+-- (An earlier version of this note justified the cascade by saying the finder deletes a case once
+-- remaining debt drops below $100. That is not true — `servercrm/jobs/collectionCaseFinder.js`
+-- states "No case deletion (history preserved)" and instead zeroes the money fields. The cascade
+-- is therefore near-dead in practice; it is kept as a correctness guarantee, not a routine path.)
 --
 -- ⚠ THE JOURNAL TIMESTAMP ON THIS ONE IS DELIBERATE (1787090000001), and the reason is a live trap.
 -- drizzle's migrator applies an entry only when `lastAppliedCreatedAt < folderMillis` (see

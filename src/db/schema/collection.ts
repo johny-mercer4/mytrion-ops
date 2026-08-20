@@ -8,10 +8,11 @@
  * is enforced in the repo layer — a non-`octane` tenant is served an empty page rather than the
  * Octane debtor book.
  *
- * `collection_cases` is one row per carrier (UNIQUE carrier_id). It NEVER loses a row: the Zoho
- * finder opens a case at `remaining >= 0.01` and, when the carrier settles or leaves CMP, zeroes
- * the money fields rather than deleting ("No case deletion (history preserved)"). There is no
- * $100 floor anywhere in the pipeline. Invoices hang off the case and cascade.
+ * `collection_cases` is one row per carrier (UNIQUE carrier_id). It NEVER loses a row. The finder
+ * live on prod today writes Zoho, opens at `remaining >= 0.01`, and zeroes the money fields
+ * rather than deleting when a carrier settles. servercrm PR #187 moves the finder onto this table
+ * and raises the bar to `remaining > 100` with close/reopen semantics — closing, still never
+ * deleting. Invoices hang off the case and cascade.
  *
  * `array_reports` is a Metro 2 snapshot per (carrier_id, report_period) — the live 6h cron writes
  * Zoho; this table is what the desk reads. `report_period` is a HUMAN-FORMATTED string

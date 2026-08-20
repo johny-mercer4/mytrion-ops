@@ -201,7 +201,7 @@ export function CasesList({
         description={
           filtered
             ? 'Nothing matches these filters. Clear them to see the book.'
-            : 'Cases appear when remaining debt stays above $100. The finder writes them here, not Zoho.'
+            : 'Cases appear here when the finder opens one for a carrier that owes.'
         }
       />
     );
