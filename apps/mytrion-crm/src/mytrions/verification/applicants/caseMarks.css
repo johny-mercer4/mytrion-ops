@@ -30,6 +30,30 @@
   background: var(--surface-data-alt);
 }
 
+/*
+ * FOUR OPTIONS DO NOT FIT ON A PHONE, and this control is deliberately `flex: none` — it is one
+ * segmented pill with a border and a fill, so wrapping it mid-pill looks broken. Phase 6's credit
+ * verdict has FOUR positions (Strong / Acceptable / Borderline / Unacceptable) where Identity and
+ * Screening have three, and at 375 the extra one pushed the row past the viewport: measured, in the
+ * browser, on the real case — an overflow no jsdom assertion could have found.
+ *
+ * Below the structure line the group stops being a pill and becomes a wrapping row of its own
+ * options. Every option stays visible and tappable, which on a phone matters more than the segmented
+ * look; the three state channels are per-option (glyph, fill, tint) so none of them is lost.
+ */
+@media (width < 640px) {
+  [data-mytrion='verification'] .va-marks {
+    flex-wrap: wrap;
+    padding: 0;
+    border-color: transparent;
+    background: none;
+    gap: var(--space-1_5);
+  }
+  [data-mytrion='verification'] .va-marks .va-mark {
+    border: 1px solid var(--border);
+  }
+}
+
 [data-mytrion='verification'] .va-mark {
   display: inline-flex;
   align-items: center;

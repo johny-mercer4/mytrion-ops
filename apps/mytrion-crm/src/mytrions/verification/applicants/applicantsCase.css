@@ -59,10 +59,41 @@
 [data-mytrion='verification'] .va-crumbs-gap {
   flex: 1;
 }
+/*
+ * THE CASE ID IS A SUPPORT REFERENCE, NOT A FIELD, and it was the one element on the case screen
+ * that overflowed the viewport: a 26-character cuid on a nowrap breadcrumb row runs off the right
+ * edge at 375, so the id it exists to be quoted from was the half that got clipped. It shrinks and
+ * truncates now, and below the structure line it drops to its own line where the full value fits.
+ * (The route-level audit never caught this — it screenshots workspace roots and never opens a case.)
+ */
 [data-mytrion='verification'] .va-case-id {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-2xs);
   line-height: var(--lh-2xs);
   color: var(--text-muted);
+}
+/* Its own line below the structure line, where the whole id fits and can be read and copied. The
+   crumb row has to be allowed to wrap for that, and the spacer that pushes the id right on desktop
+   has to stop occupying a row of its own. */
+@media (width < 640px) {
+  [data-mytrion='verification'] .va-crumbs {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+  [data-mytrion='verification'] .va-crumbs-gap {
+    display: none;
+  }
+  [data-mytrion='verification'] .va-case-id {
+    flex-basis: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-all;
+  }
 }
 
 [data-mytrion='verification'] .va-case-identity {

@@ -9,11 +9,18 @@
 import { Input } from '@/ds';
 import type { ReviewField, ReviewFieldKind, ReviewValues } from './caseCreditBanking';
 
-/** The unit, shown as the field's own suffix rather than smuggled into its label. */
+/**
+ * The unit, as a suffix on the field's own label rather than smuggled into its name.
+ *
+ * SYMBOLS, NOT WORDS. `USD` and `months` spelled out pushed the label onto a second line on nearly
+ * every money field — "Recurring weekly income ·" then a lone "USD" — and repeated the same three
+ * letters fifteen times down one form. `$` and `mo` carry the same information in one or two
+ * characters, so the label stays on its line and the unit stays quiet.
+ */
 const SUFFIX: Record<ReviewFieldKind, string | null> = {
-  money: 'USD',
+  money: '$',
   pct: '%',
-  months: 'months',
+  months: 'mo',
   count: null,
   score: null,
 };
