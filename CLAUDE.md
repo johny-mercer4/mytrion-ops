@@ -51,7 +51,7 @@ When asked to "run the bot / gateway", the answer is almost always `agent-gatewa
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
 10. **Karpathy guidelines apply to every change** — think before coding, simplicity first, surgical
     changes, goal-driven execution. Stated in full below and in `.claude/skills/karpathy-guidelines/`.
-11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders). Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin (`.claude/skills/<name>-mytrion/`).
+11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Glass is for chrome only (header, rail, modals, drawers); data surfaces are flat and opaque. Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin (`.claude/skills/<name>-mytrion/`).
 
 ## Karpathy guidelines — apply to every change
 
@@ -155,4 +155,4 @@ committing `app/` when opening a PR to `build` / `main`.
 ## When in doubt
 
 - Look at how Mytrion's `mytrion-engine` handles it (in another repo) — for pattern reference only.
-- Ask in `WORKING_NOTES.md` before making architectural changes.
+- `WORKING_NOTES.md` is local scratch only; do not load wholesale; prefer ONBOARDING + product skills + docs/design.
