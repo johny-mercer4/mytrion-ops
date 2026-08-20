@@ -30,6 +30,7 @@ import {
 import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
 import { useSocketConnected } from '../socketStatus';
 import { useCachedLoad, writeDcCache } from '../dcCache';
+import { emitKpiActivity, useKpiSearchCompleted } from '../kpiTelemetry';
 
 type FilterId = 'all' | 'unread' | 'task' | 'alert' | 'reminder';
 type InboxPageVM = Awaited<ReturnType<typeof loadInboxPage>>;
@@ -102,6 +103,12 @@ export function InboxTab() {
   const counts = load.data?.counts ?? { all: 0, unread: 0, task: 0, alert: 0, reminder: 0 };
   const total = load.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  useKpiSearchCompleted(
+    'inbox.messages',
+    debouncedQuery,
+    total,
+    !load.loading && !load.revalidating,
+  );
 
   const resetPaging = (): void => {
     setPage(1);
@@ -203,6 +210,10 @@ export function InboxTab() {
   };
 
   const openInbox = (item: InboxVM): void => {
+    emitKpiActivity('ui.record_open', {
+      entityType: 'inbox_message',
+      entityId: item.id,
+    });
     if (!item.read) toggleRead(item);
     openDetail({
       title: item.title,

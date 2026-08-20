@@ -46,7 +46,11 @@ export interface HardStopVerdict {
   /** True when neither hard stop fired — the case may continue to Phase 8/9 on standard terms. */
   passed: boolean;
   /** Which stops fired, in SOP order. */
-  triggered: Array<{ code: 'negative_cash_flow' | 'no_credit_bureau_record'; label: string; detail: string }>;
+  triggered: Array<{
+    code: 'negative_cash_flow' | 'cash_flow_unrecorded' | 'no_credit_bureau_record';
+    label: string;
+    detail: string;
+  }>;
   /** What Phase 7 should record. Never `decline` — a hard stop is a terms change, not a rejection. */
   outcome: Extract<VerificationPhaseOutcome, 'pass' | 'deposit_prepaid'>;
 }
@@ -56,14 +60,25 @@ export function evaluateHardStops(inputs: HardStopInputs): HardStopVerdict {
 
   // Strictly greater than zero. Exactly $0 is not a positive net cash flow and does not support an
   // unsecured line — the SOP asks "> $0", not ">= $0".
-  if (inputs.avgWeeklyNetCashFlow === null || !(inputs.avgWeeklyNetCashFlow > 0)) {
+  if (inputs.avgWeeklyNetCashFlow === null) {
+    /*
+     * NOT RECORDED IS NOT NEGATIVE, and it used to be reported as such: one branch pushed the label
+     * "Negative average weekly net cash flow" whether the figure was below zero or simply absent, so
+     * a case where nobody had filled the banking review yet read as a finding about the applicant's
+     * cash flow. Its own code, so the pane can send the reviewer back to Phase 6 instead of offering
+     * them a deposit for a number nobody has looked at.
+     */
+    triggered.push({
+      code: 'cash_flow_unrecorded',
+      label: 'Average weekly net cash flow not recorded',
+      detail:
+        'Phase 6 has no recurring weekly income and expenses for this case, so the cash-flow hard stop cannot be evaluated. It is unanswered, not failed.',
+    });
+  } else if (!(inputs.avgWeeklyNetCashFlow > 0)) {
     triggered.push({
       code: 'negative_cash_flow',
       label: 'Negative average weekly net cash flow',
-      detail:
-        inputs.avgWeeklyNetCashFlow === null
-          ? 'Average weekly net cash flow has not been recorded in the banking review.'
-          : `Average weekly net cash flow is ${inputs.avgWeeklyNetCashFlow.toFixed(2)}, which is not above $0.`,
+      detail: `Average weekly net cash flow is ${inputs.avgWeeklyNetCashFlow.toFixed(2)}, which is not above $0.`,
     });
   }
 
@@ -126,3 +141,81 @@ export function managerReviewIndicators(
 
   return flags;
 }
+
+/**
+ * The bundle → inputs adapter for the two functions above.
+ *
+ * `deskService.detail` used to spell this mapping out inline, twenty-odd field reads deep inside the
+ * response literal. It lives here because it is the adapter for THESE functions: when a new indicator
+ * is added above, the field that feeds it is named on the line below rather than in another file.
+ *
+ * `credit` and `banking` arrive as jsonb from `verificationFlowBundleRepo` and are untyped by the
+ * time they reach here, so every read is optional and every number goes through the caller's
+ * `toNumber`. A missing review is not a passing one — `evaluateHardStops` decides that, not this.
+ */
+export function deriveRiskSignals(
+  credit: { bureauNoHit?: boolean; recentTrend?: string | null } | null,
+  banking: Record<string, unknown> | null,
+  thresholds: IndicatorThresholds,
+  toNumber: (value: string | number | null | undefined) => number | null,
+): { hardStops: HardStopVerdict; indicators: ReturnType<typeof managerReviewIndicators> } {
+  /**
+   * The jsonb reads, narrowed once. Every column this touches is a numeric, a short text or a
+   * boolean in `verification_banking_reviews`; the per-field casts below name which, and this is the
+   * single `as` that claims the bundle is not carrying something else entirely.
+   */
+  const b = (key: string): string | number | boolean | null =>
+    (banking?.[key] as string | number | boolean | null) ?? null;
+  return {
+    hardStops: evaluateHardStops({
+      avgWeeklyNetCashFlow: toNumber(b('avgWeeklyNetCashFlow') as string | number | null),
+      bureauNoHit: credit?.bureauNoHit ?? false,
+    }),
+    indicators: managerReviewIndicators(
+      {
+        revenueTrend: (b('revenueTrend') as string | null) ?? null,
+        avgDailyBalance: toNumber(b('avgDailyBalance') as string | number | null),
+        negativeBalanceDays: (b('negativeBalanceDays') as number | null) ?? null,
+        overdraftCount: (b('overdraftCount') as number | null) ?? null,
+        nsfCount: (b('nsfCount') as number | null) ?? null,
+        achReturnCount: (b('achReturnCount') as number | null) ?? null,
+        cashFlowVolatility: (b('cashFlowVolatility') as string | null) ?? null,
+        existingDebtPayments: toNumber(b('existingDebtPayments') as string | number | null),
+        oneTimeDeposits: toNumber(b('oneTimeDeposits') as string | number | null),
+        creditRecentTrend: credit?.recentTrend ?? null,
+        unusualTransactions: (b('unusualTransactions') as string | null) ?? null,
+        bankingInconsistentWithOperations:
+          (b('bankingInconsistentWithOperations') as boolean | null) ?? null,
+      },
+      thresholds,
+    ),
+  };
+}
+
+/**
+ * The underwriting policy a tenant has when it has never opened the policy screen.
+ *
+ * `verification_policy` is seeded per tenant, but a read must not create a row, so the desk detail
+ * falls back to these. They are the SAME numbers the seed migration writes — kept next to
+ * `deriveRiskSignals` and `IndicatorThresholds` because `adbReviewThreshold` and `nsfReviewThreshold`
+ * are what they are FOR, and a default that drifts from the threshold it feeds is silent.
+ */
+export interface VerificationPolicyShape {
+  strongFactor: string | null;
+  moderateFactor: string | null;
+  weakFactor: string | null;
+  adbReviewThreshold: string;
+  nsfReviewThreshold: number;
+  bankFirstTruckMin: number;
+  wexCardCutoff: number;
+}
+
+export const VERIFICATION_POLICY_DEFAULTS: VerificationPolicyShape = {
+  strongFactor: '0.800',
+  moderateFactor: null,
+  weakFactor: null,
+  adbReviewThreshold: '500',
+  nsfReviewThreshold: 2,
+  bankFirstTruckMin: 10,
+  wexCardCutoff: 20,
+};

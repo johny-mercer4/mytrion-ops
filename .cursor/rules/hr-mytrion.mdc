@@ -1,0 +1,17 @@
+---
+description: When HR schema, routes, nav, tab gates, caps, or which store a write hits change, update the HR skill in the same PR
+globs: src/lib/mytrions.ts,apps/mytrion-crm/src/access/mytrions.config.ts,apps/mytrion-crm/src/access/resolveAccess.ts,apps/mytrion-crm/src/mytrions/hr/**/*,apps/mytrion-crm/src/mytrions/_shared/TimeOffWorkspace.tsx,apps/mytrion-crm/src/api/hr.ts,apps/mytrion-crm/src/api/hrPerson.ts,apps/mytrion-crm/src/api/hrTimeOff.ts,src/routes/v1/hr.routes.ts,src/routes/v1/hrPeople.routes.ts,src/routes/v1/hrDepartments.routes.ts,src/routes/v1/hrAttendance.routes.ts,src/routes/v1/hrLeave.routes.ts,src/routes/v1/hrAccess.ts,src/modules/hr/**/*,src/repos/hrEmployeeRepo.ts,src/repos/hrDepartmentRepo.ts,src/repos/hrAttendancePunchRepo.ts,src/repos/hrAttendanceShiftRepo.ts,src/repos/hrLeavePolicyRepo.ts,src/repos/hrLeaveRequestRepo.ts,src/db/schema/hr_*.ts,src/modules/access/mytrionModeDefaults.ts,tests/unit/require-hr-manage.test.ts
+alwaysApply: false
+---
+
+# HR skill stays in sync
+
+You are on HR paths. Product facts an agent cannot infer live in
+`.claude/skills/hr-mytrion/SKILL.md` (mirrored to `.cursor/skills/` and `.agents/skills/`).
+
+If this change touches **nav, tab gates, routes, caps, who may write, or which store a write
+hits**, update that skill in the **same PR** (all three mirrors). Read the skill before
+editing HR UI or APIs.
+
+Do not invent Recruit as this desk. Do not duplicate `zoho-people-api`. The desk is app
+Postgres — Zoho People is a one-way admin pull. Do not restyle `MytrionShell` sidebar/header.

@@ -206,6 +206,47 @@ export const documentService = {
   },
 
   /**
+   * The BYTES, through our own origin — what makes a PREVIEW possible.
+   *
+   * `downloadUrl` hands out Dropbox's `get_temporary_link`, and Dropbox serves that link with
+   * `Content-Disposition: attachment` and no CORS headers. So clicking a document opened a blank tab
+   * that immediately downloaded the file: the agent never saw a bank statement, they collected it.
+   * The adapter's own note (`dropboxStorage.presignGet`) says a caller that needs a
+   * Content-Disposition must proxy the bytes through the download route instead — this is that route's
+   * service half.
+   *
+   * `getBuffer`, not `getStream`: no route in this codebase streams, and the Dropbox adapter's
+   * `getBuffer` already checks the size on the metadata BEFORE fetching, so an oversized object is
+   * never buffered.
+   */
+  async getBytes(
+    ctx: TenantContext,
+    caseId: string,
+    documentId: string,
+  ): Promise<{ fileName: string; mime: string; buffer: Buffer }> {
+    return withFlowSchemaGuard(async () => {
+      const doc = await verificationCaseAssetRepo.findDocument(ctx, caseId, documentId);
+      if (!doc) throw new NotFoundError('Document not found');
+      if (!doc.s3Key) {
+        throw new AppError('That document has been requested but not uploaded yet.', {
+          statusCode: 409,
+          code: 'VERIFICATION_DOC_NOT_UPLOADED',
+          expose: true,
+        });
+      }
+      requireCarrierAttachmentStorage();
+      const buffer = await storageFor(doc.storageProvider).getBuffer(doc.s3Key, MAX_DOCUMENT_BYTES);
+      return {
+        fileName: doc.fileName ?? 'document',
+        // Dropbox stores no content type, so the row's own MIME is the only truth about these bytes —
+        // and `X-Content-Type-Options: nosniff` is set globally, so a wrong type means a blank frame.
+        mime: doc.mime || 'application/octet-stream',
+        buffer,
+      };
+    });
+  },
+
+  /**
    * Remove a document. Metadata first, then bytes: an orphaned object costs storage, whereas an
    * orphaned ROW is a broken download the desk cannot explain. A storage failure after the row is
    * gone is logged, not surfaced — the user's intent (make it disappear) already succeeded.

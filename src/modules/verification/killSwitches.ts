@@ -36,3 +36,17 @@ export const VERIFICATION_ZOHO_INGEST_ENABLED = true;
  * own is not.
  */
 export const VERIFICATION_CP_WRITEBACK_ENABLED = false;
+
+/**
+ * Write-back of CONFIRMED BANS into `public.blacklist_entries` on the credit_platform Postgres.
+ *
+ * SEPARATE from the switch above, and on, because it is not the same concern. That one governs the
+ * legacy Decision Desk's `kxd.sales_agent_*` inbox — a system we no longer own. This governs the
+ * shared ban list that OUR OWN Check A reads on every applicant: the credit-platform team confirmed
+ * nothing over there writes back to it on decline, so a Decline + Blacklist that stops at our table
+ * bans the applicant on this desk and nowhere else. They come back through any other door.
+ *
+ * Still subject to the VERIFICATION_WRITE_ENABLED master switch, and insert-only with
+ * `on conflict do nothing` — this never edits or removes a ban somebody else added.
+ */
+export const VERIFICATION_BAN_WRITEBACK_ENABLED = true;

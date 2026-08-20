@@ -10,6 +10,7 @@ import { s } from './dc';
 import { Icon } from './icons';
 import { SalesEmpty, SalesErrorNote, SalesSubTabs } from './SalesPage';
 import { SalesBodySkeleton } from './SalesTabSkeleton';
+import { useKpiSearchCompleted } from './kpiTelemetry';
 
 type StatusFilter = 'all' | 'ISSUED' | 'VOIDED' | 'USED';
 
@@ -101,6 +102,7 @@ export function MoneyCodesView({ search }: { search: string }) {
   useEffect(() => {
     void load({ page: 1, append: false, status, search: deferredSearch });
   }, [load, status, deferredSearch]);
+  useKpiSearchCompleted('records.money', deferredSearch, rows.length, !loading && !error);
 
   const onVoid = async (): Promise<void> => {
     if (!voidTarget || voidBusy) return;

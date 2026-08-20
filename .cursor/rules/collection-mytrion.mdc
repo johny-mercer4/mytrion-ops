@@ -1,0 +1,15 @@
+---
+description: When Collection schema, routes, nav, stages, or API caps change, update the Collection skill in the same PR
+globs: src/db/schema/collection.ts,src/repos/collectionCaseRepo.ts,src/repos/collectionAccess.ts,src/repos/arrayReportRepo.ts,src/routes/v1/collection.routes.ts,apps/mytrion-crm/src/mytrions/collection/**/*,apps/mytrion-crm/src/api/collection.ts,src/lib/mytrions.ts,apps/mytrion-crm/src/access/mytrions.config.ts,tests/unit/collection*.ts
+alwaysApply: false
+---
+
+# Collection skill stays in sync
+
+You are on Collection paths. Product facts an agent cannot infer live in
+`.claude/skills/collection-mytrion/SKILL.md` (mirrored to `.cursor/skills/` and `.agents/skills/`).
+
+If this change touches **schema, routes, nav, stages, or API caps**, update that skill in the
+**same PR** (all three mirrors). Read the skill before editing Collection UI or APIs.
+
+Do not invent CS / Billing workspace skills. Do not write Verification Mytrion. Do not restyle `MytrionShell` sidebar/header.

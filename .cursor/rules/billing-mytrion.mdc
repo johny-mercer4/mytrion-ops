@@ -1,0 +1,17 @@
+---
+description: When Billing schema, routes, tabs, ledger sections, parked flags, or API caps change, update the Billing skill in the same PR
+globs: src/db/schema/payment_transactions.ts,src/db/schema/payment_returns.ts,src/db/schema/payment_carrier_memory.ts,src/db/schema/ledger_opening_balances.ts,src/db/schema/ledger_import_batches.ts,src/db/schema/ledger_daily_snapshots.ts,src/db/schema/ledger_client_type_overrides.ts,src/repos/paymentTransactionRepo.ts,src/repos/paymentReturnRepo.ts,src/repos/carrierMemoryRepo.ts,src/repos/ledgerOpeningBalanceRepo.ts,src/repos/ledgerClientTypeRepo.ts,src/repos/ledgerImportBatchRepo.ts,src/repos/ledgerSnapshotRepo.ts,src/routes/v1/billing.routes.ts,src/routes/v1/billingLedger.routes.ts,src/routes/v1/billingLedgerSections.routes.ts,src/routes/v1/billingLedgerImport.routes.ts,src/modules/billing/**/*,apps/mytrion-crm/src/mytrions/billing/**/*,apps/mytrion-crm/src/api/billing.ts,apps/mytrion-crm/src/api/ledgerTypes.ts,src/lib/mytrions.ts,apps/mytrion-crm/src/access/mytrions.config.ts,tests/unit/billing*.ts
+alwaysApply: false
+---
+
+# Billing skill stays in sync
+
+You are on Billing paths. Product facts an agent cannot infer live in
+`.claude/skills/billing-mytrion/SKILL.md` (mirrored to `.cursor/skills/` and `.agents/skills/`).
+
+If this change touches **schema, routes, tabs, ledger sections, parked flags, or API caps**,
+update that skill in the **same PR** (all three mirrors). Read the skill before editing
+Billing UI or APIs.
+
+Billing ≠ Finance. Do not treat `mytrions/finance/**` as this desk. Do not restyle
+`MytrionShell` sidebar/header.

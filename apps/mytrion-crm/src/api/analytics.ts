@@ -39,6 +39,109 @@ export async function fetchAnalyticsSnapshot(
   return (await request('GET', `/analytics/${dimension}`, { query })) as AnalyticsSnapshot;
 }
 
+export type MytrionUsageCoverageStatus = 'complete' | 'partial' | 'unavailable';
+export type MytrionPresenceStatus = 'active' | 'idle' | 'offline';
+
+export interface MytrionUsageCoverage {
+  source: string;
+  label: string;
+  status: MytrionUsageCoverageStatus;
+  availableFrom: string | null;
+  availableThrough: string | null;
+  note: string | null;
+}
+
+export interface MytrionUsageSummary {
+  eligibleAgents: number;
+  activeAgents: number | null;
+  workspaceSessions: number | null;
+  onlineSeconds: number | null;
+  activeSeconds: number | null;
+  uiActions: number | null;
+  workOutcomes: number | null;
+}
+
+export interface MytrionUsageDay {
+  date: string;
+  partial: boolean;
+  activeAgents: number | null;
+  workspaceSessions: number | null;
+  onlineSeconds: number | null;
+  activeSeconds: number | null;
+  uiActions: number | null;
+  workOutcomes: number | null;
+  aiTurns: number | null;
+}
+
+export interface SalesAgentUsageRow {
+  /** Stable rendering key only. It is deliberately omitted from spreadsheet exports. */
+  workerId: string;
+  displayName: string;
+  currentStatus: MytrionPresenceStatus | null;
+  signIns: number | null;
+  workspaceSessions: number | null;
+  onlineSeconds: number | null;
+  activeSeconds: number | null;
+  activeDays: number | null;
+  uiActions: number | null;
+  workOutcomes: number | null;
+  ticketCreates: number | null;
+  escalationCreates: number | null;
+  automationStarted: number | null;
+  automationSucceeded: number | null;
+  automationFailed: number | null;
+  calls: number | null;
+  talkSeconds: number | null;
+  aiTurns: number | null;
+  aiToolCalls: number | null;
+  lastActivityAt: string | null;
+}
+
+export interface MytrionUsageBreakdownRow {
+  key: string;
+  label: string;
+  count: number | null;
+}
+
+export interface MytrionUsageSnapshot {
+  scope: { mytrion: 'sales'; population: 'sales_agent' };
+  timeZone: string;
+  range: {
+    preset: NonNullable<FetchAnalyticsOpts['range']>;
+    from: string;
+    to: string;
+  };
+  computedAt: string;
+  population: { eligibleAgents: number };
+  coverage: MytrionUsageCoverage[];
+  summary: MytrionUsageSummary;
+  days: MytrionUsageDay[];
+  agents: SalesAgentUsageRow[];
+  breakdowns: {
+    activity: MytrionUsageBreakdownRow[];
+    workOutcomes: MytrionUsageBreakdownRow[];
+    tickets: MytrionUsageBreakdownRow[];
+    automations: MytrionUsageBreakdownRow[];
+    ai: MytrionUsageBreakdownRow[];
+  };
+}
+
+/** Internal Sales Mytrion usage, session-authenticated and server-RBAC gated. */
+export async function fetchSalesMytrionUsage(
+  opts: Pick<FetchAnalyticsOpts, 'fresh' | 'range' | 'from' | 'to'> = {},
+): Promise<MytrionUsageSnapshot> {
+  const query: Record<string, string> = {};
+  if (opts.fresh) query.fresh = '1';
+  if (opts.range) query.range = opts.range;
+  if (opts.from) query.from = opts.from;
+  if (opts.to) query.to = opts.to;
+  return (await request('GET', '/analytics/mytrion/sales', {
+    query,
+    // This is a cross-agent management snapshot. A TopBar View-as selection must not re-scope it.
+    impersonate: false,
+  })) as MytrionUsageSnapshot;
+}
+
 /** One column of a standing report — `type` drives the Excel number format. */
 export interface ReportColumn {
   key: string;

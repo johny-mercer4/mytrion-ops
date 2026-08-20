@@ -223,8 +223,13 @@
   gap: 0.5rem;
 }
 
-/* Attachment picker on the create forms. */
+/* Attachment picker on the create forms. THE ANCHOR: the hidden `<input type="file">` below is
+   `position: absolute`; with nothing positioned between it and `.shell .body`, its containing
+   block WAS the shell — focusing the control scrolled the whole app. `position: relative` gives
+   the input its own containing block. Nothing moves — the input keeps auto offsets — and no
+   `z-index` is set, so no stacking context is created. */
 .attachPick {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;

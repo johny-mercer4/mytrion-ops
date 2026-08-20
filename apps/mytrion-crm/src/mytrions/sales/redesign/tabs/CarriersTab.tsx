@@ -15,6 +15,7 @@ import { SalesBodySkeleton } from '../SalesTabSkeleton';
 import { searchCarriers, type CarrierSearchVM } from '../live';
 import { createLeadFromCarrier } from '../carrierLead';
 import { leadShortId, zohoLeadUrl } from '../crmUrls';
+import { useKpiSearchCompleted } from '../kpiTelemetry';
 
 function statusColor(status: string): string {
   const x = status.toLowerCase();
@@ -189,6 +190,12 @@ export function CarriersTab() {
   const carrierIdle = !carrierSearching && !error && !hasSearched;
   const carrierEmpty = !carrierSearching && !error && hasSearched && all.length === 0;
   const carrierHas = !error && all.length > 0;
+  useKpiSearchCompleted(
+    'carriers.directory',
+    carrierQuery.trim().length >= 3 ? carrierQuery : '',
+    totalMatches,
+    hasSearched && !carrierSearching && !error,
+  );
 
   const runCarrierSearch = useCallback(async (): Promise<void> => {
     const q = carrierQuery.trim();

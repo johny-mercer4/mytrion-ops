@@ -10,6 +10,7 @@ import {
   kpiSalesDailyRollupJob,
   kpiSalesMonthCloseJob,
   kpiSalesReconcileJob,
+  mytrionUsageDailyJob,
   retentionCaseSyncJob,
   retentionDeadlineSweepJob,
   type JobDef,
@@ -70,6 +71,12 @@ export async function triggerCatalogJob(
     };
   }
   if (name === kpiSalesDailyRollupJob.name) {
+    data = {
+      trigger: 'manual',
+      ...(Array.isArray(payload.days) ? { days: payload.days } : {}),
+    };
+  }
+  if (name === mytrionUsageDailyJob.name) {
     data = {
       trigger: 'manual',
       ...(Array.isArray(payload.days) ? { days: payload.days } : {}),

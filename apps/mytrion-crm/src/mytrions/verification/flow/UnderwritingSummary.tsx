@@ -6,7 +6,7 @@
  * being assembled and stored on the risk assessment with no surface to read it on.
  */
 import { s } from './style';
-import type { VerificationDeskDetail } from '@/api/verificationFlow';
+import type { VerificationDeskDetail, VerificationRailPhase } from '@/api/verificationFlow';
 
 /**
  * The SOP's "Underwriting summary in Mytrion", shown where the final decision is made.
@@ -69,19 +69,11 @@ export function UnderwritingSummary({ detail }: { detail: VerificationDeskDetail
           ))}
         </dl>
 
-        {detail.routing ? (
-          <SummaryList
-            title="Highway findings"
-            items={
-              rail.find((p) => p.code === 'p8_highway')?.applies
-                ? [rail.find((p) => p.code === 'p8_highway')?.note ?? 'Reviewed, no note recorded.']
-                : ['Not applicable — non-carrier applicant.']
-            }
-          />
-        ) : null}
-        {risk?.analystRecommendation ? (
-          <SummaryList title="Analyst recommendation" items={[risk.analystRecommendation]} />
-        ) : null}
+        <SummaryList title="Highway findings" items={highwayItems(rail)} />
+        <SummaryList
+          title="Analyst recommendation"
+          items={risk?.analystRecommendation ? [risk.analystRecommendation] : []}
+        />
         <SummaryList title="Key risks" items={risk?.keyRisks?.length ? risk.keyRisks : indicators} />
         <SummaryList
           title="Supporting documents"
@@ -94,6 +86,47 @@ export function UnderwritingSummary({ detail }: { detail: VerificationDeskDetail
       </div>
     </details>
   );
+}
+
+/**
+ * The Highway line, off the FINDINGS rather than the note.
+ *
+ * It used to read `phase.note`, which Phase 8 does not write — so a case with a complete Highway
+ * review reported "Reviewed, no note recorded." and the SOP's "Highway findings" line was empty on
+ * every case. `saveHighwayReview` puts the review on the phase's `findings` blob; this reads it.
+ *
+ * The verdict leads because it is the reviewer's ruling; the figures follow because that is what the
+ * ruling was made from. Only figures that were actually recorded appear — a summary that printed
+ * "Safety rating: —" for every unfilled box would bury the ones that matter.
+ */
+function highwayItems(rail: readonly VerificationRailPhase[]): string[] {
+  const phase = rail.find((p) => p.code === 'p8_highway');
+  if (!phase) return [];
+  if (!phase.applies) return ['Not applicable — non-carrier applicant.'];
+
+  const f = phase.findings;
+  if (Object.keys(f).length === 0) return [];
+
+  const items: string[] = [];
+  const verdict = f.verdict;
+  if (verdict === 'consistent') items.push('Consistent with the application.');
+  if (verdict === 'discrepancy') items.push('Discrepancy against the application.');
+
+  const say = (label: string, value: unknown, suffix = ''): void => {
+    if (value === null || value === undefined || value === '') return;
+    items.push(`${label}: ${String(value)}${suffix}`);
+  };
+  say('Safety rating', f.safetyRating);
+  say('CSA percentile', f.safetyCsaPercentile);
+  say('Bluewire score', f.bluewireScore);
+  say('Power units observed', f.observedPowerUnits);
+  say('Power units reported', f.reportedPowerUnits);
+  say('Connected trucks', f.connectedTrucks);
+  say('Insurance limit', f.insuranceLimit);
+  say('Authority age', f.authorityAgeMonths, ' mo');
+  say('Operating status', f.operatingStatus);
+  if (typeof f.note === 'string' && f.note.trim() !== '') items.push(f.note);
+  return items;
 }
 
 function SummaryList({ title, items }: { title: string; items: string[] }) {

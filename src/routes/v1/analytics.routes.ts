@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
-import { AppError, NotFoundError } from '../../lib/errors.js';
+import { AppError, NotFoundError, RBACError } from '../../lib/errors.js';
 import { getAnalyticsSnapshot } from '../../modules/analytics/cache.js';
+import { resolveMytrionUsageWindow } from '../../modules/analytics/mytrionUsageDates.js';
+import { getSalesMytrionUsage } from '../../modules/analytics/mytrionUsageService.js';
 import {
   ANALYTICS_DATE_RANGES,
   type AnalyticsFilters,
@@ -21,6 +23,12 @@ const querySchema = z.object({
   agent: z.string().min(1).max(120).optional(),
   agent_name: z.string().min(1).max(200).optional(),
   range: z.enum(ANALYTICS_DATE_RANGES).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+const mytrionUsageQuerySchema = z.object({
+  fresh: z.enum(['0', '1']).optional(),
+  range: z.enum(['today', 'last_7_days', 'this_month', 'custom']).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
@@ -90,6 +98,29 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  /** Internal product-usage analytics: verified session plus Analytics department/admin access. */
+  app.get('/analytics/mytrion/sales', { onRequest: [app.authenticate] }, async (request) => {
+    const ctx = requireDepartment(request, 'analytics', 'Mytrion usage analytics');
+    const q = mytrionUsageQuerySchema.parse(request.query);
+    const window = resolveMytrionUsageWindow({
+      ...(q.range ? { preset: q.range } : {}),
+      ...(q.from ? { from: q.from } : {}),
+      ...(q.to ? { to: q.to } : {}),
+    });
+    try {
+      return await getSalesMytrionUsage(ctx, window, q.fresh === '1');
+    } catch (error) {
+      request.log.error({ err: error }, 'Sales Mytrion usage snapshot failed');
+      if (error instanceof AppError) throw error;
+      throw new AppError('Mytrion usage analytics are unavailable', {
+        statusCode: 503,
+        code: 'MYTRION_USAGE_UNAVAILABLE',
+        cause: error,
+        expose: true,
+      });
+    }
+  });
+
   app.get('/analytics/:dimension', guard, async (request) => {
     const { dimension } = paramsSchema.parse(request.params);
     const q = querySchema.parse(request.query);
@@ -131,7 +162,7 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
  * agent's numbers via query params. API-key / system callers (no zoho: userId) keep the requested
  * agent filter as-is (trusted server-to-server).
  */
-function resolveFilters(
+export function resolveFilters(
   ctx: { userId: string; allDepartmentAccess?: boolean; role?: string; bypassRbac?: boolean },
   q: z.infer<typeof querySchema>,
 ): AnalyticsFilters {
@@ -140,11 +171,17 @@ function resolveFilters(
   const selfId = ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : null;
 
   let agentId = q.agent?.trim() || null;
-  const agentName = q.agent_name?.trim() || null;
+  let agentName = q.agent_name?.trim() || null;
 
-  if (!elevated && selfId && (agentId || agentName)) {
-    // May request a filter, but only for their own book — never another agent's.
+  if (!elevated && !selfId) {
+    throw new RBACError('Analytics require a verified Zoho worker identity');
+  }
+  if (!elevated && selfId) {
+    // A worker always sees only their own book, including when they omit every agent filter.
     agentId = selfId;
+    // A caller-supplied name must not survive beside the forced id and accidentally narrow the
+    // result to another person's display name in a dimension that supports name fallback.
+    agentName = null;
   }
 
   const filters: AnalyticsFilters = {};

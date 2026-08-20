@@ -23,6 +23,7 @@ import {
   type RejectionVM,
 } from './dataCenterLive';
 import { PhoneDealsList, PhoneLeadsList, PhoneRejectionsList } from './dataCenterPhoneList';
+import { useKpiSearchCompleted } from './kpiTelemetry';
 
 const AV = (size = 34, fs = 13): string =>
   `width:${size}px;height:${size}px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
@@ -100,6 +101,7 @@ export function LeadsView({
     }
     return true;
   });
+  useKpiSearchCompleted('records.leads', search, rows.length);
 
   if (rows.length === 0) {
     return <EmptyRow msg="No leads found." />;
@@ -262,6 +264,7 @@ export function DealsView({
     if (q && !`${d.name} ${d.company} ${d.stage} ${d.carrierId} ${d.app}`.toLowerCase().includes(q)) return false;
     return true;
   });
+  useKpiSearchCompleted('records.deals', search, rows.length);
 
   if (phone) {
     if (rows.length === 0) return <EmptyRow msg="No deals found." />;
@@ -332,6 +335,7 @@ export function RejectionsView({
         `${r.company} ${r.number} ${r.reason} ${r.driverName} ${r.cardLast4}`.toLowerCase().includes(q),
       )
     : rejections;
+  useKpiSearchCompleted('records.rejections', search, rows.length);
 
   if (phone) {
     if (rows.length === 0) {

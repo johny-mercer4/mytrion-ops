@@ -3,11 +3,14 @@ import {
   CRON_SCHEDULES,
   DISABLED_JOB_QUEUES,
   KPI_JOB_QUEUES,
+  MYTRION_USAGE_COLLECTION_JOB_QUEUES,
   MANUAL_TRIGGERABLE_QUEUES,
   kpiSalesDailyRollupJob,
   kpiSalesHourlySyncJob,
   kpiSalesMonthCloseJob,
   kpiSalesReconcileJob,
+  mytrionUsageDailyJob,
+  mytrionUsageRetentionJob,
 } from '../../src/modules/jobs/catalog.js';
 
 describe('Sales KPI jobs', () => {
@@ -39,6 +42,17 @@ describe('Sales KPI jobs', () => {
     expect(schedules.find((entry) => entry.name === kpiSalesMonthCloseJob.name)?.cron).toBe(
       '15 0 3 * *',
     );
+  });
+
+  it('keeps local usage jobs separate while all four external collectors remain parked', () => {
+    expect(MYTRION_USAGE_COLLECTION_JOB_QUEUES).toEqual(new Set([mytrionUsageDailyJob.name]));
+    expect(DISABLED_JOB_QUEUES.has(mytrionUsageDailyJob.name)).toBe(false);
+    expect(DISABLED_JOB_QUEUES.has(mytrionUsageRetentionJob.name)).toBe(false);
+    expect(MANUAL_TRIGGERABLE_QUEUES.has(mytrionUsageDailyJob.name)).toBe(true);
+    expect(MANUAL_TRIGGERABLE_QUEUES.has(mytrionUsageRetentionJob.name)).toBe(false);
+    expect(
+      CRON_SCHEDULES.find((entry) => entry.name === mytrionUsageDailyJob.name),
+    ).toMatchObject({ cron: '5 4 * * *', timezone: 'America/New_York' });
   });
 
   it('bounds manual reconciliation and backfill to 90 days', () => {

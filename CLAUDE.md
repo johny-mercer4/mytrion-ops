@@ -51,7 +51,7 @@ When asked to "run the bot / gateway", the answer is almost always `agent-gatewa
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
 10. **Karpathy guidelines apply to every change** — think before coding, simplicity first, surgical
     changes, goal-driven execution. Stated in full below and in `.claude/skills/karpathy-guidelines/`.
-11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders).
+11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders). Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin (`.claude/skills/<name>-mytrion/`).
 
 ## Karpathy guidelines — apply to every change
 
@@ -82,6 +82,9 @@ and RBAC boundaries, not speculative abstraction, so routing through them IS the
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`.
 - **UI PRs — rebuild vendored frontends before opening/pushing the PR** (see below). Source-only
   merges do **not** change production UI.
+- **Pre-push** (`.githooks/pre-push` → `scripts/git-pre-push.sh`) also runs the cheap CI PR
+  gates vs `origin/build`: conventional commits, file-size cap, CRM vitest when
+  `apps/mytrion-crm` src changed, vendored-bundle check. Not the full backend suite.
 
 ## Vendored frontend builds (REQUIRED before UI PRs)
 
@@ -116,6 +119,7 @@ committing `app/` when opening a PR to `build` / `main`.
   scripts). `tsconfig.build.json` is emit-only (`rootDir: ./src`, src only). `pnpm build` uses the
   build config.
 - **pnpm via Corepack.** If `pnpm` isn't on PATH, use `corepack pnpm ...`.
+- **ast-grep** (optional): `brew install ast-grep`, then `ast-grep --version`. Agents may shell out to `ast-grep` for syntax-shaped search. Missing binary is fine — see `.claude/skills/ast-grep/`. Not an MCP.
 
 ## Database migrations (Drizzle)
 

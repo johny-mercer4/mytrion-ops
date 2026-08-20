@@ -66,16 +66,30 @@ describe('scrolling Sales cards stay paintable after scroll', () => {
     expect(blurred.some((rule) => selectorHits(rule.selectors, '.ss-modal-box'))).toBe(true);
   });
 
-  it('keeps Verification roster cards free of compositor traps', () => {
-    const card = cssRules(verification).find((rule) =>
-      selectorHits(rule.selectors, '.ss-verification-card'),
+  /**
+   * The trap is gone by CONSTRUCTION, not by discipline.
+   *
+   * The Sales Verification roster used to be a grid of glass buttons, and the rule this test
+   * guarded was the one that kept `backdrop-filter` off them. It is now `ds/DataTable` over
+   * `verification/applicants/applicants.css` — a bordered panel with `--hz-glass-inset`, which is an
+   * inset shadow and not a blurred layer — so there is no scrolling card to promote. Asserting the
+   * class is absent is what stops the grid quietly coming back with the trap reattached.
+   */
+  it('leaves the Verification roster with no glass card to promote', () => {
+    expect(
+      cssRules(verification).some((rule) => selectorHits(rule.selectors, '.ss-verification-card')),
+    ).toBe(false);
+
+    const applicants = readFileSync(
+      join(SRC, 'mytrions/verification/applicants/applicants.css'),
+      'utf8',
     );
-    expect(card).toBeTruthy();
-    expect(hasBackdropFilter(card!.body)).toBe(false);
-    expect(card!.body).not.toMatch(/transform\s*:/);
-    expect(card!.body).not.toMatch(/overflow\s*:\s*hidden/);
-    expect(card!.body).not.toMatch(/content-visibility\s*:/);
-    expect(card!.body).not.toMatch(/will-change\s*:/);
+    const panel = cssRules(applicants).find((rule) => selectorHits(rule.selectors, '.va-panel'));
+    expect(panel).toBeTruthy();
+    expect(hasBackdropFilter(panel!.body)).toBe(false);
+    expect(panel!.body).not.toMatch(/transform\s*:/);
+    expect(panel!.body).not.toMatch(/content-visibility\s*:/);
+    expect(panel!.body).not.toMatch(/will-change\s*:/);
   });
 
   it('emits catalog transform only while dragging, never overflow:hidden or transition:all', () => {

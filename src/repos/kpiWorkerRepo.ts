@@ -108,6 +108,7 @@ export const kpiWorkerRepo = {
     ctx: TenantContext,
     periodStart: Date,
     periodEnd: Date,
+    profileName?: string,
   ): Promise<KpiWorker[]> {
     return db
       .selectDistinct({
@@ -137,7 +138,12 @@ export const kpiWorkerRepo = {
           ),
         ),
       )
-      .where(eq(kpiWorkers.tenantId, ctx.tenantId))
+      .where(
+        and(
+          eq(kpiWorkers.tenantId, ctx.tenantId),
+          ...(profileName ? [eq(kpiWorkerMemberships.profileName, profileName)] : []),
+        ),
+      )
       .orderBy(asc(kpiWorkers.displayName));
   },
 

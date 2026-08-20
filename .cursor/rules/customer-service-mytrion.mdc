@@ -1,0 +1,19 @@
+---
+description: When CS schema, /cs routes, retention.cs_* keys, nav/soon/parked flags, caps, or Applications snapshot TTL change, update the Customer Service skill in the same PR
+globs: src/db/schema/maintenance_cases.ts,src/repos/maintenanceCaseRepo.ts,src/repos/maintenanceAttachmentRepo.ts,src/repos/maintenanceCaseHistoryRepo.ts,src/repos/retentionCaseCsRepo.ts,src/repos/retentionPoolClaimRepo.ts,src/routes/v1/csApplications.routes.ts,src/routes/v1/csMaintenance.routes.ts,src/routes/v1/csCitifuel.routes.ts,src/routes/v1/csAnalytics.routes.ts,src/modules/touchpoints/catalog/csDeluge.ts,src/modules/touchpoints/catalog/retentionCs.ts,src/modules/customerService/**/*,src/modules/retention/csCaps.ts,src/lib/applicationsSnapshotCache.ts,apps/mytrion-crm/src/mytrions/customer-service/**/*,apps/mytrion-crm/src/api/cs.ts,apps/mytrion-crm/src/api/csRetention.ts,src/lib/mytrions.ts,apps/mytrion-crm/src/access/mytrions.config.ts,tests/unit/cs-*.ts
+alwaysApply: false
+---
+
+# Customer Service skill stays in sync
+
+You are on Customer Service paths. Product facts an agent cannot infer live in
+`.claude/skills/customer-service-mytrion/SKILL.md` (mirrored to `.cursor/skills/` and
+`.agents/skills/`).
+
+If this change touches **schema, /cs routes, retention.cs_* keys, nav/soon/parked flags,
+caps, or Applications snapshot TTL**, update that skill in the **same PR** (all three
+mirrors). Read the skill before editing CS UI or APIs.
+
+Do not restyle `MytrionShell` sidebar/header. Do not treat Data Center / Inbox / Tickets /
+Service Center as live — they are soon or `TICKETS_PARKED`. CS Open Pool is readonly;
+Sales claims. Do not call `/v1/retention` from this desk (`retention.cs_*` only).

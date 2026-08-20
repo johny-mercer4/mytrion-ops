@@ -21,6 +21,7 @@ import {
 } from '../retentionData';
 import { subscribeRetentionLive } from '../retentionLiveBus';
 import { stageTimer } from '../retentionTimers';
+import { useKpiSearchCompleted } from '../kpiTelemetry';
 
 type PoolQuota = { used: number; max: number; remaining: number };
 
@@ -230,6 +231,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     }
     return rows;
   }, [cases, search, sort]);
+  useKpiSearchCompleted('retention.pool', search, filtered.length, !feed.loading);
 
   const toggleAll = (): void => {
     const ids = filtered.map((c) => c.id);

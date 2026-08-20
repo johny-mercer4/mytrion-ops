@@ -169,4 +169,38 @@ export const auditRepo = {
       .limit(1);
     return rows.length > 0;
   },
+
+  /**
+   * Compliance repair for pre-redaction touchpoint rows. Bounded + idempotent: already-masked
+   * values no longer match, and SKIP LOCKED lets an operator safely restart or parallelize batches.
+   */
+  async scrubTouchpointCardNumbers(ctx: TenantContext, limit = 500): Promise<number> {
+    const batchSize = Math.min(Math.max(Math.trunc(limit), 1), 1_000);
+    const rows = await db.execute(sql`
+      with candidates as (
+        select id
+        from audit_log
+        where tenant_id = ${ctx.tenantId}
+          and action like 'touchpoint.%'
+          and jsonb_typeof(detail->'params'->'cardNumber') = 'string'
+          and length(detail #>> '{params,cardNumber}') > 4
+          and (detail #>> '{params,cardNumber}') not like '•••• %'
+        order by created_at, id
+        limit ${batchSize}
+        for update skip locked
+      )
+      update audit_log audit
+      set detail = jsonb_set(
+        audit.detail,
+        '{params,cardNumber}',
+        to_jsonb(('•••• ' || right(audit.detail #>> '{params,cardNumber}', 4))::text),
+        false
+      )
+      from candidates
+      where audit.tenant_id = ${ctx.tenantId}
+        and audit.id = candidates.id
+      returning audit.id
+    `);
+    return rows.length;
+  },
 };

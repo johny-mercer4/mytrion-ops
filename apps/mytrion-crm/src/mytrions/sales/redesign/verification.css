@@ -1,79 +1,13 @@
-/* Sales Verification — roster + detail. Cards use Horizon `.ss-card-h` (highlight, elevation).
-   No backdrop-filter on the roster buttons: that blur on a scrolling card grid is the empty-card-
-   after-scroll defect (focus/hover, scroll away, come back — children unpainted). Glass tint is
-   `--surface` + `--shadow-sm`. Field labels use `--muted` (not `--faint` / border colour) so they
-   clear AA on dark glass. */
-.ss-root .ss-verification-page { max-width:1180px;margin:0 auto; }
-.ss-root .ss-verification-page .ss-skel-grid,
-.ss-root .ss-verification-grid {
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  grid-auto-rows:1fr;
-  gap:16px;
-  width:100%;
-  min-width:0;
-}
+/* Sales Verification — the LEGACY credit-platform detail sheet, and nothing else.
 
-.ss-root .ss-verification-card {
-  position:relative;
-  display:flex;
-  flex-direction:column;
-  width:100%;
-  min-width:0;
-  min-height:220px;
-  height:100%;
-  padding:20px;
-  border:1px solid var(--border);
-  border-radius:var(--radius-lg);
-  background:var(--surface);
-  color:var(--text);
-  font:inherit;
-  text-align:left;
-  cursor:pointer;
-  box-shadow:var(--shadow-sm), var(--glare);
-}
-.ss-root .ss-verification-card:hover {
-  border-color:color-mix(in srgb,var(--accent) 45%,var(--border));
-}
-.ss-root .ss-verification-card:focus-visible {
-  outline:2px solid var(--accent);
-  outline-offset:2px;
-}
+   The roster and the case are now the Verification desk's own surfaces: `tabs/VerificationTab.tsx`
+   renders `ds/DataTable` and `applicationIntake.tsx` renders the `.va-*` case shell, both over
+   `mytrions/verification/applicants/applicants.css`. The card grid that used to live at the top of
+   this file went with them.
 
-.ss-root .ss-verification-card-top {
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap:12px;
-}
-.ss-root .ss-verification-card-heading { min-width:0;flex:1; }
-.ss-root .ss-verification-card-title {
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:var(--ss-text-md);
-  font-weight:700;
-  line-height:1.3;
-}
-.ss-root .ss-vf-open {
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  margin-top:6px;
-  font-size:var(--ss-text-2xs);
-  font-weight:700;
-  color:var(--accent-text);
-}
-.ss-root .ss-vf-class {
-  flex-shrink:0;
-  padding:4px 9px;
-  border-radius:999px;
-  border:1px solid var(--border);
-  background:color-mix(in srgb,var(--surface-alt) 70%,transparent);
-  font-size:var(--ss-text-2xs);
-  font-weight:700;
-}
+   What is left serves `VerificationDetail.tsx` / `verificationFields.tsx`, which nothing mounts
+   today — see `sales/redesign`'s own note. Field labels use `--muted` (not `--faint` / border
+   colour) so they clear AA on dark glass. */
 
 .ss-root .ss-vf-chips {
   display:grid;
@@ -116,52 +50,7 @@
 .ss-root .ss-vf-chip.is-danger .ss-vf-chip-val { color:var(--danger); }
 .ss-root .ss-vf-chip.is-accent .ss-vf-chip-val { color:var(--accent-text); }
 
-.ss-root .ss-vf-card-attention {
-  display:flex;
-  align-items:center;
-  gap:7px;
-  margin-top:12px;
-  padding:10px 12px;
-  border-radius:var(--radius-md);
-  background:color-mix(in srgb,var(--danger) 9%,transparent);
-  color:var(--danger);
-  font-size:var(--ss-text-2xs);
-  font-weight:800;
-}
-.ss-root .ss-vf-card-foot {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  margin-top:auto;
-  padding-top:16px;
-  font-size:var(--ss-text-2xs);
-  color:var(--muted);
-}
-.ss-root .ss-vf-card-foot .is-mono,
 .ss-root .ss-vf-verdict.is-mono { font-family:var(--font-mono); }
-
-.ss-root .ss-vf-filters { display:flex;flex-wrap:wrap;gap:6px; }
-.ss-root .ss-vf-filter {
-  min-height:36px;
-  padding:8px 14px;
-  border-radius:999px;
-  border:1px solid var(--border);
-  background:var(--surface);
-  color:var(--text2);
-  font:inherit;
-  font-size:var(--ss-text-2xs);
-  font-weight:700;
-  cursor:pointer;
-  white-space:nowrap;
-  transition:background var(--hz-dur-wash) var(--hz-ease),border-color var(--hz-dur-wash) var(--hz-ease),color var(--hz-dur-wash) var(--hz-ease);
-}
-.ss-root .ss-vf-filter:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
-.ss-root .ss-vf-filter.is-active {
-  background:color-mix(in srgb,var(--accent) 16%,transparent);
-  border-color:color-mix(in srgb,var(--accent) 48%,var(--border));
-  color:var(--accent-text);
-}
 
 .ss-root .ss-vf-cp {
   display:flex;
@@ -570,129 +459,13 @@
 }
 
 @media (width < 900px) {
-  .ss-root .ss-verification-page .ss-skel-grid,
-  .ss-root .ss-verification-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .ss-root .ss-vf-chips { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (width < 640px) {
-  .ss-root .ss-verification-page .ss-skel-grid,
-  .ss-root .ss-verification-grid { grid-template-columns:minmax(0,1fr); gap:0; }
-  .ss-root .ss-verification-card {
-    min-height:0;
-    height:auto;
-    padding:14px 16px;
-    border-radius:0;
-    box-shadow:none;
-    border-left:none;
-    border-right:none;
-    border-top:none;
-  }
-  .ss-root .ss-verification-card:first-child { border-radius:var(--radius-md) var(--radius-md) 0 0; }
-  .ss-root .ss-verification-card:last-child { border-radius:0 0 var(--radius-md) var(--radius-md); }
-  .ss-root .ss-verification-card-title { font-size:16px; }
   .ss-root .ss-vf-chips,
   .ss-root .ss-vf-sheet-grid,
   .ss-root .ss-vf-edit-grid { grid-template-columns:minmax(0,1fr); }
-  .ss-root .ss-vf-filter { min-height:44px; }
   .ss-root .ss-verification-detail-body { padding:16px; }
   .ss-root .ss-verification-detail-summary { align-items:flex-start;flex-direction:column; }
   .ss-root .ss-verification-detail-summary > .ss-skel:last-child { margin-left:0 !important; }
 }
-
-/* ── Roster card: stage, ask, decision ─────────────────────────────────────────────────
-   Sales does not underwrite, so the card answers exactly three questions: where is it, what
-   does Verification want from me, and what was decided. Everything else is the desk's.
-
-   The ten-segment meter is deliberately the same shape the Verification queue draws, so an
-   agent looking at both surfaces reads one language. No backdrop-filter, transform,
-   overflow:hidden, content-visibility or will-change on `.ss-verification-card` — the blur on
-   a scrolling card grid is the empty-card-after-scroll defect, and `ssCardLayer.test.ts` pins
-   all five. */
-.ss-root .ss-vf-meter {
-  display:flex;
-  gap:2px;
-  margin-top:14px;
-}
-.ss-root .ss-vf-seg {
-  width:100%;
-  height:4px;
-  border-radius:1px;
-  background:var(--border2);
-}
-.ss-root .ss-vf-seg[data-on='true'] { background:var(--accent); }
-.ss-root .ss-vf-seg[data-on='true'][data-locked='true'] {
-  background:color-mix(in srgb,var(--danger) 55%,transparent);
-}
-/* `-caption`, NOT `-line`: `.ss-vf-stage-line` is already the detail rail's 2px vertical
-   connector (width:2px; background:var(--border2)) further up this file. Reusing that name gave
-   the roster a grey band behind the text and silently restyled the detail rail. */
-.ss-root .ss-vf-stage-caption {
-  display:block;
-  margin-top:7px;
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:var(--ss-text-2xs);
-  color:var(--muted);
-}
-.ss-root .ss-vf-stage-caption b {
-  color:var(--text);
-  font-weight:700;
-}
-
-/* The one line that tells Sales to DO something. Tone is carried by the word as well as the
-   colour — `data-tone` never encodes meaning on its own. */
-.ss-root .ss-vf-card-attention[data-tone='warn'] {
-  background:color-mix(in srgb,var(--warn) 11%,transparent);
-  color:var(--warn);
-}
-.ss-root .ss-vf-card-attention[data-tone='ok'] {
-  background:color-mix(in srgb,var(--ok) 10%,transparent);
-  color:var(--ok-text);
-}
-.ss-root .ss-vf-card-attention[data-tone='none'] {
-  background:transparent;
-  color:var(--muted);
-  font-weight:700;
-  padding-left:0;
-  padding-right:0;
-}
-
-/* Roster chips sit tighter than the detail sheet's: a few short facts, not a data grid. Two
-   explicit columns rather than `auto-fit,minmax(Npx,1fr)` — the card is 367px at 1440 and full
-   width on a phone, so the answer is two either way, and a px track is what
-   `styles/breakpoints.test.ts` counts. */
-.ss-root .ss-verification-card .ss-vf-chips {
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:6px;
-  margin-top:14px;
-}
-.ss-root .ss-verification-card .ss-vf-chip { padding:6px 9px; }
-
-/* ── Roster card: make the existing anatomy actually lay out ──────────────────────────
-   Three fixes the roster layer needed the moment anything rendered it — it never had a
-   consumer before, so none of this was ever exercised:
-
-   1. `.ss-verification-card-title` carries `overflow/text-overflow/white-space` but computed
-      `display:inline`, where all three are inert — so a long name did not ellipsis AND the
-      applicant-type line flowed into the same line box ("DaklanCarrier (Company)").
-   2. The stage line measured 2px wide: as a flex item in the card's column it was not
-      stretching, so the text it holds was clipped to nothing.
-   3. `.ss-vf-card-foot` is a `space-between` flex row, which sized the chip GRID to its own
-      content (88px) and stacked the chips vertically.
-
-   Scoped under `.ss-verification-card` so the detail sheet's use of these classes is untouched. */
-.ss-root .ss-verification-card .ss-verification-card-heading {
-  display:flex;
-  flex-direction:column;
-  align-items:flex-start;
-}
-.ss-root .ss-verification-card .ss-verification-card-title {
-  display:block;
-  width:100%;
-}
-.ss-root .ss-verification-card .ss-vf-open { margin-top:4px; }
-.ss-root .ss-verification-card .ss-vf-meter,
-.ss-root .ss-verification-card .ss-vf-card-attention { width:100%; }
-.ss-root .ss-verification-card .ss-vf-card-foot { display:block; }

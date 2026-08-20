@@ -12,9 +12,10 @@
  * completeness in the browser. One evaluator, one answer, no chance of the card and the form
  * disagreeing about what is outstanding.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useRovingRadio } from '../../_shared/useRovingRadio';
 import { s } from './dc';
+import { Skel } from './SalesPage';
 import { Icon } from './icons';
 
 /**
@@ -30,12 +31,19 @@ import { Icon } from './icons';
  * Sales and correct outside it.
  */
 const LABEL =
-  'font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
-const FIELD =
-  'width:100%;min-height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:14px';
-
+  'font-size:var(--ss-text-xs);font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.02em';
+const FIELD_BOX =
+  'width:100%;min-height:44px;padding:0 14px;border-radius:var(--radius-md);background:var(--surface);color:var(--text-primary);font-size:var(--ss-text-md)';
+const FIELD = `${FIELD_BOX};border:1px solid var(--border)`;
 /** A field the server says is outstanding gets a visible edge, not just a colour. */
-const FIELD_MISSING = `${FIELD};border-color:var(--danger);box-shadow:0 0 0 1px var(--danger)`;
+const FIELD_MISSING = `${FIELD_BOX};border:1px solid var(--danger);box-shadow:0 0 0 1px var(--danger)`;
+/**
+ * Handed over. A read-only field must LOOK unavailable — `readOnly` alone renders identically to an
+ * editable input, so an agent types into it, nothing happens, and the form looks broken rather than
+ * finished. Flat surface, dimmed text, default cursor; still selectable, because copying an EIN out
+ * of a submitted application is a thing agents do all day.
+ */
+const FIELD_READONLY = `${FIELD_BOX};border:1px solid var(--border-subtle);background:var(--alt);color:var(--text2);cursor:default`;
 
 export function Section({
   title,
@@ -47,12 +55,10 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section style={s('display:grid;gap:14px')}>
+    <section className="ss-vf-intake-section">
       <div>
-        <h3 style={s('margin:0;font-size:15px;font-weight:800;color:var(--text-primary)')}>{title}</h3>
-        {hint ? (
-          <p style={s('margin:4px 0 0;font-size:13px;color:var(--text-muted);line-height:1.5')}>{hint}</p>
-        ) : null}
+        <h3 className="ss-vf-intake-heading">{title}</h3>
+        {hint ? <p className="ss-vf-intake-hint">{hint}</p> : null}
       </div>
       <div style={s('display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr))')}>
         {children}
@@ -72,12 +78,14 @@ export function Field({
   inputMode,
   maxLength,
   hint,
+  readOnly,
 }: {
   label: string;
   name: string;
   value: string;
   onChange: (v: string) => void;
   missing?: boolean | undefined;
+  readOnly?: boolean | undefined;
   type?: string | undefined;
   placeholder?: string | undefined;
   inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'email' | undefined;
@@ -89,19 +97,22 @@ export function Field({
     <div style={s('display:flex;flex-direction:column')}>
       <label htmlFor={id} style={s(LABEL)}>
         {label}
-        {missing ? <span style={s('color:var(--danger);margin-left:6px')}>needed</span> : null}
+        {missing && !readOnly ? (
+          <span style={s('color:var(--danger);margin-left:6px')}> needed</span>
+        ) : null}
       </label>
       <input
         id={id}
         name={name}
         type={type}
         value={value}
-        placeholder={placeholder ?? ''}
+        placeholder={readOnly ? '—' : (placeholder ?? '')}
         maxLength={maxLength ?? undefined}
         inputMode={inputMode ?? 'text'}
-        aria-invalid={missing ? true : undefined}
+        readOnly={readOnly ?? false}
+        aria-invalid={missing && !readOnly ? true : undefined}
         onChange={(e) => onChange(e.currentTarget.value)}
-        style={s(missing ? FIELD_MISSING : FIELD)}
+        style={s(readOnly ? FIELD_READONLY : missing ? FIELD_MISSING : FIELD)}
       />
       {hint ? (
         <span style={s('margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.45')}>{hint}</span>
@@ -117,6 +128,7 @@ export function SelectField({
   onChange,
   options,
   missing,
+  readOnly,
 }: {
   label: string;
   name: string;
@@ -124,21 +136,27 @@ export function SelectField({
   onChange: (v: string) => void;
   options: ReadonlyArray<{ value: string; label: string }>;
   missing?: boolean | undefined;
+  readOnly?: boolean | undefined;
 }) {
   const id = `app-${name}`;
   return (
     <div style={s('display:flex;flex-direction:column')}>
       <label htmlFor={id} style={s(LABEL)}>
         {label}
-        {missing ? <span style={s('color:var(--danger);margin-left:6px')}>needed</span> : null}
+        {missing && !readOnly ? (
+          <span style={s('color:var(--danger);margin-left:6px')}> needed</span>
+        ) : null}
       </label>
       <select
         id={id}
         name={name}
         value={value}
-        aria-invalid={missing ? true : undefined}
+        /* `disabled`, not `readOnly` — a select has no read-only state, and a disabled one still
+           shows its chosen option, which is all a handed-over application needs it to do. */
+        disabled={readOnly ?? false}
+        aria-invalid={missing && !readOnly ? true : undefined}
         onChange={(e) => onChange(e.currentTarget.value)}
-        style={s(missing ? FIELD_MISSING : FIELD)}
+        style={s(readOnly ? FIELD_READONLY : missing ? FIELD_MISSING : FIELD)}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -167,26 +185,51 @@ export function SelectField({
 export function ApplicantTypePicker({
   value,
   onChange,
+  pending = false,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: 'owner_operator' | 'carrier') => void;
+  /**
+   * The choice is being written.
+   *
+   * This is the slowest click on the intake form — several statements against a database in Oregon,
+   * and setting a type always changes the missing-field list so the gate must be re-derived and
+   * stored. The form used to set a `busy` flag that the picker could not read and the first-choice
+   * branch never rendered, so an agent clicked a card and got a still, silent page for a second or
+   * more. Now the card they clicked says so.
+   */
+  pending?: boolean;
+  disabled?: boolean;
 }) {
   const options = [
     {
       value: 'owner_operator' as const,
       title: 'Owner-Operator / Individual',
-      body: 'One person applying in their own name. Needs licence, SSN card and residential address.',
+      body: 'Licence, SSN card and residential address.',
     },
     {
       value: 'carrier' as const,
       title: 'Carrier (Company)',
-      body: 'An LLC, corporation or partnership. Needs EIN, business address and owners.',
+      body: 'EIN, business address and owners.',
     },
   ];
+  /**
+   * Which card was clicked, so a FIRST choice can report too.
+   *
+   * On the first-choice branch nothing is selected yet, so `pending && active` would light neither
+   * card — the exact case the agent complained about. The click is remembered locally; `value`
+   * takes over the moment the server answers.
+   */
+  const [clicked, setClicked] = useState<string | null>(null);
+  const pick = (v: 'owner_operator' | 'carrier'): void => {
+    setClicked(v);
+    onChange(v);
+  };
   const roving = useRovingRadio(
     options.map((o) => o.value),
     value as 'owner_operator' | 'carrier' | '',
-    onChange,
+    pick,
   );
   return (
     <div
@@ -196,25 +239,39 @@ export function ApplicantTypePicker({
     >
       {options.map((o) => {
         const active = value === o.value;
+        /* The card the agent clicked is the one that reports. Only ONE spinner can appear here, and
+           it is on the card whose choice is being written — not on both, and not on the page. */
+        const working = pending && (value === '' ? clicked === o.value : active);
+        const off = disabled || pending;
         return (
           <button
             key={o.value}
             type="button"
             role="radio"
             aria-checked={active}
+            aria-busy={working || undefined}
+            disabled={off}
             {...roving(o.value)}
-            onClick={() => onChange(o.value)}
+            onClick={() => pick(o.value)}
             style={s(
-              `text-align:left;display:grid;gap:6px;padding:14px;border-radius:var(--radius-md);cursor:pointer;background:var(--surface);border:1px solid ${
+              `text-align:left;display:grid;gap:6px;padding:14px;border-radius:var(--radius-md);cursor:${
+                off ? (working ? 'wait' : 'not-allowed') : 'pointer'
+              };background:var(--surface);border:1px solid ${
                 active ? 'var(--accent)' : 'var(--border)'
-              };box-shadow:${active ? '0 0 0 1px var(--accent)' : 'none'}`,
+              };box-shadow:${active ? '0 0 0 1px var(--accent)' : 'none'};opacity:${
+                off && !active ? '.6' : '1'
+              };transition:opacity .15s,border-color .15s`,
             )}
           >
-            <span style={s('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:var(--text-primary)')}>
-              {active ? <Icon name="check" size={15} color="var(--accent)" strokeWidth={2.4} /> : null}
+            <span style={s('display:flex;align-items:center;gap:8px;font-size:var(--ss-text-md);font-weight:800;color:var(--text-primary)')}>
+              {working ? (
+                <Icon name="spinner" size={15} color="var(--accent)" className="ss-spin" />
+              ) : active ? (
+                <Icon name="check" size={15} color="var(--accent)" strokeWidth={2.4} />
+              ) : null}
               {o.title}
             </span>
-            <span style={s('font-size:12px;color:var(--text-muted);line-height:1.5')}>{o.body}</span>
+            <span style={s('font-size:var(--ss-text-sm);color:var(--text-muted);line-height:1.5')}>{o.body}</span>
           </button>
         );
       })}
@@ -232,64 +289,112 @@ export function GateBanner({
   complete,
   missing,
   submitted,
+  awaitingSave = false,
 }: {
   complete: boolean;
   missing: Array<{ field: string; label: string }>;
   submitted: boolean;
+  /** Local values filled the red list; Submit still waits on the server after Save. */
+  awaitingSave?: boolean;
 }) {
   if (submitted && complete) {
     return (
-      <div
-        role="status"
-        style={s(
-          'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-success-bg);border:1px solid var(--intent-success-bd)',
-        )}
-      >
+      <div role="status" className="ss-vf-gate is-ok">
         <Icon name="check" size={18} color="var(--success)" strokeWidth={2.4} />
-        <span style={s('font-size:13px;font-weight:700;color:var(--text-primary)')}>
-          Released to Verification — underwriting is under way.
-        </span>
+        <span className="ss-vf-gate-title">With Verification</span>
       </div>
     );
   }
   if (complete) {
     return (
-      <div
-        role="status"
-        style={s(
-          'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-success-bg);border:1px solid var(--intent-success-bd)',
-        )}
-      >
+      <div role="status" className="ss-vf-gate is-ok">
         <Icon name="check" size={18} color="var(--success)" strokeWidth={2.4} />
-        <span style={s('font-size:13px;font-weight:700;color:var(--text-primary)')}>
-          Everything needed is here. Submit to release it to Verification.
-        </span>
+        <span className="ss-vf-gate-title">Ready to submit</span>
+      </div>
+    );
+  }
+  if (awaitingSave) {
+    return (
+      <div role="status" className="ss-vf-gate">
+        <Icon name="warn" size={18} color="var(--warn)" strokeWidth={2.2} />
+        <span className="ss-vf-gate-title">Save to update Verification</span>
       </div>
     );
   }
   return (
-    <div
-      role="status"
-      style={s(
-        'display:grid;gap:8px;padding:12px 14px;border-radius:var(--radius-md);background:var(--intent-danger-bg);border:1px solid var(--intent-danger-bd)',
-      )}
-    >
-      <div style={s('display:flex;align-items:center;gap:10px')}>
+    <div role="status" className="ss-vf-gate is-needed">
+      <div className="ss-vf-gate-row">
         <Icon name="warn" size={18} color="var(--danger)" strokeWidth={2.2} />
-        <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>
-          {missing.length} item{missing.length === 1 ? '' : 's'} still needed before Verification can start
+        <span className="ss-vf-gate-title">
+          {missing.length} item{missing.length === 1 ? '' : 's'} still needed
         </span>
       </div>
-      <ul style={s('margin:0;padding-left:28px;display:grid;gap:3px')}>
+      <ul className="ss-vf-gate-list">
         {missing.slice(0, 6).map((m) => (
-          <li key={m.field} style={s('font-size:12px;color:var(--text-secondary);line-height:1.5')}>
-            {m.label}
-          </li>
+          <li key={m.field}>{m.label}</li>
         ))}
-        {missing.length > 6 ? (
-          <li style={s('font-size:12px;color:var(--text-muted)')}>and {missing.length - 6} more…</li>
-        ) : null}
+        {missing.length > 6 ? <li>and {missing.length - 6} more…</li> : null}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The FORM, before it arrives — the applicant-type branch only.
+ *
+ * Mirrors the real blocks in the real order (field sections, then the document slots, then the
+ * actions) so nothing jumps when the data replaces it. Mounted while the type write is in flight,
+ * where only the form BELOW the picker is still to come; the case's own cold load is a different
+ * shape and draws the four `.va-*` panels instead — see `applicationIntake`.
+ *
+ * ONE `aria-busy` region. Everything inside is `aria-hidden`, so a screen reader hears "Loading
+ * application" once rather than reading out forty empty boxes.
+ */
+export function IntakeSkeleton() {
+  return (
+    <div
+      style={s('display:grid;gap:20px')}
+      aria-busy="true"
+      aria-label="Loading application"
+      role="status"
+    >
+      <div aria-hidden="true" style={s('display:grid;gap:20px')}>
+        {[0, 1].map((section) => (
+          <div key={section} style={s('display:grid;gap:14px')}>
+            <div style={s('display:grid;gap:6px')}>
+              <Skel w="180px" h="15px" />
+              <Skel w="62%" h="12px" />
+            </div>
+            <div
+              style={s(
+                'display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr))',
+              )}
+            >
+              {[0, 1, 2, 3].map((field) => (
+                <div key={field} style={s('display:flex;flex-direction:column;gap:8px')}>
+                  <Skel w="46%" h="11px" />
+                  <Skel w="100%" h="44px" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* The document slots, at the height they really render. */}
+        <div style={s('display:grid;gap:14px')}>
+          <Skel w="140px" h="15px" />
+          <div style={s('display:grid;gap:8px')}>
+            {[0, 1, 2].map((slot) => (
+              <Skel key={slot} w="100%" h="52px" />
+            ))}
+          </div>
+        </div>
+
+        <div style={s('display:flex;gap:12px')}>
+          <Skel w="168px" h="46px" />
+          <Skel w="196px" h="46px" />
+        </div>
+      </div>
     </div>
   );
 }
