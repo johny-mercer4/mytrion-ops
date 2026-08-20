@@ -28,6 +28,7 @@ import {
 } from '../modules/collection/deskPolicy.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { collectionActivityRepo, type LastContact } from './collectionActivityRepo.js';
+import { reportPeriodSortKey } from './arrayPeriod.js';
 import { canReadCollectionSnapshot } from './collectionAccess.js';
 import { collectionPlanRepo, type CollectionPromiseDto } from './collectionPlanRepo.js';
 import { toCollectionCaseDto, type CollectionCaseDto } from './collectionCaseRepo.js';
@@ -120,7 +121,7 @@ async function returnedCarriers(carrierIds: readonly string[]): Promise<Set<stri
     })
     .from(arrayReports)
     .where(inArray(arrayReports.carrierId, [...carrierIds]))
-    .orderBy(arrayReports.carrierId, desc(arrayReports.reportPeriod));
+    .orderBy(arrayReports.carrierId, desc(reportPeriodSortKey));
   for (const row of rows) {
     if (row.hasAgency === true && row.dateClosed !== null) out.add(row.carrierId);
   }
