@@ -18,9 +18,7 @@ const EnvSchema = z.object({
   // --- Server ---
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   // Wildcard-by-suffix origins (comma-separated hostnames). Zoho serves each widget from a
   // per-instance subdomain of zappsusercontent.com, so we allow that whole suffix.
@@ -371,9 +369,8 @@ const EnvSchema = z.object({
   // at all — `GET /users` is gated by the caller's CRM profile permission on the Users module, which
   // Administrators hold and Sales-type profiles usually do not, so login 403'd for everyone but admins.
   // The fallback identifies the human at the accounts level and reads their profile/role with the
-  // service token instead. `ZohoCRM.modules.notes.CREATE` is required so Notes are created as the
-  // signing-in agent (Created By), not the shared service account. Prefer this least-privilege set
-  // over `ZohoCRM.modules.ALL`. Adding a scope means existing workers re-consent once on next sign-in.
+  // service token instead. These least-privilege scopes cover every Sales CRM mutation exposed by
+  // Mytrion. Adding a scope means existing workers re-consent once on next sign-in.
   ZOHO_OAUTH_SCOPES: z.string().default(DEFAULT_ZOHO_OAUTH_SCOPES),
 
   // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
@@ -391,7 +388,9 @@ const EnvSchema = z.object({
   // the two vars below) to point every executeZohoFunction call at the CRM sandbox with
   // zero code change.
   ZOHO_FUNCTIONS_ENV: z.enum(['production', 'sandbox']).default('production'),
-  ZOHO_FUNCTIONS_SANDBOX_BASE_URL: z.string().default('https://sandbox.zohoapis.com/crm/v2/functions'),
+  ZOHO_FUNCTIONS_SANDBOX_BASE_URL: z
+    .string()
+    .default('https://sandbox.zohoapis.com/crm/v2/functions'),
   // Refresh token minted against the SANDBOX org (falls back to the prod CRM token).
   ZOHO_CRM_SANDBOX_REFRESH_TOKEN: z.string().default(''),
 

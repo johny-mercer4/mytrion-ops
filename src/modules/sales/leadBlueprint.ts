@@ -3,7 +3,9 @@
  * callers submit an id from that live response rather than writing the Blueprint field directly.
  */
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { executeBlueprintTransitionAsUser, zohoActorId } from '../../integrations/zohoUserAuth.js';
 import { AppError } from '../../lib/errors.js';
+import type { TenantContext } from '../../types/tenantContext.js';
 import {
   enrichLeadBlueprintFields,
   enrichLeadBlueprintTransitions,
@@ -18,6 +20,7 @@ function hasValue(value: unknown): boolean {
 }
 
 export async function executeLeadBlueprintTransition(
+  ctx: TenantContext,
   leadId: string,
   transitionId: string,
   data: Record<string, BlueprintInputValue>,
@@ -33,11 +36,14 @@ export async function executeLeadBlueprintTransition(
 
   const transition = blueprint.transitions.find((candidate) => candidate.id === transitionId);
   if (!transition || transition.type !== 'manual' || !transition.criteriaMatched) {
-    throw new AppError('That Blueprint transition is no longer available for this lead. Refresh and try again.', {
-      statusCode: 409,
-      code: 'BLUEPRINT_TRANSITION_STALE',
-      expose: true,
-    });
+    throw new AppError(
+      'That Blueprint transition is no longer available for this lead. Refresh and try again.',
+      {
+        statusCode: 409,
+        code: 'BLUEPRINT_TRANSITION_STALE',
+        expose: true,
+      },
+    );
   }
 
   // Known stage contracts (Application ID / reason picklists) even when Zoho omits field metadata.
@@ -56,7 +62,11 @@ export async function executeLeadBlueprintTransition(
   }
 
   const missing = fields.find(
-    (field) => field.mandatory && !field.readOnly && !hasValue(data[field.apiName]) && !hasValue(field.value),
+    (field) =>
+      field.mandatory &&
+      !field.readOnly &&
+      !hasValue(data[field.apiName]) &&
+      !hasValue(field.value),
   );
   if (missing) {
     throw new AppError(`Blueprint field "${missing.label}" is required.`, {
@@ -66,7 +76,14 @@ export async function executeLeadBlueprintTransition(
     });
   }
 
-  await zohoCrmRecords.executeBlueprintTransition('Leads', leadId, transition.id, data);
+  await executeBlueprintTransitionAsUser(
+    ctx.tenantId,
+    zohoActorId(ctx),
+    'Leads',
+    leadId,
+    transition.id,
+    data,
+  );
   return {
     currentValue: blueprint.process.currentValue,
     nextValue: transition.nextValue,

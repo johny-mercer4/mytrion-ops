@@ -21,8 +21,11 @@ import type { VerificationCardSummary } from '../../modules/verificationPipeline
 import { deriveZohoState } from '../../modules/verificationPipeline/types.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
-import { zohoCrm } from '../../integrations/zohoCrm.js';
-import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import {
+  attachFileAsUser,
+  updateRecordAsUser,
+  zohoActorId,
+} from '../../integrations/zohoUserAuth.js';
 import { createRecordNote } from '../../modules/sales/recordActivity.js';
 import { verificationSalesResponseRepo } from '../../repos/verificationSalesResponseRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -36,6 +39,7 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
 }
 
 function crmError(err: unknown): AppError {
+  if (err instanceof AppError) return err;
   return new AppError('Zoho CRM request failed', {
     statusCode: 502,
     code: 'ZOHO_CRM_ERROR',
@@ -79,7 +83,9 @@ async function readResponseUpload(
   const fields: Record<string, string> = {};
   let file: UploadFile | null = null;
   try {
-    for await (const part of request.parts({ limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES } })) {
+    for await (const part of request.parts({
+      limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES },
+    })) {
       if (part.type === 'file') {
         file = {
           name: part.filename || 'attachment',
@@ -87,11 +93,15 @@ async function readResponseUpload(
           buffer: await part.toBuffer(),
         };
       } else {
-        fields[part.fieldname] = typeof part.value === 'string' ? part.value : String(part.value ?? '');
+        fields[part.fieldname] =
+          typeof part.value === 'string' ? part.value : String(part.value ?? '');
       }
     }
   } catch (err) {
-    if (err instanceof Error && /file too large|FST_REQ_FILE_TOO_LARGE|request file too large/i.test(err.message)) {
+    if (
+      err instanceof Error &&
+      /file too large|FST_REQ_FILE_TOO_LARGE|request file too large/i.test(err.message)
+    ) {
       throw new AppError('Attachment exceeds the 20MB limit.', {
         statusCode: 413,
         code: 'ATTACHMENT_TOO_LARGE',
@@ -140,7 +150,9 @@ function noteContent(input: {
     `Requirement: ${input.requirementTitle}`,
     `Submitted by: ${input.userName}`,
     '',
-    ...Object.entries(input.values).map(([key, value]) => `${input.labels.get(key) ?? key}: ${value}`),
+    ...Object.entries(input.values).map(
+      ([key, value]) => `${input.labels.get(key) ?? key}: ${value}`,
+    ),
   ];
   if (input.note) lines.push('', `Note: ${input.note}`);
   return lines.join('\n');
@@ -176,7 +188,9 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
         } catch (err) {
           throw crmError(err);
         }
-        const dealIds = matched.map((client) => client.dealId).filter((id): id is string => Boolean(id));
+        const dealIds = matched
+          .map((client) => client.dealId)
+          .filter((id): id is string => Boolean(id));
         const [summaryResult, responseResult] = await Promise.allSettled([
           getLiveVerificationSummaries(dealIds),
           verificationSalesResponseRepo.listForRequests(ctx, dealIds),
@@ -185,17 +199,25 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
           request.log.warn({ err: summaryResult.reason }, 'verification card summary unavailable');
         }
         if (responseResult.status === 'rejected') {
-          request.log.warn({ err: responseResult.reason }, 'verification response history unavailable');
+          request.log.warn(
+            { err: responseResult.reason },
+            'verification response history unavailable',
+          );
         }
-        const summaries = summaryResult.status === 'fulfilled'
-          ? summaryResult.value
-          : new Map<string, VerificationCardSummary>();
+        const summaries =
+          summaryResult.status === 'fulfilled'
+            ? summaryResult.value
+            : new Map<string, VerificationCardSummary>();
         const responses = responseResult.status === 'fulfilled' ? responseResult.value : [];
-        const responded = new Set(responses.map((row) => `${row.requestId}:${row.externalEventId}`));
+        const responded = new Set(
+          responses.map((row) => `${row.requestId}:${row.externalEventId}`),
+        );
         const sourceHealth = {
           crm: 'ok' as const,
-          verification: summaryResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
-          responses: responseResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
+          verification:
+            summaryResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
+          responses:
+            responseResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
         };
         let enriched = matched.map((client) => {
           const summary = client.dealId ? summaries.get(client.dealId) : undefined;
@@ -272,13 +294,18 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     }
     if (snapshot?.requestId && snapshot.requirements.length) {
       try {
-        const responses = await verificationSalesResponseRepo.listForRequest(ctx, snapshot.requestId);
+        const responses = await verificationSalesResponseRepo.listForRequest(
+          ctx,
+          snapshot.requestId,
+        );
         const byEvent = new Map(responses.map((row) => [row.externalEventId, responseDto(row)]));
         snapshot = {
           ...snapshot,
           requirements: snapshot.requirements.map((requirement) => ({
             ...requirement,
-            ...(byEvent.get(requirement.eventId) ? { response: byEvent.get(requirement.eventId) } : {}),
+            ...(byEvent.get(requirement.eventId)
+              ? { response: byEvent.get(requirement.eventId) }
+              : {}),
           })),
         };
       } catch (err) {
@@ -302,9 +329,13 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     let values: Record<string, string>;
     try {
       const parsed: unknown = JSON.parse(body.values);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error('not an object');
       values = Object.fromEntries(
-        Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [key, String(value ?? '').trim()]),
+        Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [
+          key,
+          String(value ?? '').trim(),
+        ]),
       );
     } catch {
       throw new AppError('Response values must be a JSON object.', {
@@ -348,13 +379,18 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     }
     const allowed = new Set(requirement.fields.map((field) => field.id));
     values = Object.fromEntries(Object.entries(values).filter(([key]) => allowed.has(key)));
-    const missing = requirement.fields.filter((field) => field.required && !values[field.id]?.trim());
+    const missing = requirement.fields.filter(
+      (field) => field.required && !values[field.id]?.trim(),
+    );
     if (missing.length) {
-      throw new AppError(`Required response missing: ${missing.map((field) => field.label).join(', ')}`, {
-        statusCode: 400,
-        code: 'VERIFICATION_RESPONSE_INCOMPLETE',
-        expose: true,
-      });
+      throw new AppError(
+        `Required response missing: ${missing.map((field) => field.label).join(', ')}`,
+        {
+          statusCode: 400,
+          code: 'VERIFICATION_RESPONSE_INCOMPLETE',
+          expose: true,
+        },
+      );
     }
     if (requirement.attachmentRequired && !upload.file) {
       throw new AppError('Verification requires an attachment for this response.', {
@@ -365,7 +401,10 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     }
 
     const updates = crmKnownFields(values);
-    if (Object.keys(updates).length) await zohoCrmRecords.updateRecord('Deals', body.dealId, updates);
+    const actorId = zohoActorId(ctx);
+    if (Object.keys(updates).length) {
+      await updateRecordAsUser(ctx.tenantId, actorId, 'Deals', body.dealId, updates);
+    }
     const labels = new Map(requirement.fields.map((field) => [field.id, field.label]));
     const noteId = await createRecordNote(
       'Deals',
@@ -386,7 +425,9 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     let syncWarning: string | null = null;
     if (upload.file) {
       try {
-        await zohoCrm.attachFileToRecord(
+        await attachFileAsUser(
+          ctx.tenantId,
+          actorId,
           'Notes',
           noteId,
           upload.file.name,

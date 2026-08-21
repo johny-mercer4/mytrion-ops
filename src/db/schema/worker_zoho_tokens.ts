@@ -7,7 +7,8 @@ import { index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-cor
  * on behalf of the real agent so that Zoho's "Created By" / "Modified By" fields reflect the
  * agent rather than the shared service account.
  *
- * Token is written/refreshed on every login. The in-process ZohoUserAuthService caches the
+ * Token is AES-256-GCM encrypted before storage and written/refreshed on every login. The
+ * in-process ZohoUserAuthService caches the
  * derived access token (TTL ~1 hour) so DB reads are rare at runtime.
  */
 export const workerZohoTokens = pgTable(
