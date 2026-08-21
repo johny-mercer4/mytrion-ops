@@ -155,20 +155,15 @@ beforeEach(() => {
   });
 });
 
-describe('CaseView Data Center', () => {
-  it('opens Data Center with the case USDOT prefilled and hides the phase rail', async () => {
+describe('CaseView record chrome', () => {
+  it('opens the case body with no Case / Data Center switcher', async () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     await screen.findByRole('heading', { name: 'Ridgevale Freight' });
-    expect(screen.getByRole('tablist', { name: 'Case record' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: 'Data Center' }));
-    expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.queryByRole('tab', { name: 'iSoftPull' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'Plaid' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'Highway' })).not.toBeInTheDocument();
-    expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('987654');
-    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: 'Case' }));
-    expect(await screen.findByRole('button', { name: 'Pass phase' })).toBeInTheDocument();
+    expect(screen.queryByRole('tablist', { name: 'Case record' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Data Center' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Case' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Full Details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeInTheDocument();
   });
 });
 

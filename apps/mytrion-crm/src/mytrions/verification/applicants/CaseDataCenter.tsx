@@ -1,9 +1,9 @@
 /**
  * Data Center — live vendor search (FMCSA QCMobile + Motus / Socrata + DWH snapshot).
  *
- * Workspace tab and the open-case chrome both render this. `caseRow` is optional: standalone
- * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
- * not auto-run. CITI Fuel is the existing Zoho Deals Citifuel COQL — not CMP live.
+ * Workspace tab (`?tab=data-center`). `caseRow` is optional: standalone search has no case;
+ * `?dot=` / `?mc=` / `?name=` prefills and does not auto-run. CITI Fuel is the existing Zoho
+ * Deals Citifuel COQL — not CMP live.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  * iSoftPull / Plaid / Highway stay on disk and are omitted while the product switch is off.
  */

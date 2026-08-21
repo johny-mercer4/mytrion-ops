@@ -1,12 +1,4 @@
-/* Data Center on the verification record — chrome tabs, flat results. */
-
-[data-mytrion='verification'] .va-record-tabs {
-  border-radius: var(--va-r-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: var(--hz-glass-inset);
-  padding: 0 var(--space-3);
-}
+/* Data Center — vendor search, flat results. */
 
 [data-mytrion='verification'] .va-dc {
   display: flex;
