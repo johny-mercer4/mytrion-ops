@@ -18,6 +18,7 @@ import type {
 import type { MotusCensusRecord, MotusSearchBy } from '@/api/verificationMotus';
 import type { BrokerSnapshotRecord, BrokerSnapshotSearchBy } from '@/api/verificationBrokerSnapshot';
 import type { BlacklistSearchBy } from '@/api/verificationBlacklist';
+import type { CitiDealRecord, CitiSearchBy } from '@/api/verificationCiti';
 import { authorityActiveFromStatus, formatDollars } from './caseAuthority';
 
 export interface FmcsaPrefillCase {
@@ -100,6 +101,24 @@ export function blacklistPrefill(row: FmcsaPrefillCase): { by: BlacklistSearchBy
   if (email) return { by: 'email', q: email };
   const phone = (row.phone ?? '').trim();
   if (phone) return { by: 'phone', q: phone };
+  const company = (row.companyName ?? '').trim();
+  if (company) return { by: 'name', q: company };
+  const person = personName(row);
+  if (person) return { by: 'name', q: person };
+  return { by: 'dot', q: '' };
+}
+
+/**
+ * CITI keys are the ones `queryDealsForNeedles` already filters: USDOT → MC → email → name.
+ * No phone — that COQL does not match Phone/Cell.
+ */
+export function citiPrefill(row: FmcsaPrefillCase): { by: CitiSearchBy; q: string } {
+  const dot = (row.dot ?? '').trim();
+  if (dot) return { by: 'dot', q: dot };
+  const mc = (row.mc ?? '').trim();
+  if (mc) return { by: 'mc', q: mc };
+  const email = (row.email ?? '').trim();
+  if (email) return { by: 'email', q: email };
   const company = (row.companyName ?? '').trim();
   if (company) return { by: 'name', q: company };
   const person = personName(row);
@@ -268,6 +287,25 @@ export function brokerStatusVerdict(status: string | null): FmcsaStatusVerdict {
   if (active === true) return 'active';
   if (active === false) return 'inactive';
   return 'unknown';
+}
+
+const CITI_ROW_KEYS = ['Deal_Name', 'DOT1', 'MC'] as const;
+
+export function citiDealTitle(row: CitiDealRecord): string {
+  return row.dealName?.trim() || row.dealId;
+}
+
+export function citiDealFacts(row: CitiDealRecord): VendorFact[] {
+  if (row.fields) return flattenFields(row.fields, CITI_ROW_KEYS);
+  const curated: VendorFact[] = [];
+  const push = (label: string, value: string | null | undefined): void => {
+    const text = value?.trim();
+    if (text) curated.push({ label, value: text });
+  };
+  push('id', row.dealId);
+  push('Stage', row.stage);
+  push('citifuel_Status', row.citifuelStatus);
+  return curated;
 }
 
 export function brokerSnapshotFacts(row: BrokerSnapshotRecord): VendorFact[] {

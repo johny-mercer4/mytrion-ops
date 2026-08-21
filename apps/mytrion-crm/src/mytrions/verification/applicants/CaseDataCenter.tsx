@@ -3,7 +3,7 @@
  *
  * Workspace tab and the open-case chrome both render this. `caseRow` is optional: standalone
  * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
- * not auto-run. CITI Fuel stays Soon.
+ * not auto-run. CITI Fuel is the existing Zoho Deals Citifuel COQL — not CMP live.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  */
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -32,8 +32,14 @@ import {
   type BlacklistSearchResult,
 } from '@/api/verificationBlacklist';
 import {
+  searchCiti,
+  type CitiSearchBy,
+  type CitiSearchResult,
+} from '@/api/verificationCiti';
+import {
   blacklistPrefill,
   brokerPrefill,
+  citiPrefill,
   brokerSnapshotFacts,
   brokerSnapshotTitle,
   brokerStatusVerdict,
@@ -51,16 +57,17 @@ import {
   type FmcsaPrefillCase,
 } from './caseDataCenterModel';
 import { BlacklistResults, ExpandRow } from './CaseDataCenterBlacklist';
+import { CITI_KEYS, CITI_PLACEHOLDER, CitiResults } from './CaseDataCenterCiti';
 import './caseDataCenter.css';
 
-type Source = 'fmcsa' | 'motus' | 'broker' | 'blacklist';
+type Source = 'fmcsa' | 'motus' | 'broker' | 'blacklist' | 'citi';
 
 const SOURCES: TabItem[] = [
   { value: 'fmcsa', label: 'FMCSA' },
   { value: 'motus', label: 'Motus' },
   { value: 'broker', label: 'Broker snapshot' },
   { value: 'blacklist', label: 'Blacklist' },
-  { value: 'citi', label: 'CITI Fuel', disabled: true, title: 'Soon' },
+  { value: 'citi', label: 'CITI Fuel' },
 ];
 
 const FMCSA_KEYS: TabItem[] = [
@@ -123,7 +130,7 @@ function censusStatus(code: MotusCensusRecord['statusCode']): FmcsaStatusVerdict
   return 'unknown';
 }
 
-type SearchBy = FmcsaSearchBy | BlacklistSearchBy;
+type SearchBy = FmcsaSearchBy | BlacklistSearchBy | CitiSearchBy;
 
 export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const seed = fmcsaPrefill(caseRow ?? {});
@@ -136,6 +143,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const [motus, setMotus] = useState<MotusSearchResult | null>(null);
   const [broker, setBroker] = useState<BrokerSnapshotSearchResult | null>(null);
   const [blacklist, setBlacklist] = useState<BlacklistSearchResult | null>(null);
+  const [citi, setCiti] = useState<CitiSearchResult | null>(null);
   const req = useRef(0);
   const keysId = useId();
   const motusBy: MotusSearchBy = by === 'name' ? 'name' : 'dot';
@@ -143,6 +151,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const fmcsaBy: FmcsaSearchBy = by === 'mc' || by === 'name' ? by : 'dot';
   const blacklistBy: BlacklistSearchBy =
     by === 'mc' || by === 'email' || by === 'phone' || by === 'name' ? by : 'dot';
+  const citiBy: CitiSearchBy = by === 'mc' || by === 'email' || by === 'name' ? by : 'dot';
 
   useEffect(() => {
     const next =
@@ -152,18 +161,23 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
           ? brokerPrefill(caseRow ?? {})
           : source === 'blacklist'
             ? blacklistPrefill(caseRow ?? {})
-            : fmcsaPrefill(caseRow ?? {});
+            : source === 'citi'
+              ? citiPrefill(caseRow ?? {})
+              : fmcsaPrefill(caseRow ?? {});
     setBy(next.by);
     setQ(next.q);
     setFmcsa(null);
     setMotus(null);
     setBroker(null);
     setBlacklist(null);
+    setCiti(null);
     setError(null);
   }, [source, seed.by, seed.q]);
 
   const changeSource = (next: string): void => {
-    if (next === 'fmcsa' || next === 'motus' || next === 'broker' || next === 'blacklist') setSource(next);
+    if (next === 'fmcsa' || next === 'motus' || next === 'broker' || next === 'blacklist' || next === 'citi') {
+      setSource(next);
+    }
   };
 
   const clearResults = (): void => {
@@ -171,6 +185,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
     setMotus(null);
     setBroker(null);
     setBlacklist(null);
+    setCiti(null);
   };
 
   const submit = (event: FormEvent): void => {
@@ -181,13 +196,23 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
     setBusy(true);
     setError(null);
     const run =
-      source === 'blacklist'
+      source === 'citi'
+        ? searchCiti({ by: citiBy, q: value }).then((next) => {
+            if (id !== req.current) return;
+            setCiti(next);
+            setFmcsa(null);
+            setMotus(null);
+            setBroker(null);
+            setBlacklist(null);
+          })
+        : source === 'blacklist'
         ? searchBlacklist({ by: blacklistBy, q: value }).then((next) => {
             if (id !== req.current) return;
             setBlacklist(next);
             setFmcsa(null);
             setMotus(null);
             setBroker(null);
+            setCiti(null);
           })
         : source === 'broker'
           ? searchBrokerSnapshot({ by: brokerBy, q: value }).then((next) => {
@@ -196,6 +221,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
               setFmcsa(null);
               setMotus(null);
               setBlacklist(null);
+              setCiti(null);
             })
           : source === 'motus'
             ? searchMotus({ by: motusBy, q: value }).then((next) => {
@@ -204,6 +230,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
                 setFmcsa(null);
                 setBroker(null);
                 setBlacklist(null);
+                setCiti(null);
               })
             : searchFmcsa({ by: fmcsaBy, q: value }).then((next) => {
                 if (id !== req.current) return;
@@ -211,6 +238,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
                 setMotus(null);
                 setBroker(null);
                 setBlacklist(null);
+                setCiti(null);
               });
     void run
       .catch((err: unknown) => {
@@ -232,7 +260,9 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ? motus.error ?? 'Socrata did not answer.'
         : source === 'broker' && broker && !broker.available
           ? broker.error ?? 'Warehouse did not answer.'
-          : null);
+          : source === 'citi' && citi && !citi.available
+            ? citi.error ?? 'Zoho Deals did not answer.'
+            : null);
   const empty =
     source === 'blacklist'
       ? false
@@ -240,35 +270,59 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ? Boolean(fmcsa?.available && fmcsa.notFound && fmcsaRowsList.length === 0)
         : source === 'motus'
           ? Boolean(motus?.available && motus.notFound)
-          : Boolean(broker?.available && broker.notFound);
+          : source === 'citi'
+            ? Boolean(citi?.available && citi.notFound)
+            : Boolean(broker?.available && broker.notFound);
   const placeholder =
-    source === 'blacklist'
-      ? BLACKLIST_PLACEHOLDER[blacklistBy]
-      : source === 'broker'
-        ? BROKER_PLACEHOLDER[brokerBy]
-        : source === 'motus'
-          ? MOTUS_PLACEHOLDER[motusBy]
-          : FMCSA_PLACEHOLDER[fmcsaBy];
+    source === 'citi'
+      ? CITI_PLACEHOLDER[citiBy]
+      : source === 'blacklist'
+        ? BLACKLIST_PLACEHOLDER[blacklistBy]
+        : source === 'broker'
+          ? BROKER_PLACEHOLDER[brokerBy]
+          : source === 'motus'
+            ? MOTUS_PLACEHOLDER[motusBy]
+            : FMCSA_PLACEHOLDER[fmcsaBy];
   const keyValue =
-    source === 'blacklist' ? blacklistBy : source === 'broker' ? brokerBy : source === 'motus' ? motusBy : fmcsaBy;
+    source === 'citi'
+      ? citiBy
+      : source === 'blacklist'
+        ? blacklistBy
+        : source === 'broker'
+          ? brokerBy
+          : source === 'motus'
+            ? motusBy
+            : fmcsaBy;
   const keyItems =
-    source === 'blacklist' ? BLACKLIST_KEYS : source === 'broker' ? BROKER_KEYS : source === 'motus' ? MOTUS_KEYS : FMCSA_KEYS;
+    source === 'citi'
+      ? CITI_KEYS
+      : source === 'blacklist'
+        ? BLACKLIST_KEYS
+        : source === 'broker'
+          ? BROKER_KEYS
+          : source === 'motus'
+            ? MOTUS_KEYS
+            : FMCSA_KEYS;
   const keyLabel =
-    source === 'blacklist'
-      ? 'Search key'
-      : source === 'broker'
-        ? 'Snapshot key'
-        : source === 'motus'
-          ? 'Socrata key'
-          : 'QCMobile key';
+    source === 'citi'
+      ? 'Deal key'
+      : source === 'blacklist'
+        ? 'Search key'
+        : source === 'broker'
+          ? 'Snapshot key'
+          : source === 'motus'
+            ? 'Socrata key'
+            : 'QCMobile key';
   const searching =
-    source === 'blacklist'
-      ? 'Searching blacklist'
-      : source === 'broker'
-        ? 'Searching snapshot'
-        : source === 'motus'
-          ? 'Searching Motus'
-          : 'Searching FMCSA';
+    source === 'citi'
+      ? 'Searching CITI Fuel'
+      : source === 'blacklist'
+        ? 'Searching blacklist'
+        : source === 'broker'
+          ? 'Searching snapshot'
+          : source === 'motus'
+            ? 'Searching Motus'
+            : 'Searching FMCSA';
   const inputMode = keyValue === 'email' ? 'email' : keyValue === 'phone' || keyValue === 'name' ? 'text' : 'numeric';
 
   return (
@@ -318,14 +372,16 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ) : null}
         {empty ? (
           <p className="va-dc-status" role="status">
-            {source === 'broker'
-              ? 'No carrier in the snapshot.'
-              : source === 'motus'
-                ? 'No carrier in the census.'
-                : 'No carrier in the register.'}
+            {source === 'citi'
+              ? 'No matching Deal.'
+              : source === 'broker'
+                ? 'No carrier in the snapshot.'
+                : source === 'motus'
+                  ? 'No carrier in the census.'
+                  : 'No carrier in the register.'}
           </p>
         ) : null}
-        {busy && fmcsa === null && motus === null && broker === null && blacklist === null ? (
+        {busy && fmcsa === null && motus === null && broker === null && blacklist === null && citi === null ? (
           <ResultsSkeleton label={searching} />
         ) : null}
         {source === 'fmcsa' && fmcsaRowsList.length > 0 ? (
@@ -337,6 +393,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ) : null}
         {source === 'motus' && motus?.available ? <MotusResults result={motus} /> : null}
         {source === 'blacklist' && blacklist ? <BlacklistResults result={blacklist} /> : null}
+        {source === 'citi' && citi?.available ? <CitiResults result={citi} /> : null}
         {source === 'broker' && broker?.available ? <BrokerResults result={broker} /> : null}
       </div>
     </div>

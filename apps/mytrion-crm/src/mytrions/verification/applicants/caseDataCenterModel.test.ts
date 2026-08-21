@@ -10,6 +10,7 @@ import {
   flattenFields,
   motusPrefill,
   blacklistPrefill,
+  citiPrefill,
   brokerPrefill,
   brokerSnapshotTitle,
 } from './caseDataCenterModel';
@@ -188,6 +189,41 @@ describe('blacklistPrefill', () => {
     expect(blacklistPrefill(fmcsaPrefillFromSearch('?phone=6145550110'))).toEqual({
       by: 'phone',
       q: '6145550110',
+    });
+  });
+});
+
+describe('citiPrefill', () => {
+  it('prefers USDOT, then MC, email, then name — never phone', () => {
+    expect(citiPrefill({
+      dot: '3921884',
+      mc: '778211',
+      email: 'ops@kaiser.test',
+      phone: '6145550110',
+      companyName: 'Kaiser',
+    })).toEqual({ by: 'dot', q: '3921884' });
+    expect(citiPrefill({ mc: '778211', email: 'ops@kaiser.test' })).toEqual({
+      by: 'mc',
+      q: '778211',
+    });
+    expect(citiPrefill({ email: 'ops@kaiser.test', phone: '6145550110' })).toEqual({
+      by: 'email',
+      q: 'ops@kaiser.test',
+    });
+    expect(citiPrefill({ phone: '6145550110', companyName: 'Kaiser Freight' })).toEqual({
+      by: 'name',
+      q: 'Kaiser Freight',
+    });
+  });
+
+  it('reads email from the workspace query and ignores phone as a key', () => {
+    expect(citiPrefill(fmcsaPrefillFromSearch('?email=ops%40kaiser.test'))).toEqual({
+      by: 'email',
+      q: 'ops@kaiser.test',
+    });
+    expect(citiPrefill(fmcsaPrefillFromSearch('?phone=6145550110'))).toEqual({
+      by: 'dot',
+      q: '',
     });
   });
 });

@@ -4,11 +4,13 @@ import type { FmcsaSearchResult } from '@/api/verificationFmcsa';
 import type { MotusSearchResult } from '@/api/verificationMotus';
 import type { BrokerSnapshotSearchResult } from '@/api/verificationBrokerSnapshot';
 import type { BlacklistSearchResult } from '@/api/verificationBlacklist';
+import type { CitiSearchResult } from '@/api/verificationCiti';
 
 const searchFmcsa = vi.fn();
 const searchMotus = vi.fn();
 const searchBrokerSnapshot = vi.fn();
 const searchBlacklist = vi.fn();
+const searchCiti = vi.fn();
 vi.mock('@/api/verificationFmcsa', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFmcsa')>();
   return { ...actual, searchFmcsa };
@@ -24,6 +26,10 @@ vi.mock('@/api/verificationBrokerSnapshot', async (importOriginal) => {
 vi.mock('@/api/verificationBlacklist', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationBlacklist')>();
   return { ...actual, searchBlacklist };
+});
+vi.mock('@/api/verificationCiti', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/verificationCiti')>();
+  return { ...actual, searchCiti };
 });
 
 const { CaseDataCenter } = await import('./CaseDataCenter');
@@ -151,15 +157,40 @@ function blacklistHit(over: Partial<BlacklistSearchResult> = {}): BlacklistSearc
   };
 }
 
+function citiHit(over: Partial<CitiSearchResult> = {}): CitiSearchResult {
+  return {
+    available: true,
+    error: null,
+    matchedOn: 'dot',
+    notFound: false,
+    truncated: false,
+    records: [
+      {
+        dealId: '6227679000111111111',
+        dealName: 'Kaiser Freight LLC',
+        dotNumber: '3921884',
+        mcNumber: '778211',
+        stage: 'Application Filled',
+        citifuelStatus: 'yes',
+        citifuelVerdict: 'flagged',
+        fields: { Email: 'ops@kaiser.test', citifuel_Status: 'yes', Stage: 'Application Filled' },
+      },
+    ],
+    ...over,
+  };
+}
+
 beforeEach(() => {
   searchFmcsa.mockReset();
   searchMotus.mockReset();
   searchBrokerSnapshot.mockReset();
   searchBlacklist.mockReset();
+  searchCiti.mockReset();
   searchFmcsa.mockResolvedValue(hit());
   searchMotus.mockResolvedValue(motusHit());
   searchBrokerSnapshot.mockResolvedValue(brokerHit());
   searchBlacklist.mockResolvedValue(blacklistHit());
+  searchCiti.mockResolvedValue(citiHit());
 });
 
 describe('CaseDataCenter FMCSA search', () => {
@@ -217,13 +248,13 @@ describe('CaseDataCenter FMCSA search', () => {
     expect(screen.getByText('12')).toBeInTheDocument();
   });
 
-  it('lists CITI Fuel as Soon and keeps Motus, Broker snapshot, and Blacklist live', () => {
+  it('lists CITI Fuel live with Motus, Broker snapshot, and Blacklist', () => {
     render(<CaseDataCenter caseRow={{}} />);
     expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Motus' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'Broker snapshot' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'Blacklist' })).not.toHaveAttribute('aria-disabled');
-    expect(screen.getByRole('tab', { name: 'CITI Fuel' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('tab', { name: 'CITI Fuel' })).not.toHaveAttribute('aria-disabled');
     fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
     expect(screen.getByRole('tab', { name: 'Motus' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -427,5 +458,64 @@ describe('CaseDataCenter Blacklist search', () => {
     expect(await screen.findByText('Credit Platform list is not configured.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Duplicates' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Debtors' })).toBeInTheDocument();
+  });
+});
+
+describe('CaseDataCenter CITI Fuel search', () => {
+  it('is a live tab with USDOT / MC / Email / Name keys and no Phone', () => {
+    render(<CaseDataCenter caseRow={{}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    expect(screen.getByRole('tab', { name: 'CITI Fuel' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'USDOT' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'MC' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Email' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Phone' })).not.toBeInTheDocument();
+    expect(searchCiti).not.toHaveBeenCalled();
+  });
+
+  it('prefills USDOT and searches on submit', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '3921884', email: 'ops@kaiser.test' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('3921884');
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(searchCiti).toHaveBeenCalledWith({ by: 'dot', q: '3921884' }));
+    expect(await screen.findByText('Kaiser Freight LLC')).toBeInTheDocument();
+    expect(screen.getByText('USDOT 3921884')).toBeInTheDocument();
+    expect(screen.getByText('MC 778211')).toBeInTheDocument();
+    expect(screen.getByText('yes')).toBeInTheDocument();
+  });
+
+  it('searches by email on Enter', async () => {
+    render(<CaseDataCenter caseRow={{ email: 'ops@kaiser.test' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    fireEvent.submit(screen.getByRole('searchbox', { name: 'Email' }).closest('form')!);
+    await waitFor(() => expect(searchCiti).toHaveBeenCalledWith({ by: 'email', q: 'ops@kaiser.test' }));
+  });
+
+  it('shows a one-line miss', async () => {
+    searchCiti.mockResolvedValue(citiHit({ notFound: true, records: [] }));
+    render(<CaseDataCenter caseRow={{ dot: '111111' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('No matching Deal.')).toBeInTheDocument();
+  });
+
+  it('shows a one-line Zoho error', async () => {
+    searchCiti.mockResolvedValue(citiHit({ available: false, error: '[zoho-crm] COQL HTTP 500', records: [] }));
+    render(<CaseDataCenter caseRow={{ dot: '3921884' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/COQL HTTP 500/);
+  });
+
+  it('expands a row for leftover Deal fields', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '3921884' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    const toggle = await screen.findByRole('button', { name: /Kaiser Freight LLC/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText('citifuel_Status')).toBeInTheDocument();
+    expect(screen.getByText('ops@kaiser.test')).toBeInTheDocument();
   });
 });

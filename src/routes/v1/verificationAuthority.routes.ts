@@ -1,8 +1,8 @@
 /**
  * The two CARRIER-ONLY phase surfaces — Phase 4's authority lookup and Phase 8's Highway review —
  * plus the Data Center FMCSA (QCMobile), Motus (Socrata), Broker Snapshot (DWH),
- * and Blacklist (ban / duplicate / debtor) searches, which read the same sources
- * without writing findings.
+ * Blacklist (ban / duplicate / debtor), and CITI Fuel (Zoho Deals Citifuel COQL)
+ * searches, which read the same sources without writing findings.
  *
  * Both writes belong to the phases that apply to carriers alone, and both were kept out of
  * `verificationFlow.routes.ts` because that file already sits over the house 600-line cap and cannot
@@ -20,6 +20,7 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { lookupFmcsaCarrier } from '../../integrations/fmcsaQcMobile.js';
 import { searchBlacklist } from '../../modules/verificationFlow/blacklistSearch.js';
 import { searchBrokerSnapshot } from '../../modules/verificationFlow/brokerSnapshotSearch.js';
+import { searchCitifuel } from '../../modules/verificationFlow/citiSearch.js';
 import { searchMotus } from '../../modules/verificationFlow/motusSearch.js';
 import { deskService } from '../../modules/verificationFlow/deskService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -59,6 +60,15 @@ const brokerSnapshotSearchQuery = z.object({
 /** Ban / duplicate / debtor — compact type + value, same door as the other Data Center tabs. */
 const blacklistSearchQuery = z.object({
   by: z.enum(['dot', 'mc', 'email', 'phone', 'name']),
+  q: z.string().trim().min(1).max(160),
+});
+
+/**
+ * Citifuel standing — the keys `queryDealsForNeedles` already filters. No phone: that COQL
+ * never matched on Phone/Cell.
+ */
+const citiSearchQuery = z.object({
+  by: z.enum(['dot', 'mc', 'email', 'name']),
   q: z.string().trim().min(1).max(160),
 });
 
@@ -139,6 +149,17 @@ export async function verificationAuthorityRoutes(app: FastifyInstance): Promise
   app.get('/verification/flow/blacklist/search', auth, async (request) => {
     const ctx = requireVerificationRead(request);
     return searchBlacklist(ctx, blacklistSearchQuery.parse(request.query));
+  });
+
+  /**
+   * Live Zoho Deals Citifuel lookup for the CITI Fuel Data Center tab.
+   *
+   * READ-ONLY. Wraps `queryDealsForNeedles` — the same org-wide COQL Phase 3 uses.
+   * Always 200 with `{ available, error, ... }` — Zoho down is "could not read".
+   */
+  app.get('/verification/flow/citi/search', auth, async (request) => {
+    requireVerificationRead(request);
+    return searchCitifuel(citiSearchQuery.parse(request.query));
   });
 
   /**
