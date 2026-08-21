@@ -5,6 +5,7 @@
  * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
  * not auto-run. CITI Fuel is the existing Zoho Deals Citifuel COQL — not CMP live.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
+ * iSoftPull / Plaid / Highway stay on disk and are omitted while the product switch is off.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Button, Input, Tabs, type TabItem } from '@/ds';
@@ -49,21 +50,30 @@ import { HighwayPanel } from './CaseDataCenterHighway';
 import { IsoftpullPanel } from './CaseDataCenterIsoftpull';
 import { PlaidPanel } from './CaseDataCenterPlaid';
 import { FmcsaResults, MotusResults, ResultsSkeleton } from './CaseDataCenterVendors';
+import { DATA_CENTER_PAID_VENDORS_ENABLED } from '../dataCenterVendors';
 import './caseDataCenter.css';
 
 type SearchSource = 'fmcsa' | 'motus' | 'broker' | 'blacklist' | 'citi';
 type Source = SearchSource | 'isoftpull' | 'plaid' | 'highway';
 
-const SOURCES: TabItem[] = [
+const SEARCH_SOURCES: TabItem[] = [
   { value: 'fmcsa', label: 'FMCSA' },
   { value: 'motus', label: 'Motus' },
   { value: 'broker', label: 'Broker snapshot' },
   { value: 'blacklist', label: 'Blacklist' },
   { value: 'citi', label: 'CITI Fuel' },
+];
+
+const PAID_SOURCES: TabItem[] = [
   { value: 'isoftpull', label: 'iSoftPull' },
   { value: 'plaid', label: 'Plaid' },
   { value: 'highway', label: 'Highway' },
 ];
+
+/** Paid vendor tabs stay on disk; the product switch omits them from the source list. */
+const SOURCES: TabItem[] = DATA_CENTER_PAID_VENDORS_ENABLED
+  ? [...SEARCH_SOURCES, ...PAID_SOURCES]
+  : SEARCH_SOURCES;
 
 function isSearchSource(value: string): value is SearchSource {
   return value === 'fmcsa' || value === 'motus' || value === 'broker' || value === 'blacklist' || value === 'citi';
@@ -164,7 +174,10 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   }, [source, seed.by, seed.q]);
 
   const changeSource = (next: string): void => {
-    if (isSearchSource(next) || next === 'isoftpull' || next === 'plaid' || next === 'highway') {
+    const paid =
+      DATA_CENTER_PAID_VENDORS_ENABLED &&
+      (next === 'isoftpull' || next === 'plaid' || next === 'highway');
+    if (isSearchSource(next) || paid) {
       setSource(next);
     }
   };

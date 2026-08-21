@@ -60,6 +60,7 @@ beforeEach(() => {
   resolveAttempt.mockResolvedValue(undefined);
   env.ISOFTPULL_LIVE_ENABLED = false;
   env.VERIFICATION_PAID_VENDORS_ENABLED = false;
+  env.PLAID_LIVE_ENABLED = false;
   env.ISOFTPULL_BASE_URL = '';
   env.ISOFTPULL_EQUIFAX_API_KEY = '';
   env.ISOFTPULL_EQUIFAX_API_SECRET = '';
@@ -136,16 +137,11 @@ describe('POST /verification/flow/isoftpull/pull', () => {
     expect(pullIsoftPullReport).not.toHaveBeenCalled();
   });
 
-  it('pulls one bureau after confirm when the live flag and keys are on', async () => {
+  it('stays killed even when the live flag and keys are on — product switch wins', async () => {
     env.ISOFTPULL_LIVE_ENABLED = true;
     env.ISOFTPULL_BASE_URL = 'https://isoftpull.test/api/v2';
     env.ISOFTPULL_EQUIFAX_API_KEY = 'k';
     env.ISOFTPULL_EQUIFAX_API_SECRET = 's';
-    pullIsoftPullReport.mockResolvedValue({
-      bureau: 'equifax',
-      httpStatus: 200,
-      payload: { success: true },
-    });
     const res = await app.inject({
       method: 'POST',
       url: '/v1/verification/flow/isoftpull/pull',
@@ -153,53 +149,31 @@ describe('POST /verification/flow/isoftpull/pull', () => {
       payload: pullBody,
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().available).toBe(true);
-    expect(pullIsoftPullReport).toHaveBeenCalledWith(expect.objectContaining({ bureau: 'equifax' }));
-    expect(insertAttempt).toHaveBeenCalled();
-  });
-});
-
-describe('POST /verification/flow/plaid/link-token', () => {
-  it('names a missing key without calling Plaid', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/verification/flow/plaid/link-token',
-      headers: bearer(await workerToken('Verification')),
-      payload: {},
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ available: false, reason: 'not_configured' });
-    expect(createPlaidLinkToken).not.toHaveBeenCalled();
-  });
-
-  it('returns a Link token and does not spend', async () => {
-    env.PLAID_CLIENT_ID = 'cid';
-    env.PLAID_SECRET = 'sec';
-    createPlaidLinkToken.mockResolvedValue({
-      env: 'sandbox',
-      billed: false,
-      product: 'link_token',
-      linkToken: 'link-sandbox-1',
-      expiration: null,
-      hostedLinkUrl: null,
-      requestId: null,
-      payload: { link_token: 'link-sandbox-1' },
-    });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/verification/flow/plaid/link-token',
-      headers: bearer(await workerToken('Verification')),
-      payload: {},
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().available).toBe(true);
-    expect(res.json().data.billed).toBe(false);
+    expect(res.json()).toMatchObject({ available: false, reason: 'killed' });
+    expect(pullIsoftPullReport).not.toHaveBeenCalled();
     expect(insertAttempt).not.toHaveBeenCalled();
   });
 });
 
+describe('POST /verification/flow/plaid/link-token', () => {
+  it('returns killed without calling Plaid, even when keys are set', async () => {
+    env.PLAID_CLIENT_ID = 'cid';
+    env.PLAID_SECRET = 'sec';
+    env.PLAID_LIVE_ENABLED = true;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/flow/plaid/link-token',
+      headers: bearer(await workerToken('Verification')),
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ available: false, reason: 'killed' });
+    expect(createPlaidLinkToken).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /verification/flow/highway/parse', () => {
-  it('parses uploaded HTML and does not spend', async () => {
+  it('returns killed and does not parse', async () => {
     const boundary = '----octane';
     const html = '<div>RIDGEVALE FREIGHT LLC</div><div>USDOT-3921884</div>';
     const payload =
@@ -218,8 +192,7 @@ describe('POST /verification/flow/highway/parse', () => {
       payload,
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().available).toBe(true);
-    expect(res.json().fields.dot_number).toBe('3921884');
+    expect(res.json()).toMatchObject({ available: false, reason: 'killed' });
     expect(insertAttempt).not.toHaveBeenCalled();
   });
 });

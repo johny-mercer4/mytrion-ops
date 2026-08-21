@@ -13,6 +13,7 @@ const uploadDeskDocuments = vi.fn();
 const decidePhase = vi.fn();
 const requestDocuments = vi.fn();
 const reopenPhase = vi.fn();
+const runScreening = vi.fn();
 vi.mock('@/api/verificationFlow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFlow')>();
   return {
@@ -24,6 +25,7 @@ vi.mock('@/api/verificationFlow', async (importOriginal) => {
     decidePhase,
     requestDocuments,
     reopenPhase,
+    runScreening,
     saveRiskAssessment,
     submitFinalDecision,
   };
@@ -139,6 +141,7 @@ beforeEach(() => {
   uploadDeskDocuments.mockReset();
   decidePhase.mockReset();
   requestDocuments.mockReset();
+  runScreening.mockReset();
   getDeskBrokerSnapshot.mockReset();
   getDeskBrokerSnapshot.mockResolvedValue({ match: null });
   runAuthorityLookup.mockReset();
@@ -159,6 +162,9 @@ describe('CaseView Data Center', () => {
     expect(screen.getByRole('tablist', { name: 'Case record' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Data Center' }));
     expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: 'iSoftPull' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Plaid' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Highway' })).not.toBeInTheDocument();
     expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('987654');
     expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Case' }));
@@ -394,6 +400,14 @@ function screeningDesk(
 }
 
 describe('CaseView Phase 3 screening', () => {
+  it('does not auto-run screening when the case opens', async () => {
+    getDeskCase.mockResolvedValue(screeningDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(runScreening).not.toHaveBeenCalled();
+    expect(getDeskCase).toHaveBeenCalled();
+  });
+
   it('shows carrier identity facts and keeps Pass disabled until both checks are clear', async () => {
     getDeskCase.mockResolvedValue(screeningDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
@@ -506,6 +520,13 @@ function authorityDesk(
 }
 
 describe('CaseView Phase 4 authority', () => {
+  it('does not auto-run the register lookup when the case opens', async () => {
+    getDeskCase.mockResolvedValue(authorityDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(runAuthorityLookup).not.toHaveBeenCalled();
+  });
+
   it('skips the working pane and decision buttons for an owner-operator', async () => {
     getDeskCase.mockResolvedValue(
       authorityDesk(

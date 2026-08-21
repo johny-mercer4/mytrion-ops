@@ -32,6 +32,7 @@ import { isWriteConfigured } from '../../src/integrations/creditPlatformWriteDb.
 import { verificationDb } from '../../src/integrations/verificationDb.js';
 import {
   VERIFICATION_CP_WRITEBACK_ENABLED,
+  VERIFICATION_DATA_CENTER_VENDORS_ENABLED,
   VERIFICATION_LEGACY_DESK_ENABLED,
   VERIFICATION_ZOHO_INGEST_ENABLED,
 } from '../../src/modules/verification/killSwitches.js';
@@ -52,6 +53,11 @@ describe('shipped switch positions', () => {
 
   it('has credit-platform write-back parked', () => {
     expect(VERIFICATION_CP_WRITEBACK_ENABLED).toBe(false);
+  });
+
+  it('has Data Center iSoftPull / Plaid / Highway parked — ingest stays live', () => {
+    expect(VERIFICATION_DATA_CENTER_VENDORS_ENABLED).toBe(false);
+    expect(VERIFICATION_ZOHO_INGEST_ENABLED).toBe(true);
   });
 
   it('keeps the ingest job OUT of DISABLED_JOB_QUEUES so the flag and the queue cannot drift', () => {

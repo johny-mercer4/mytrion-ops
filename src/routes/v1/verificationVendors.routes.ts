@@ -2,20 +2,36 @@
  * Data Center first-party vendor tabs — iSoftPull (metered), Plaid Link-token (unpaid),
  * Highway HTML parse (no vendor HTTP).
  *
- * View-only: nothing here writes Phase 6 / 8 findings. Paid iSoftPull HTTP requires every
- * gate: live flag, verification reader, `confirm: true`, spend token bound to `isoftpull`,
- * and a persisted ledger row. Plaid Check report GET is not shipped.
+ * PRODUCT-OFF: `VERIFICATION_DATA_CENTER_VENDORS_ENABLED` is false. Clients stay; every
+ * handler returns `reason: 'killed'` before spend or vendor HTTP. Live env flags are a
+ * second gate if that switch is later flipped. View-only: nothing here writes Phase 6 / 8.
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ISOFTPULL_BUREAUS } from '../../integrations/isoftpullClient.js';
-import { createPlaidLinkToken, plaidConfiguredMissing } from '../../integrations/plaidClient.js';
+import { createPlaidLinkToken, plaidConfiguredMissing, plaidLiveEnabled } from '../../integrations/plaidClient.js';
 import { authoriseSpend } from '../../integrations/vendors/spend.js';
 import { isoftpull } from '../../integrations/vendors/isoftpull.js';
 import { runVendor } from '../../integrations/vendors/runVendor.js';
 import { parseHighwayUpload } from '../../modules/verificationFlow/highwayHtmlParser.js';
+import { VERIFICATION_DATA_CENTER_VENDORS_ENABLED } from '../../modules/verification/killSwitches.js';
 import { ValidationError } from '../../lib/errors.js';
 import { requireDepartment } from './helpers.js';
+
+function dataCenterVendorKilled(): {
+  available: false;
+  error: string;
+  reason: 'killed';
+  data: null;
+} | null {
+  if (VERIFICATION_DATA_CENTER_VENDORS_ENABLED) return null;
+  return {
+    available: false,
+    error: 'Data Center paid vendors are switched off',
+    reason: 'killed',
+    data: null,
+  };
+}
 
 const DATA_CENTER_CASE_ID = 'data-center';
 const HIGHWAY_MAX_BYTES = 8 * 1024 * 1024;
@@ -47,6 +63,8 @@ export async function verificationVendorsRoutes(app: FastifyInstance): Promise<v
   app.post('/verification/flow/isoftpull/pull', auth, async (request) => {
     const ctx = requireDepartment(request, 'verification', 'Verification underwriting');
     const body = isoftpullBody.parse(request.body ?? {});
+    const killed = dataCenterVendorKilled();
+    if (killed) return killed;
     const spend = await authoriseSpend({
       ctx,
       caseId: DATA_CENTER_CASE_ID,
@@ -83,6 +101,16 @@ export async function verificationVendorsRoutes(app: FastifyInstance): Promise<v
    */
   app.post('/verification/flow/plaid/link-token', auth, async (request) => {
     requireDepartment(request, 'verification', 'Verification underwriting');
+    const killed = dataCenterVendorKilled();
+    if (killed) return killed;
+    if (!plaidLiveEnabled()) {
+      return {
+        available: false,
+        error: 'Plaid kill switch is on',
+        reason: 'killed',
+        data: null,
+      };
+    }
     const body = plaidLinkBody.parse(request.body ?? {});
     const missing = plaidConfiguredMissing();
     if (missing) {
@@ -109,6 +137,8 @@ export async function verificationVendorsRoutes(app: FastifyInstance): Promise<v
    */
   app.post('/verification/flow/highway/parse', auth, async (request) => {
     requireDepartment(request, 'verification', 'Verification underwriting');
+    const killed = dataCenterVendorKilled();
+    if (killed) return killed;
     let part: { toBuffer: () => Promise<Buffer> } | undefined;
     try {
       part = await request.file({ limits: { fileSize: HIGHWAY_MAX_BYTES } });
