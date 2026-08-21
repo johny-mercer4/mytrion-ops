@@ -29,6 +29,7 @@ import {
 } from '../../repos/collectionActivityRepo.js';
 import { COLLECTION_CASES_MAX_LIMIT, collectionCaseRepo } from '../../repos/collectionCaseRepo.js';
 import { buildCaseDossier } from '../../modules/collection/caseDossier.js';
+import { workerDisplayName, workerDisplayNames } from '../../repos/workerNameRepo.js';
 import { suggestedCourt, transitionsFrom } from '../../modules/collection/stageGraph.js';
 import { collectionPlacementRepo } from '../../repos/collectionPlacementRepo.js';
 import { collectionTaskRepo } from '../../repos/collectionTaskRepo.js';
@@ -36,6 +37,14 @@ import { collectionPlanRepo } from '../../repos/collectionPlanRepo.js';
 import { WORKLIST_MAX_LIMIT, collectionWorklistRepo } from '../../repos/collectionWorklistRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
+
+/**
+ * The owner's name for one case. The stored `assignee_name` wins — that is what the desk recorded
+ * at the moment of assignment — and the directory only fills the gap for rows seeded from Zoho.
+ */
+async function ownerName(row: { assigneeUserId: string | null; assigneeName: string | null }) {
+  return row.assigneeName ?? (await workerDisplayName(row.assigneeUserId));
+}
 
 function requireCollectionRead(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'collection', 'Collection cases');
@@ -131,11 +140,22 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
           }
         : {}),
     });
-    const desk = await collectionWorklistRepo.deskInfoByCase(
-      ctx,
-      result.items.map((row) => row.id),
-    );
-    return { ...result, desk: Object.fromEntries(desk) };
+    const [desk, owners] = await Promise.all([
+      collectionWorklistRepo.deskInfoByCase(
+        ctx,
+        result.items.map((row) => row.id),
+      ),
+      // One bounded read for the page's owners, not one per row. `assignee_name` is only written
+      // when the DESK assigns a case; the 476 rows seeded from Zoho carry a bare user id, so
+      // without this the Owner column would print `6227679000038542039`.
+      workerDisplayNames(result.items.map((row) => row.assigneeUserId ?? '')),
+    ]);
+    const items = result.items.map((row) => ({
+      ...row,
+      assigneeName:
+        row.assigneeName ?? (row.assigneeUserId ? (owners.get(row.assigneeUserId) ?? null) : null),
+    }));
+    return { ...result, items, desk: Object.fromEntries(desk) };
   });
 
   app.get<{ Params: { id: string } }>('/collection/cases/:id', auth, async (request) => {
@@ -143,7 +163,7 @@ export async function collectionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParams.parse(request.params);
     const row = await collectionCaseRepo.findById(ctx, id);
     if (!row) throw new NotFoundError('Collection case not found');
-    return { case: row };
+    return { case: { ...row, assigneeName: await ownerName(row) } };
   });
 
   app.get<{ Params: { id: string } }>('/collection/cases/:id/invoices', auth, async (request) => {

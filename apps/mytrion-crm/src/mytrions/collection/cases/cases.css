@@ -413,3 +413,10 @@
     border-color: var(--border);
   }
 }
+
+/* The owner column. Wraps rather than truncating: a half-shown name is worse than two lines. */
+[data-mytrion="collection"] .cc-owner {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
