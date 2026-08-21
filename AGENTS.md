@@ -21,6 +21,16 @@ GitHub-agent / impeccable only unless we explicitly add a product skill there.
 Optional tooling: `ast-grep` (not MCP), `context7` (library docs plugin — not this repo's
 `mcp.json`), `render-logs` (Octane Render map). UI verify: `.cursor/rules/ui-verify.mdc`.
 
+## Karpathy guidelines
+
+Full text: `CLAUDE.md` and `.claude/skills/karpathy-guidelines/`. This index still has to carry
+the four principles so autoloaded surfaces stay aligned:
+
+1. **Think before coding.** Don't assume; surface tradeoffs.
+2. **Simplicity first.** Minimum code that solves the problem.
+3. **Surgical changes.** Touch only what you must.
+4. **Goal-driven execution.** Define success criteria; loop until verified.
+
 ## Scratch notes
 
 `WORKING_NOTES.md` is **local scratch only** (gitignored). Never load it wholesale. Ask in
