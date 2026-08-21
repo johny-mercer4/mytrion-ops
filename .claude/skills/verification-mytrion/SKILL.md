@@ -186,7 +186,7 @@ Code `FINAL_DECISIONS`: `approve` (limit required; note required if **above** re
 | Phases / machine | `src/modules/verificationFlow/phases.ts` · `stateMachine.ts` |
 | Sales intake | `applicationService.ts` · `intake.ts` · `src/routes/v1/verificationApplications.routes.ts` |
 | Ingest | `dealIntake.ts` · `automation.verification.case-ingest` |
-| Desk | `deskService.ts` · `deskDecision.ts` · `deskScreening.ts` · `deskAuthority.ts` · `deskHighway.ts` · `deskReviews.ts` · `hardStops.ts` · `capacity.ts` · `src/routes/v1/verificationFlow.routes.ts` · `verificationAuthority.routes.ts` · `verificationPolicy.routes.ts` |
+| Desk | `deskService.ts` · `deskDecision.ts` · `deskScreening.ts` · `deskAuthority.ts` · `deskHighway.ts` · `deskReviews.ts` · `hardStops.ts` · `capacity.ts` · `src/routes/v1/verificationFlow.routes.ts` (incl. `DELETE .../documents/:documentId`) · `verificationAuthority.routes.ts` · `verificationPolicy.routes.ts` |
 | CRM API | `apps/mytrion-crm/src/api/verificationFlow.ts` · `verificationDeskWrites.ts` |
 | Desk UI | `apps/mytrion-crm/src/mytrions/verification/**` |
 | Sales tab (not this desk) | `.../sales/redesign/tabs/VerificationTab.tsx` · `salesVerificationQueue.ts` · `applicationIntake.tsx` |

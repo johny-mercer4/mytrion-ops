@@ -27,7 +27,7 @@ vi.mock('../../src/modules/verification/caseNotify.js', async (importOriginal) =
   return { ...actual, publishVerificationApplicationEvent: publish };
 });
 
-const { afterDeskDocumentUpload } = await import(
+const { afterDeskDocumentUpload, afterDeskDocumentRemove } = await import(
   '../../src/modules/verificationFlow/deskPhase1Writes.js'
 );
 
@@ -55,6 +55,23 @@ describe('afterDeskDocumentUpload', () => {
         caseId: 'vc_1',
         type: 'verification.application.documents_uploaded',
         verificationOwnerZohoUserId: 'credit-1',
+      }),
+    );
+  });
+
+  it('re-evaluates intake after a remove so a required file can lock the case again', async () => {
+    const ctx = { userId: 'u1', userName: 'Credit', tenantId: 'octane' };
+    await afterDeskDocumentRemove(ctx as never, 'vc_1');
+    expect(refreshGate).toHaveBeenCalledWith(
+      ctx,
+      'vc_1',
+      expect.objectContaining({ submitting: true, actor: 'zoho-desk' }),
+    );
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caseId: 'vc_1',
+        type: 'verification.application.updated',
+        title: 'Application document removed',
       }),
     );
   });

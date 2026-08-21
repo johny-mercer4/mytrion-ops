@@ -9,15 +9,17 @@
  */
 import {
   APPLICATION_DOCUMENTS_UPLOADED,
+  APPLICATION_UPDATED,
   publishVerificationApplicationEvent,
 } from '../verification/caseNotify.js';
 import { applicationService, zohoFromCtx } from './applicationService.js';
 import { deskService } from './deskService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
-export async function afterDeskDocumentUpload(
+async function afterDeskDocumentWrite(
   ctx: TenantContext,
   caseId: string,
+  event: { type: string; title: string },
 ): Promise<Awaited<ReturnType<typeof deskService.detail>>> {
   await applicationService.refreshGate(ctx, caseId, {
     submitting: true,
@@ -29,9 +31,30 @@ export async function afterDeskDocumentUpload(
     .verificationOwnerZohoUserId;
   publishVerificationApplicationEvent({
     caseId,
-    type: APPLICATION_DOCUMENTS_UPLOADED,
+    type: event.type,
     verificationOwnerZohoUserId: owner,
-    title: 'Application documents updated',
+    title: event.title,
   });
   return detail;
+}
+
+export async function afterDeskDocumentUpload(
+  ctx: TenantContext,
+  caseId: string,
+): Promise<Awaited<ReturnType<typeof deskService.detail>>> {
+  return afterDeskDocumentWrite(ctx, caseId, {
+    type: APPLICATION_DOCUMENTS_UPLOADED,
+    title: 'Application documents updated',
+  });
+}
+
+/** Same gate refresh as upload — removing a required file can lock the case again. */
+export async function afterDeskDocumentRemove(
+  ctx: TenantContext,
+  caseId: string,
+): Promise<Awaited<ReturnType<typeof deskService.detail>>> {
+  return afterDeskDocumentWrite(ctx, caseId, {
+    type: APPLICATION_UPDATED,
+    title: 'Application document removed',
+  });
 }
