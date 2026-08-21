@@ -334,7 +334,7 @@ export function renderConceptSeed({
   }
   const unit = (salt) => {
     const h = crypto.createHash('sha256').update(`${scope}:${salt}:${key}`).digest();
-    return h.readUInt32BE(0) / 0xffffffff;
+    return h.readUInt32BE(0) / 0x100000000;
   };
   const indexSalt = reroll === 0 ? 'index' : `index:reroll-${reroll}`;
   const buildIndex = 3 + Math.floor(unit(indexSalt) * (candidateCount - 2)); // 3..candidateCount
