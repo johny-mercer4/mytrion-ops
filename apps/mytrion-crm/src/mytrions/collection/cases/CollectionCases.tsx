@@ -120,7 +120,6 @@ export function CollectionCases({
             <Select
               label="Stage"
               labelHidden
-              size="sm"
               value={stage}
               onChange={(v) => setStage((v ?? 'all') as CollectionStage | 'all')}
               options={[
