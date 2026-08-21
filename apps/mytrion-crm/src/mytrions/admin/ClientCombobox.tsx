@@ -118,7 +118,7 @@ export function ClientCombobox({ onPick, onManual }: { onPick: (client: DwhClien
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search your clients — company name, carrier id, or application id"
+            placeholder="Search your clients — company name, phone, carrier id, or application id"
             autoComplete="off"
             role="combobox"
             aria-expanded={open}

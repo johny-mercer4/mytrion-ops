@@ -45,27 +45,31 @@ describe('searchDwhClients — query construction', () => {
     expect(sql).toContain('distinct on (zoho_deal_id)');
     expect(sql).toContain('valid_from desc');
     expect(sql).not.toContain('is_active');
-    expect(sql).toContain(`stage is distinct from 'Closed Lost'`);
-    expect(sql).toContain('order by application_date desc nulls last');
+    expect(sql).toContain(`latest.stage is distinct from 'Closed Lost'`);
+    expect(sql).toContain('order by latest.application_date desc nulls last');
     expect(sql).toContain('limit 25');
+    expect(sql).not.toContain('octane.dim_company');
     expect(params).toEqual([]);
   });
 
-  it('text search matches the company name (ILIKE, contains)', async () => {
-    await searchDwhClients({ q: 'grant express' });
+  it('text search matches the company name (ILIKE, contains) and a punctuation-collapsed form', async () => {
+    await searchDwhClients({ q: 'El quality' });
     const [sql, params] = query.mock.calls.at(-1) as [string, unknown[]];
-    expect(sql).toContain('deal_name ilike $1');
-    expect(sql).not.toContain('carrier_id::text');
-    expect(params).toEqual(['%grant express%']);
+    expect(sql).toContain('latest.deal_name ilike $1');
+    expect(sql).toContain("regexp_replace(lower(coalesce(latest.deal_name, '')), '[^a-z0-9]', '', 'g') like $2");
+    expect(sql).toContain('octane.dim_company');
+    expect(sql).not.toContain('carrier_id::text like');
+    expect(params).toEqual(['%El quality%', '%elquality%']);
   });
 
-  it('numeric search matches company name AND carrier/application ids by prefix', async () => {
+  it('numeric search matches company name AND carrier/application ids by prefix AND phone digits', async () => {
     await searchDwhClients({ q: '58353' });
     const [sql, params] = query.mock.calls.at(-1) as [string, unknown[]];
-    expect(sql).toContain('deal_name ilike $1');
-    expect(sql).toContain('carrier_id::text like $2');
-    expect(sql).toContain('application_id::text like $2');
-    expect(params).toEqual(['%58353%', '58353%']);
+    expect(sql).toContain('latest.deal_name ilike $1');
+    expect(sql).toContain('latest.carrier_id::text like $3');
+    expect(sql).toContain('latest.application_id::text like $3');
+    expect(sql).toContain('dc.deal_phone');
+    expect(params).toEqual(['%58353%', '%58353%', '58353%', '%58353%']);
   });
 
   it('maps rows to the wire DTO (string ids, ISO date)', async () => {

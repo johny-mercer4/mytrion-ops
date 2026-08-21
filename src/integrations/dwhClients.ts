@@ -1,6 +1,6 @@
 /**
  * DWH client directory — the clients the admin provisions carrier accounts FROM, ordered by
- * application date. Searchable by company name (deal_name), carrier id, or application id.
+ * application date. Searchable by company name (punctuation-insensitive), phone, carrier id, or application id.
  * Read-only (dwhQuery pool enforces it).
  *
  * SOURCE: `octane.stg_zoho_deals` (SCD2 history view), NOT the `octane.intm_zoho_deals` view we
@@ -58,8 +58,9 @@ function toDto(row: DealRow): DwhClient {
 
 /**
  * Search the client directory. A numeric `q` matches carrier/application ids by prefix
- * AND company names; a text `q` matches company names (ILIKE). No `q` = newest
- * applications first (browse mode).
+ * AND company names; a text `q` matches company names (ILIKE, plus an alphanumeric-collapsed
+ * form so "El quality" hits ELQUALITY / El-Quality). Four-plus digit strings also match
+ * dim_company deal/contact phones. No `q` = newest applications first (browse mode).
  *
  * The search + stage filter run on the OUTER query (over the already-collapsed current version per
  * deal), never inside the DISTINCT ON — filtering the history first could pick a stale version whose
@@ -74,24 +75,38 @@ export async function searchDwhClients(opts: {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
   const q = opts.q?.trim() ?? '';
 
-  const where: string[] = [`stage is distinct from 'Closed Lost'`];
+  const where: string[] = [`latest.stage is distinct from 'Closed Lost'`];
   const params: unknown[] = [];
+  // dim_company join is only for search (collapsed company_name + phones). Browse does not need it.
+  let joinDim = false;
   if (q.length > 0) {
+    joinDim = true;
     params.push(`%${q}%`);
-    const nameClause = `deal_name ilike $${params.length}`;
+    const bits = [`latest.deal_name ilike $${params.length}`];
+    const collapsed = q.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (collapsed.length >= 2) {
+      params.push(`%${collapsed}%`);
+      const c = `$${params.length}`;
+      bits.push(`regexp_replace(lower(coalesce(latest.deal_name, '')), '[^a-z0-9]', '', 'g') like ${c}`);
+      bits.push(`regexp_replace(lower(coalesce(dc.company_name, '')), '[^a-z0-9]', '', 'g') like ${c}`);
+    }
     if (/^\d+$/.test(q)) {
       params.push(`${q}%`);
-      where.push(
-        `(${nameClause} or carrier_id::text like $${params.length} or application_id::text like $${params.length})`,
-      );
-    } else {
-      where.push(nameClause);
+      bits.push(`latest.carrier_id::text like $${params.length}`, `latest.application_id::text like $${params.length}`);
     }
+    const digits = q.replace(/\D/g, '');
+    if (digits.length >= 4) {
+      params.push(`%${digits}%`);
+      bits.push(
+        `regexp_replace(coalesce(dc.deal_phone, '') || coalesce(dc.contact_phone, ''), '[^0-9]', '', 'g') like $${params.length}`,
+      );
+    }
+    where.push(`(${bits.join(' or ')})`);
   }
 
   // Inner: newest snapshot per deal (valid_from DESC). Outer: search + stage filter + display order.
   const rows = await dwhQuery<DealRow>(
-    `select deal_name, stage, carrier_id, application_id, application_date, owner_id, zu.full_name as owner_name
+    `select latest.deal_name, latest.stage, latest.carrier_id, latest.application_id, latest.application_date, latest.owner_id, zu.full_name as owner_name
        from (
          select distinct on (zoho_deal_id)
                 zoho_deal_id, deal_name, stage, carrier_id, application_id, application_date, owner_id
@@ -99,8 +114,18 @@ export async function searchDwhClients(opts: {
           order by zoho_deal_id, valid_from desc nulls last
        ) latest
        left join (select distinct id, full_name from zoho_users) zu on latest.owner_id::text = zu.id::text
+       ${
+         joinDim
+           ? `left join (
+         select distinct on (carrier_id) carrier_id, company_name, deal_phone, contact_phone
+           from octane.dim_company
+          where carrier_id is not null
+          order by carrier_id, update_date desc nulls last
+       ) dc on dc.carrier_id::text = latest.carrier_id::text`
+           : ''
+       }
       where ${where.join(' and ')}
-      order by application_date desc nulls last, zoho_deal_id desc
+      order by latest.application_date desc nulls last, latest.zoho_deal_id desc
       limit ${limit}`,
     params,
   );
