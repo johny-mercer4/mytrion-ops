@@ -36,6 +36,7 @@ beforeEach(() => {
     matchedOn: 'dot',
     notFound: false,
     truncated: false,
+    pagination: { page: 1, pageSize: 50, hasMore: false },
     records: [
       {
         id: '16079457811075937970',
@@ -85,7 +86,9 @@ describe('GET /verification/flow/broker-snapshot/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(res.statusCode).toBe(200);
-    expect(searchBrokerSnapshot).toHaveBeenCalledWith({ by: 'dot', q: '8844425' });
+    expect(searchBrokerSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ by: 'dot', q: '8844425' }),
+    );
     expect(res.json().records[0].ownerFullName).toBe('Abdirehin Ahmed');
     expect(res.json().records[0].fields.row_hash).toBe('abc');
   });
@@ -97,7 +100,21 @@ describe('GET /verification/flow/broker-snapshot/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(res.statusCode).toBe(200);
-    expect(searchBrokerSnapshot).toHaveBeenCalledWith({ by: 'name', q: 'Abdirehin' });
+    expect(searchBrokerSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ by: 'name', q: 'Abdirehin' }),
+    );
+  });
+
+  it('forwards page and pageSize', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/broker-snapshot/search?by=name&q=Abdirehin&page=2&pageSize=50',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(searchBrokerSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ by: 'name', q: 'Abdirehin', page: 2, pageSize: 50 }),
+    );
   });
 
   it('rejects MC — that column does not exist', async () => {

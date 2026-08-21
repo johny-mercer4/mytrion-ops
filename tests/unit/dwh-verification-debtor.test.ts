@@ -33,6 +33,8 @@ describe('verification debtor predicate', () => {
     for (const sql of Object.values(DEBTOR_SEARCH_SQL)) {
       expect(sql).toContain('from public.cmp_invoice');
       expect(sql).toContain(DEBTOR_HAVING_SQL);
+      expect(sql).toContain('i.carrier_id in (select carrier_id from company)');
+      expect(sql).toMatch(/limit \$2 offset \$3/);
       expect(sql).not.toMatch(/is_debtor/);
       expect(sql).not.toMatch(/collection_cases/);
     }

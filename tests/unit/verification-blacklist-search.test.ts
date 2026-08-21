@@ -76,10 +76,10 @@ describe('GET /verification/flow/blacklist/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(res.statusCode).toBe(200);
-    expect(searchBlacklist).toHaveBeenCalledWith(expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }), {
-      by: 'dot',
-      q: '987654',
-    });
+    expect(searchBlacklist).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      expect.objectContaining({ by: 'dot', q: '987654' }),
+    );
     expect(res.json().matchedOn).toBe('dot');
   });
 
@@ -90,7 +90,10 @@ describe('GET /verification/flow/blacklist/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(email.statusCode).toBe(200);
-    expect(searchBlacklist).toHaveBeenCalledWith(expect.anything(), { by: 'email', q: 'ops@kaiser.test' });
+    expect(searchBlacklist).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ by: 'email', q: 'ops@kaiser.test' }),
+    );
 
     const phone = await app.inject({
       method: 'GET',
@@ -98,7 +101,10 @@ describe('GET /verification/flow/blacklist/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(phone.statusCode).toBe(200);
-    expect(searchBlacklist).toHaveBeenCalledWith(expect.anything(), { by: 'phone', q: '6145550110' });
+    expect(searchBlacklist).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ by: 'phone', q: '6145550110' }),
+    );
   });
 
   it('rejects an unknown key', async () => {

@@ -17,7 +17,11 @@ import { screenDealsForCase } from '../../integrations/verificationDealScreening
 import { errorMessage } from '../../lib/errors.js';
 import { jsonFields, jsonValue, type JsonValue } from '../../lib/jsonFields.js';
 import { logger } from '../../lib/logger.js';
-import { searchVerificationDebtors } from '../../repos/dwhVerificationDebtorRepo.js';
+import {
+  clampDebtorPage,
+  clampDebtorPageSize,
+  searchVerificationDebtors,
+} from '../../repos/dwhVerificationDebtorRepo.js';
 import { verificationScreeningRepo } from '../../repos/verificationScreeningRepo.js';
 import type { VerificationIdentifierType } from '../../db/schema/verification_flow.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -66,12 +70,21 @@ export interface ProbeSlice<T> {
   available: boolean;
   error: string | null;
   hits: T[];
+  truncated?: boolean;
+}
+
+export interface SearchPagination {
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 export interface DebtorSlice {
   available: boolean;
   error: string | null;
   records: BlacklistDebtorRecord[];
+  truncated: boolean;
+  pagination: SearchPagination;
 }
 
 export interface BlacklistSearchResult {
@@ -301,22 +314,48 @@ async function probeDuplicates(
     available: casesAvailable && dealsAvailable,
     error: errors.length === 0 ? null : errors.join(' · '),
     hits,
+    truncated: deals.truncated,
     casesAvailable,
     dealsAvailable,
   };
 }
 
-async function probeDebtors(by: BlacklistSearchBy, q: string): Promise<DebtorSlice> {
+function debtorPage(page: number, pageSize: number, hasMore = false): SearchPagination {
+  return { page, pageSize, hasMore };
+}
+
+function emptyDebtors(
+  page: number,
+  pageSize: number,
+  over: Partial<DebtorSlice> = {},
+): DebtorSlice {
+  return {
+    available: true,
+    error: null,
+    records: [],
+    truncated: false,
+    pagination: debtorPage(page, pageSize),
+    ...over,
+  };
+}
+
+async function probeDebtors(
+  by: BlacklistSearchBy,
+  q: string,
+  page: number,
+  pageSize: number,
+): Promise<DebtorSlice> {
   if (!dwh.isConfigured()) {
-    return { available: false, error: NOT_CONFIGURED, records: [] };
+    return emptyDebtors(page, pageSize, { available: false, error: NOT_CONFIGURED });
   }
   const needle = debtorNeedle(by, q);
-  if (needle === null) return { available: true, error: null, records: [] };
+  if (needle === null) return emptyDebtors(page, pageSize);
 
   try {
-    const rows = await searchVerificationDebtors(by, needle);
+    const rows = await searchVerificationDebtors(by, needle, { page, pageSize });
+    const hasMore = rows.length > pageSize;
     const records: BlacklistDebtorRecord[] = [];
-    for (const row of rows) {
+    for (const row of rows.slice(0, pageSize)) {
       const carrierId = row.carrier_id == null ? '' : String(row.carrier_id).trim();
       if (carrierId === '') continue;
       const debt = Number(row.computed_debt ?? 0);
@@ -331,20 +370,28 @@ async function probeDebtors(by: BlacklistSearchBy, q: string): Promise<DebtorSli
       if (fields !== undefined) record.fields = fields;
       records.push(record);
     }
-    return { available: true, error: null, records };
+    return {
+      available: true,
+      error: null,
+      records,
+      truncated: hasMore,
+      pagination: debtorPage(page, pageSize, hasMore),
+    };
   } catch (err) {
     logger.warn({ err: errorMessage(err), by }, 'blacklist debtor search failed');
-    return { available: false, error: errorMessage(err), records: [] };
+    return emptyDebtors(page, pageSize, { available: false, error: errorMessage(err) });
   }
 }
 
 /** One key, three probes. Never throws. */
 export async function searchBlacklist(
   ctx: TenantContext,
-  query: { by: BlacklistSearchBy; q: string },
+  query: { by: BlacklistSearchBy; q: string; page?: number | undefined; pageSize?: number | undefined },
 ): Promise<BlacklistSearchResult> {
   const by = query.by;
   const q = query.q.trim();
+  const page = clampDebtorPage(query.page);
+  const pageSize = clampDebtorPageSize(query.pageSize);
   const [ban, duplicates, debtors] = await Promise.all([
     probeBan(ctx, by, q).catch((err: unknown) => {
       logger.warn({ err: errorMessage(err) }, 'blacklist ban probe failed');
@@ -362,11 +409,12 @@ export async function searchBlacklist(
         available: false,
         error: errorMessage(err),
         hits: [],
+        truncated: false,
         casesAvailable: false,
         dealsAvailable: false,
       };
     }),
-    probeDebtors(by, q),
+    probeDebtors(by, q, page, pageSize),
   ]);
 
   return { matchedOn: by, ban, duplicates, debtors };

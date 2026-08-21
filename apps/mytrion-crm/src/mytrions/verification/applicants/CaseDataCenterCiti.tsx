@@ -5,7 +5,7 @@
  */
 import { type BadgeIntent, type TabItem } from '@/ds';
 import type { CitiSearchBy, CitiSearchResult, CitiVerdict } from '@/api/verificationCiti';
-import { ExpandRow } from './CaseDataCenterBlacklist';
+import { ExpandRow, LoadMoreButton } from './CaseDataCenterBlacklist';
 import { citiDealFacts, citiDealTitle } from './caseDataCenterModel';
 
 export const CITI_KEYS: TabItem[] = [
@@ -29,7 +29,15 @@ const CITI_INTENT: Record<CitiVerdict, BadgeIntent> = {
   absent: 'neutral',
 };
 
-export function CitiResults({ result }: { result: CitiSearchResult }) {
+export function CitiResults({
+  result,
+  loadingMore,
+  onLoadMore,
+}: {
+  result: CitiSearchResult;
+  loadingMore?: boolean | undefined;
+  onLoadMore?: (() => void) | undefined;
+}) {
   const rows = result.records;
   if (rows.length === 0) return null;
 
@@ -46,7 +54,6 @@ export function CitiResults({ result }: { result: CitiSearchResult }) {
               : result.matchedOn === 'dot'
                 ? ' · by USDOT'
                 : ''}
-        {result.truncated ? ' · first 50 — refine the search' : ''}
       </p>
       {rows.map((row) => (
         <ExpandRow
@@ -62,6 +69,9 @@ export function CitiResults({ result }: { result: CitiSearchResult }) {
           details={citiDealFacts(row)}
         />
       ))}
+      {result.pagination.hasMore && onLoadMore ? (
+        <LoadMoreButton busy={Boolean(loadingMore)} onClick={onLoadMore} />
+      ) : null}
     </div>
   );
 }

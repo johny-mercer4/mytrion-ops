@@ -19,9 +19,10 @@ vi.mock('../../src/integrations/dwh.js', () => ({
 const { searchBrokerSnapshot } = await import(
   '../../src/modules/verificationFlow/brokerSnapshotSearch.js'
 );
-const { BROKER_SNAPSHOT_SEARCH_LIMIT } = await import(
-  '../../src/repos/dwhBrokerSnapshotRepo.js'
-);
+const {
+  BROKER_SNAPSHOT_DEFAULT_PAGE_SIZE,
+  BROKER_SNAPSHOT_MAX_PAGE_SIZE,
+} = await import('../../src/repos/dwhBrokerSnapshotRepo.js');
 
 const ROW = {
   id: '16079457811075937970',
@@ -59,7 +60,14 @@ describe('searchBrokerSnapshot', () => {
     expect(sql).toMatch(/dot_number = \$1::bigint/);
     expect(sql).toMatch(/is_active/);
     expect(sql).not.toMatch(/\bmc\b/i);
-    expect(params).toEqual(['8844425', BROKER_SNAPSHOT_SEARCH_LIMIT]);
+    expect(sql).toMatch(/limit \$2 offset \$3/i);
+    expect(sql).not.toMatch(/count\s*\(/i);
+    expect(params).toEqual(['8844425', BROKER_SNAPSHOT_DEFAULT_PAGE_SIZE + 1, 0]);
+    expect(out.pagination).toEqual({
+      page: 1,
+      pageSize: BROKER_SNAPSHOT_DEFAULT_PAGE_SIZE,
+      hasMore: false,
+    });
     expect(out.available).toBe(true);
     expect(out.matchedOn).toBe('dot');
     expect(out.notFound).toBe(false);
@@ -75,8 +83,8 @@ describe('searchBrokerSnapshot', () => {
     const [sql, params] = query.mock.calls[0] as [string, unknown[]];
     expect(sql).toMatch(/left\(lower\(owner_full_name\), length\(\$1\)\) = lower\(\$1\)/);
     expect(sql).not.toMatch(/%foo%|ilike/i);
-    expect(sql).toMatch(/limit \$2/i);
-    expect(params).toEqual(['Abdirehin', BROKER_SNAPSHOT_SEARCH_LIMIT]);
+    expect(sql).toMatch(/limit \$2 offset \$3/i);
+    expect(params).toEqual(['Abdirehin', BROKER_SNAPSHOT_DEFAULT_PAGE_SIZE + 1, 0]);
     expect(out.matchedOn).toBe('name');
     expect(out.records[0]?.dotNumber).toBe('8844425');
   });
@@ -119,13 +127,24 @@ describe('searchBrokerSnapshot', () => {
     expect(out.error).toMatch(/connection refused/);
   });
 
-  it('marks the page truncated at the LIMIT', async () => {
-    query.mockResolvedValue(Array.from({ length: BROKER_SNAPSHOT_SEARCH_LIMIT }, (_, i) => ({
-      ...ROW,
-      id: `row-${i}`,
-    })));
+  it('uses LIMIT+1 for hasMore and does not COUNT(*)', async () => {
+    query.mockResolvedValue(
+      Array.from({ length: BROKER_SNAPSHOT_DEFAULT_PAGE_SIZE + 1 }, (_, i) => ({
+        ...ROW,
+        id: `row-${i}`,
+      })),
+    );
     const out = await searchBrokerSnapshot({ by: 'name', q: 'John' });
     expect(out.truncated).toBe(true);
-    expect(out.records).toHaveLength(BROKER_SNAPSHOT_SEARCH_LIMIT);
+    expect(out.pagination.hasMore).toBe(true);
+    expect(out.records).toHaveLength(BROKER_SNAPSHOT_DEFAULT_PAGE_SIZE);
+    const [sql] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toMatch(/count\s*\(\s*\*\s*\)/i);
+  });
+
+  it('pages name search with offset and clamps pageSize', async () => {
+    await searchBrokerSnapshot({ by: 'name', q: 'John', page: 2, pageSize: 10_000 });
+    const [, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(params).toEqual(['John', BROKER_SNAPSHOT_MAX_PAGE_SIZE + 1, BROKER_SNAPSHOT_MAX_PAGE_SIZE]);
   });
 });

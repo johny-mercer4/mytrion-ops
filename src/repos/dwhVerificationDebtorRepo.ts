@@ -9,6 +9,10 @@
  * ≥ $1 bar: outstanding (total_amount − total_paid) > $100. Age ≥ 2 days stays only to
  * drop same-day invoice noise from the finance CTE. If those two ever conflict, > $100 wins.
  * Never read `dim_company.is_debtor`.
+ *
+ * Resolve matching `carrier_id`s first, then roll up only those invoices — not every open
+ * book in `cmp_invoice`. Pages use OFFSET + LIMIT+1 (`hasMore`). COUNT(*) is skipped: after
+ * the key match the set is small, and the extra aggregate does not change the answer.
  */
 import { dwh } from '../integrations/dwh.js';
 
@@ -34,9 +38,22 @@ export const DEBTOR_OPEN_INVOICE_SQL = `i.status in ('PENDING', 'PARTIALLY_PAID'
 /** Client is a debtor when the roll-up exceeds $100 — the unified company law. */
 export const DEBTOR_HAVING_SQL = `coalesce(sum(${DEBTOR_OUTSTANDING_SQL}), 0) > ${VERIFICATION_DEBTOR_OUTSTANDING_MIN}`;
 
-export const VERIFICATION_DEBTOR_SEARCH_LIMIT = 25;
+/** First page. Exact DOT/MC/email/phone is usually one carrier; name equality can collide. */
+export const VERIFICATION_DEBTOR_DEFAULT_PAGE_SIZE = 50;
+export const VERIFICATION_DEBTOR_MAX_PAGE_SIZE = 100;
 
 export type DebtorSearchBy = 'dot' | 'mc' | 'email' | 'phone' | 'name';
+
+export function clampDebtorPage(page: number | undefined): number {
+  const n = Math.floor(page ?? 1);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+export function clampDebtorPageSize(pageSize: number | undefined): number {
+  const n = Math.floor(pageSize ?? VERIFICATION_DEBTOR_DEFAULT_PAGE_SIZE);
+  if (!Number.isFinite(n) || n < 1) return VERIFICATION_DEBTOR_DEFAULT_PAGE_SIZE;
+  return Math.min(n, VERIFICATION_DEBTOR_MAX_PAGE_SIZE);
+}
 
 const COMPANY_COLS = `c.carrier_id, c.company_name, c.deal_name, c.deal_full_name,
               c.deal_email, c.contact_email, c.deal_secondary_email,
@@ -49,6 +66,7 @@ const DEBT_CTE = `debt as (
               count(*) as open_invoices
          from public.cmp_invoice i
         where ${DEBTOR_OPEN_INVOICE_SQL}
+          and i.carrier_id in (select carrier_id from company)
         group by i.carrier_id
        having ${DEBTOR_HAVING_SQL}
      )`;
@@ -60,7 +78,7 @@ const SELECT_TAIL = `select ${COMPANY_COLS},
        from company c
        join debt d on d.carrier_id = c.carrier_id
       order by d.debt desc, c.company_name asc nulls last, c.carrier_id asc
-      limit ${VERIFICATION_DEBTOR_SEARCH_LIMIT}`;
+      limit $2 offset $3`;
 
 /** SCD collapse — newest dim row per carrier. */
 const DIM_NEWEST = `select distinct on (carrier_id)
@@ -131,6 +149,9 @@ export const DEBTOR_SEARCH_SQL: Record<DebtorSearchBy, string> = {
 export async function searchVerificationDebtors(
   by: DebtorSearchBy,
   needle: string,
+  page: { page?: number | undefined; pageSize?: number | undefined } = {},
 ): Promise<Record<string, unknown>[]> {
-  return dwh.query<Record<string, unknown>>(DEBTOR_SEARCH_SQL[by], [needle]);
+  const pageSize = clampDebtorPageSize(page.pageSize);
+  const offset = (clampDebtorPage(page.page) - 1) * pageSize;
+  return dwh.query<Record<string, unknown>>(DEBTOR_SEARCH_SQL[by], [needle, pageSize + 1, offset]);
 }

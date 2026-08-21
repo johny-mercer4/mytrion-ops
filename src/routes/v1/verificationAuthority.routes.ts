@@ -51,16 +51,24 @@ const motusSearchQuery = z.object({
   q: z.string().trim().min(1).max(160),
 });
 
+/** Shared Data Center page. Modules clamp pageSize; zod only rejects junk. */
+const searchPageQuery = {
+  page: z.coerce.number().int().min(1).max(10_000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+};
+
 /** USDOT and owner name only — `stg_broker_snapshot` has no MC column. */
 const brokerSnapshotSearchQuery = z.object({
   by: z.enum(['dot', 'name']),
   q: z.string().trim().min(1).max(160),
+  ...searchPageQuery,
 });
 
 /** Ban / duplicate / debtor — compact type + value, same door as the other Data Center tabs. */
 const blacklistSearchQuery = z.object({
   by: z.enum(['dot', 'mc', 'email', 'phone', 'name']),
   q: z.string().trim().min(1).max(160),
+  ...searchPageQuery,
 });
 
 /**
@@ -70,6 +78,7 @@ const blacklistSearchQuery = z.object({
 const citiSearchQuery = z.object({
   by: z.enum(['dot', 'mc', 'email', 'name']),
   q: z.string().trim().min(1).max(160),
+  ...searchPageQuery,
 });
 
 /**

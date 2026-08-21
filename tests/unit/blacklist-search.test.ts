@@ -29,9 +29,13 @@ vi.mock('../../src/integrations/verificationDealScreening.js', () => ({
   screenDealsForCase: (...args: unknown[]) => screenDealsForCase(...args),
 }));
 
-vi.mock('../../src/repos/dwhVerificationDebtorRepo.js', () => ({
-  searchVerificationDebtors: (...args: unknown[]) => searchVerificationDebtors(...args),
-}));
+vi.mock('../../src/repos/dwhVerificationDebtorRepo.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/repos/dwhVerificationDebtorRepo.js')>();
+  return {
+    ...actual,
+    searchVerificationDebtors: (...args: unknown[]) => searchVerificationDebtors(...args),
+  };
+});
 
 vi.mock('../../src/integrations/dwh.js', () => ({
   dwh: { isConfigured: () => dwhState.configured },
@@ -162,7 +166,26 @@ describe('duplicate shape', () => {
 describe('debtor needle', () => {
   it('folds a legal name without stripping the comma the warehouse still stores', async () => {
     await searchBlacklist(ctx, { by: 'name', q: 'Kaiser Freight, LLC' });
-    expect(searchVerificationDebtors).toHaveBeenCalledWith('name', 'kaiser freight, llc');
+    expect(searchVerificationDebtors).toHaveBeenCalledWith('name', 'kaiser freight, llc', {
+      page: 1,
+      pageSize: 50,
+    });
+  });
+
+  it('pages debtors with LIMIT+1 hasMore and does not hide the remainder', async () => {
+    searchVerificationDebtors.mockResolvedValue(
+      Array.from({ length: 51 }, (_, i) => ({
+        carrier_id: String(i + 1),
+        company_name: `Carrier ${i + 1}`,
+        computed_debt: 150,
+        computed_debt_days: 11,
+        open_invoices: 2,
+      })),
+    );
+    const out = await searchBlacklist(ctx, { by: 'name', q: 'Kaiser Freight', page: 1, pageSize: 50 });
+    expect(out.debtors.records).toHaveLength(50);
+    expect(out.debtors.truncated).toBe(true);
+    expect(out.debtors.pagination).toEqual({ page: 1, pageSize: 50, hasMore: true });
   });
 });
 
@@ -198,6 +221,8 @@ describe('unavailable probes', () => {
       available: false,
       error: 'DWH_DATABASE_URL is not configured',
       records: [],
+      truncated: false,
+      pagination: { page: 1, pageSize: 50, hasMore: false },
     });
     expect(out.ban.available).toBe(true);
     expect(out.duplicates.available).toBe(true);

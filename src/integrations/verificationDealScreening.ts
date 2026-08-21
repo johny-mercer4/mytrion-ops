@@ -110,8 +110,30 @@ const DEAL_SCREENING_FIELDS = [
   'citifuel_Status',
 ].join(', ');
 
-/** Enough to prove a pattern; a case colliding with more than this needs a human either way. */
-const DEAL_SCREENING_LIMIT = 50;
+/** Phase 3: enough to prove a pattern; more than this needs a human either way. */
+export const DEAL_SCREENING_LIMIT = 50;
+
+/**
+ * Data Center CITI page. Zoho v8 COQL allows 2000/call; ≤200 is one API credit.
+ * Phase 3 stays on {@link DEAL_SCREENING_LIMIT}. Do not invent a second Deal SELECT.
+ */
+export const CITI_SEARCH_DEFAULT_PAGE_SIZE = 200;
+export const CITI_SEARCH_MAX_PAGE_SIZE = 200;
+
+const COQL_OFFSET_MAX = 100_000;
+const COQL_LIMIT_MAX = 2000;
+
+function coqlOffset(value: number | undefined): number {
+  const n = Math.floor(value ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, COQL_OFFSET_MAX);
+}
+
+function coqlLimit(value: number | undefined, fallback: number): number {
+  const n = Math.floor(value ?? fallback);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, COQL_LIMIT_MAX);
+}
 
 const UNAVAILABLE = (error: string): DealScreeningResult => ({
   available: false,
@@ -135,8 +157,13 @@ export interface DealQueryResult {
  * Phase 3 (`screenDealsForCase`) and Data Center CITI both call this. Do not invent a second
  * Deal query: the standing field is `citifuel_Status` on this same statement.
  */
-export async function queryDealsForNeedles(needles: DealScreeningNeedles): Promise<DealQueryResult> {
+export async function queryDealsForNeedles(
+  needles: DealScreeningNeedles,
+  page: { offset?: number | undefined; limit?: number | undefined } = {},
+): Promise<DealQueryResult> {
   const ownDealId = needles.dealId && isZohoId(needles.dealId) ? needles.dealId.trim() : null;
+  const limit = coqlLimit(page.limit, DEAL_SCREENING_LIMIT);
+  const offset = coqlOffset(page.offset);
 
   const clauses: string[] = [];
   const email = (needles.email ?? '').trim().toLowerCase();
@@ -165,11 +192,16 @@ export async function queryDealsForNeedles(needles: DealScreeningNeedles): Promi
     : clauses.join(' or ');
 
   try {
-    const { rows, count } = await zohoCrm.runCoql(
+    const { rows, moreRecords } = await zohoCrm.runCoql(
       `select ${DEAL_SCREENING_FIELDS} from Deals where ${where}` +
-        ` order by Application_Date desc, id desc limit 0, ${DEAL_SCREENING_LIMIT}`,
+        ` order by Application_Date desc, id desc limit ${offset}, ${limit}`,
     );
-    return { available: true, error: null, rows, truncated: count >= DEAL_SCREENING_LIMIT };
+    return {
+      available: true,
+      error: null,
+      rows,
+      truncated: moreRecords || rows.length >= limit,
+    };
   } catch (err) {
     const message = errorMessage(err);
     logger.warn({ err: message }, 'verification deal screening failed');

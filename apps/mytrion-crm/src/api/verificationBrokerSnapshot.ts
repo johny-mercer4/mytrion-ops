@@ -24,20 +24,29 @@ export interface BrokerSnapshotRecord {
   fields?: Record<string, unknown>;
 }
 
+export interface SearchPagination {
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 export interface BrokerSnapshotSearchResult {
   available: boolean;
   error: string | null;
   matchedOn: BrokerSnapshotSearchBy | null;
   notFound: boolean;
   truncated: boolean;
+  pagination: SearchPagination;
   records: BrokerSnapshotRecord[];
 }
 
 export async function searchBrokerSnapshot(query: {
   by: BrokerSnapshotSearchBy;
   q: string;
+  page?: number | undefined;
+  pageSize?: number | undefined;
 }): Promise<BrokerSnapshotSearchResult> {
   return (await request('GET', '/verification/flow/broker-snapshot/search', {
-    query: { by: query.by, q: query.q },
+    query: { by: query.by, q: query.q, page: query.page, pageSize: query.pageSize },
   })) as BrokerSnapshotSearchResult;
 }

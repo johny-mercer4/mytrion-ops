@@ -6,18 +6,15 @@
  * not auto-run. CITI Fuel is the existing Zoho Deals Citifuel COQL — not CMP live.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  */
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, Input, Skeleton, Tabs, type BadgeIntent, type TabItem } from '@/ds';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { Button, Input, Tabs, type TabItem } from '@/ds';
 import {
   searchFmcsa,
-  type FmcsaCarrierRow,
   type FmcsaSearchBy,
   type FmcsaSearchResult,
-  type FmcsaStatusVerdict,
 } from '@/api/verificationFmcsa';
 import {
   searchMotus,
-  type MotusCensusRecord,
   type MotusSearchBy,
   type MotusSearchResult,
 } from '@/api/verificationMotus';
@@ -40,24 +37,15 @@ import {
   blacklistPrefill,
   brokerPrefill,
   citiPrefill,
-  brokerSnapshotFacts,
-  brokerSnapshotTitle,
-  brokerStatusVerdict,
-  fmcsaCarrierTitle,
-  fmcsaCityState,
-  fmcsaDetailFacts,
   fmcsaPrefill,
   fmcsaRows,
-  fmcsaStatusLabel,
-  flattenFields,
-  motusCensusFacts,
-  motusCensusTitle,
-  motusMcLabel,
   motusPrefill,
   type FmcsaPrefillCase,
 } from './caseDataCenterModel';
-import { BlacklistResults, ExpandRow } from './CaseDataCenterBlacklist';
+import { BlacklistResults } from './CaseDataCenterBlacklist';
+import { BrokerResults } from './CaseDataCenterBroker';
 import { CITI_KEYS, CITI_PLACEHOLDER, CitiResults } from './CaseDataCenterCiti';
+import { FmcsaResults, MotusResults, ResultsSkeleton } from './CaseDataCenterVendors';
 import './caseDataCenter.css';
 
 type Source = 'fmcsa' | 'motus' | 'broker' | 'blacklist' | 'citi';
@@ -118,18 +106,6 @@ const BLACKLIST_PLACEHOLDER: Record<BlacklistSearchBy, string> = {
   name: 'Legal name',
 };
 
-const STATUS_INTENT: Record<FmcsaStatusVerdict, BadgeIntent> = {
-  active: 'success',
-  inactive: 'danger',
-  unknown: 'neutral',
-};
-
-function censusStatus(code: MotusCensusRecord['statusCode']): FmcsaStatusVerdict {
-  if (code === 'A') return 'active';
-  if (code === 'I') return 'inactive';
-  return 'unknown';
-}
-
 type SearchBy = FmcsaSearchBy | BlacklistSearchBy | CitiSearchBy;
 
 export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
@@ -144,6 +120,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const [broker, setBroker] = useState<BrokerSnapshotSearchResult | null>(null);
   const [blacklist, setBlacklist] = useState<BlacklistSearchResult | null>(null);
   const [citi, setCiti] = useState<CitiSearchResult | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const req = useRef(0);
   const keysId = useId();
   const motusBy: MotusSearchBy = by === 'name' ? 'name' : 'dot';
@@ -172,6 +149,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
     setBlacklist(null);
     setCiti(null);
     setError(null);
+    setLoadingMore(false);
   }, [source, seed.by, seed.q]);
 
   const changeSource = (next: string): void => {
@@ -248,6 +226,72 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
       })
       .finally(() => {
         if (id === req.current) setBusy(false);
+      });
+  };
+
+  const loadMore = (): void => {
+    const value = q.trim();
+    if (value === '' || busy || loadingMore) return;
+    const id = ++req.current;
+    setLoadingMore(true);
+    setError(null);
+    const run =
+      source === 'citi' && citi?.pagination.hasMore
+        ? searchCiti({
+            by: citiBy,
+            q: value,
+            page: citi.pagination.page + 1,
+            pageSize: citi.pagination.pageSize,
+          }).then((next) => {
+            if (id !== req.current) return;
+            if (!next.available) {
+              setError(next.error ?? 'Zoho Deals did not answer.');
+              return;
+            }
+            setCiti({ ...next, records: [...citi.records, ...next.records] });
+          })
+        : source === 'broker' && broker?.pagination.hasMore
+          ? searchBrokerSnapshot({
+              by: brokerBy,
+              q: value,
+              page: broker.pagination.page + 1,
+              pageSize: broker.pagination.pageSize,
+            }).then((next) => {
+              if (id !== req.current) return;
+              if (!next.available) {
+                setError(next.error ?? 'Warehouse did not answer.');
+                return;
+              }
+              setBroker({ ...next, records: [...broker.records, ...next.records] });
+            })
+          : source === 'blacklist' && blacklist?.debtors.pagination.hasMore
+            ? searchBlacklist({
+                by: blacklistBy,
+                q: value,
+                page: blacklist.debtors.pagination.page + 1,
+                pageSize: blacklist.debtors.pagination.pageSize,
+              }).then((next) => {
+                if (id !== req.current) return;
+                if (!next.debtors.available) {
+                  setError(next.debtors.error ?? 'Warehouse did not answer.');
+                  return;
+                }
+                setBlacklist({
+                  ...blacklist,
+                  debtors: {
+                    ...next.debtors,
+                    records: [...blacklist.debtors.records, ...next.debtors.records],
+                  },
+                });
+              })
+            : Promise.resolve();
+    void run
+      .catch((err: unknown) => {
+        if (id !== req.current) return;
+        setError(err instanceof Error ? err.message : 'Search did not answer.');
+      })
+      .finally(() => {
+        if (id === req.current) setLoadingMore(false);
       });
   };
 
@@ -392,186 +436,16 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
           />
         ) : null}
         {source === 'motus' && motus?.available ? <MotusResults result={motus} /> : null}
-        {source === 'blacklist' && blacklist ? <BlacklistResults result={blacklist} /> : null}
-        {source === 'citi' && citi?.available ? <CitiResults result={citi} /> : null}
-        {source === 'broker' && broker?.available ? <BrokerResults result={broker} /> : null}
+        {source === 'blacklist' && blacklist ? (
+          <BlacklistResults result={blacklist} loadingMore={loadingMore} onLoadMore={loadMore} />
+        ) : null}
+        {source === 'citi' && citi?.available ? (
+          <CitiResults result={citi} loadingMore={loadingMore} onLoadMore={loadMore} />
+        ) : null}
+        {source === 'broker' && broker?.available ? (
+          <BrokerResults result={broker} loadingMore={loadingMore} onLoadMore={loadMore} />
+        ) : null}
       </div>
     </div>
-  );
-}
-
-function ResultsSkeleton({ label }: { label: string }) {
-  return (
-    <div className="va-dc-list" aria-busy="true" aria-label={label}>
-      <Skeleton variant="rect" height="64px" radius="control" />
-      <Skeleton variant="rect" height="64px" radius="control" />
-    </div>
-  );
-}
-
-function FmcsaResults({
-  rows,
-  truncated,
-  matchedOn,
-}: {
-  rows: FmcsaCarrierRow[];
-  truncated: boolean;
-  matchedOn: FmcsaSearchBy | null;
-}) {
-  return (
-    <div className="va-dc-list">
-      <p className="va-dc-meta" role="status">
-        {rows.length === 1 ? '1 carrier' : `${rows.length} carriers`}
-        {matchedOn === 'name' ? ' · by name' : matchedOn === 'mc' ? ' · by MC' : matchedOn === 'dot' ? ' · by USDOT' : ''}
-        {truncated ? ' · first 50 — refine the name' : ''}
-      </p>
-      {rows.map((row, index) => (
-        <ExpandRow
-          key={row.dotNumber ?? `${row.legalName ?? 'row'}-${index}`}
-          title={fmcsaCarrierTitle(row)}
-          facts={[
-            row.dotNumber ? `USDOT ${row.dotNumber}` : null,
-            row.dbaName && row.dbaName !== row.legalName ? `DBA ${row.dbaName}` : null,
-            fmcsaCityState(row),
-          ]}
-          badge={fmcsaStatusLabel(row.status)}
-          badgeIntent={STATUS_INTENT[row.status]}
-          details={fmcsaDetailFacts(row)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function MotusResults({ result }: { result: MotusSearchResult }) {
-  const census = result.census.records;
-  const filings = result.insurance?.filings ?? [];
-  const agents = result.processAgents?.agents ?? [];
-  if (census.length === 0 && filings.length === 0 && agents.length === 0) return null;
-
-  return (
-    <div className="va-dc-list">
-      <p className="va-dc-meta" role="status">
-        {census.length === 1 ? '1 carrier' : `${census.length} carriers`}
-        {result.matchedOn === 'name' ? ' · by name' : result.matchedOn === 'dot' ? ' · by USDOT' : ''}
-        {result.census.truncated ? ' · first page — refine the name' : ''}
-      </p>
-      {result.census.error && result.census.available === false ? (
-        <p className="va-dc-status" data-tone="danger" role="alert">
-          {result.census.error}
-        </p>
-      ) : null}
-      {census.map((row) => (
-        <ExpandRow
-          key={row.dotNumber}
-          title={motusCensusTitle(row)}
-          facts={[
-            `USDOT ${row.dotNumber}`,
-            motusMcLabel(row),
-            row.dbaName && row.dbaName !== row.legalName ? `DBA ${row.dbaName}` : null,
-            [row.address.city, row.address.state].filter(Boolean).join(', ') || null,
-          ]}
-          badge={row.statusLabel ?? 'Unknown'}
-          badgeIntent={STATUS_INTENT[censusStatus(row.statusCode)]}
-          details={motusCensusFacts(row)}
-        />
-      ))}
-      {result.insurance ? (
-        <FrozenBlock
-          title="Insurance filings"
-          asOf={result.insurance.dataAsOf}
-          error={!result.insurance.available ? result.insurance.error : null}
-          empty={result.insurance.available && filings.length === 0}
-          emptyText="No insurance filings in the snapshot."
-        >
-          {filings.map((filing, index) => (
-            <ExpandRow
-              key={`${filing.docketNumber}-${filing.formCode}-${index}`}
-              title={filing.formLabel ?? filing.formCode}
-              facts={[filing.docketNumber, filing.insurer, filing.status]}
-              details={flattenFields(filing.fields, [])}
-            />
-          ))}
-        </FrozenBlock>
-      ) : null}
-      {result.processAgents ? (
-        <FrozenBlock
-          title="Process agents"
-          asOf={result.processAgents.dataAsOf}
-          error={!result.processAgents.available ? result.processAgents.error : null}
-          empty={result.processAgents.available && agents.length === 0}
-          emptyText="No process-agent rows in the snapshot."
-        >
-          {agents.map((agent, index) => (
-            <ExpandRow
-              key={`${agent.docketNumber ?? 'agent'}-${index}`}
-              title={agent.agentName ?? 'Process agent'}
-              facts={[agent.docketNumber, agent.attnTo, [agent.address.city, agent.address.state].filter(Boolean).join(', ') || null]}
-              details={flattenFields(agent.fields, ['co_name'])}
-            />
-          ))}
-        </FrozenBlock>
-      ) : null}
-    </div>
-  );
-}
-
-function BrokerResults({ result }: { result: BrokerSnapshotSearchResult }) {
-  const rows = result.records;
-  if (rows.length === 0) return null;
-
-  return (
-    <div className="va-dc-list">
-      <p className="va-dc-meta" role="status">
-        {rows.length === 1 ? '1 carrier' : `${rows.length} carriers`}
-        {result.matchedOn === 'name' ? ' · by name' : result.matchedOn === 'dot' ? ' · by USDOT' : ''}
-        {result.truncated ? ' · first 25 — refine the name' : ''}
-      </p>
-      {rows.map((row) => (
-        <ExpandRow
-          key={row.id}
-          title={brokerSnapshotTitle(row)}
-          facts={[row.dotNumber ? `USDOT ${row.dotNumber}` : null, row.phoneNumber]}
-          badge={row.operatingStatus ?? 'Unknown'}
-          badgeIntent={STATUS_INTENT[brokerStatusVerdict(row.operatingStatus)]}
-          details={brokerSnapshotFacts(row)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function FrozenBlock({
-  title,
-  asOf,
-  error,
-  empty,
-  emptyText,
-  children,
-}: {
-  title: string;
-  asOf: string;
-  error: string | null;
-  empty: boolean;
-  emptyText: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="va-dc-block">
-      <p className="va-dc-meta">
-        {title} · frozen as of {asOf || '—'}
-      </p>
-      {error ? (
-        <p className="va-dc-status" data-tone="danger" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {empty ? (
-        <p className="va-dc-status" role="status">
-          {emptyText}
-        </p>
-      ) : null}
-      {children}
-    </section>
   );
 }

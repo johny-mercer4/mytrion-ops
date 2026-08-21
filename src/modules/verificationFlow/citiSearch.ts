@@ -11,6 +11,8 @@
  * Zoho down is `{ available: false }`, never a 403.
  */
 import {
+  CITI_SEARCH_DEFAULT_PAGE_SIZE,
+  CITI_SEARCH_MAX_PAGE_SIZE,
   citifuelVerdict,
   queryDealsForNeedles,
   type CitifuelVerdict,
@@ -32,12 +34,20 @@ export interface CitiDealRecord {
   fields?: Record<string, JsonValue>;
 }
 
+export interface SearchPagination {
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 export interface CitiSearchResult {
   available: boolean;
   error: string | null;
   matchedOn: CitiSearchBy | null;
   notFound: boolean;
+  /** Same signal as `pagination.hasMore`. */
   truncated: boolean;
+  pagination: SearchPagination;
   records: CitiDealRecord[];
 }
 
@@ -75,9 +85,31 @@ function toRecord(row: Record<string, unknown>): CitiDealRecord | null {
   return record;
 }
 
-export async function searchCitifuel(query: { by: CitiSearchBy; q: string }): Promise<CitiSearchResult> {
+function clampCitiPage(page: number | undefined): number {
+  const n = Math.floor(page ?? 1);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+function clampCitiPageSize(pageSize: number | undefined): number {
+  const n = Math.floor(pageSize ?? CITI_SEARCH_DEFAULT_PAGE_SIZE);
+  if (!Number.isFinite(n) || n < 1) return CITI_SEARCH_DEFAULT_PAGE_SIZE;
+  return Math.min(n, CITI_SEARCH_MAX_PAGE_SIZE);
+}
+
+export async function searchCitifuel(query: {
+  by: CitiSearchBy;
+  q: string;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}): Promise<CitiSearchResult> {
   const by = query.by;
-  const queried = await queryDealsForNeedles(needlesFor(by, query.q.trim()));
+  const page = clampCitiPage(query.page);
+  const pageSize = clampCitiPageSize(query.pageSize);
+  const pagination = { page, pageSize, hasMore: false };
+  const queried = await queryDealsForNeedles(needlesFor(by, query.q.trim()), {
+    offset: (page - 1) * pageSize,
+    limit: pageSize,
+  });
   if (!queried.available) {
     return {
       available: false,
@@ -85,6 +117,7 @@ export async function searchCitifuel(query: { by: CitiSearchBy; q: string }): Pr
       matchedOn: null,
       notFound: false,
       truncated: false,
+      pagination,
       records: [],
     };
   }
@@ -92,12 +125,14 @@ export async function searchCitifuel(query: { by: CitiSearchBy; q: string }): Pr
   const records = queried.rows
     .map(toRecord)
     .filter((row): row is CitiDealRecord => row !== null);
+  const hasMore = queried.truncated;
   return {
     available: true,
     error: null,
     matchedOn: by,
     notFound: records.length === 0,
-    truncated: queried.truncated,
+    truncated: hasMore,
+    pagination: { page, pageSize, hasMore },
     records,
   };
 }

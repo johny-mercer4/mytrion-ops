@@ -5,7 +5,7 @@
  * section, not a clear. Expand lists leftover row fields.
  */
 import { useState } from 'react';
-import { Badge, Icon, type BadgeIntent } from '@/ds';
+import { Badge, Button, Icon, type BadgeIntent } from '@/ds';
 import type {
   BlacklistBanHit,
   BlacklistDuplicateHit,
@@ -28,12 +28,20 @@ function shortDate(value: string | null): string | null {
   return value.slice(0, 10);
 }
 
-export function BlacklistResults({ result }: { result: BlacklistSearchResult }) {
+export function BlacklistResults({
+  result,
+  loadingMore,
+  onLoadMore,
+}: {
+  result: BlacklistSearchResult;
+  loadingMore?: boolean | undefined;
+  onLoadMore?: (() => void) | undefined;
+}) {
   return (
     <div className="va-dc-list">
       <BanSection result={result} />
       <DuplicateSection result={result} />
-      <DebtorSection result={result} />
+      <DebtorSection result={result} loadingMore={loadingMore} onLoadMore={onLoadMore} />
     </div>
   );
 }
@@ -98,6 +106,11 @@ function DuplicateSection({ result }: { result: BlacklistSearchResult }) {
             : 'No duplicate case or Deal.'}
         </p>
       ) : null}
+      {dups.truncated ? (
+        <p className="va-dc-status" role="status">
+          More Deal matches than shown.
+        </p>
+      ) : null}
       {dups.hits.map((hit) => (
         <ExpandRow
           key={`${hit.source}-${hit.id}`}
@@ -117,11 +130,24 @@ function DuplicateSection({ result }: { result: BlacklistSearchResult }) {
   );
 }
 
-function DebtorSection({ result }: { result: BlacklistSearchResult }) {
+function DebtorSection({
+  result,
+  loadingMore,
+  onLoadMore,
+}: {
+  result: BlacklistSearchResult;
+  loadingMore?: boolean | undefined;
+  onLoadMore?: (() => void) | undefined;
+}) {
   const debtors = result.debtors;
   return (
     <section className="va-dc-block" aria-label="Debtors">
-      <p className="va-dc-meta">Debtors · outstanding &gt; $100</p>
+      <p className="va-dc-meta">
+        Debtors · outstanding &gt; $100
+        {debtors.records.length > 0
+          ? ` · ${debtors.records.length === 1 ? '1 carrier' : `${debtors.records.length} carriers`}`
+          : ''}
+      </p>
       {!debtors.available ? (
         <p className="va-dc-status" data-tone="danger" role="alert">
           {debtors.error ?? 'Warehouse did not answer.'}
@@ -147,6 +173,9 @@ function DebtorSection({ result }: { result: BlacklistSearchResult }) {
           details={flattenFields(row.fields, [])}
         />
       ))}
+      {debtors.pagination.hasMore && onLoadMore ? (
+        <LoadMoreButton busy={Boolean(loadingMore)} onClick={onLoadMore} />
+      ) : null}
     </section>
   );
 }
@@ -171,6 +200,14 @@ function duplicateFacts(hit: BlacklistDuplicateHit): VendorFact[] {
   if (hit.stage) out.push({ label: 'stage', value: hit.stage });
   if (hit.date) out.push({ label: 'date', value: hit.date });
   return out;
+}
+
+export function LoadMoreButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <Button type="button" variant="secondary" size="sm" loading={busy} onClick={onClick}>
+      Load more
+    </Button>
+  );
 }
 
 export function ExpandRow({

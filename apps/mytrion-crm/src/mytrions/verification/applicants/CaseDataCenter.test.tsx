@@ -104,6 +104,7 @@ function brokerHit(over: Partial<BrokerSnapshotSearchResult> = {}): BrokerSnapsh
     matchedOn: 'dot',
     notFound: false,
     truncated: false,
+    pagination: { page: 1, pageSize: 50, hasMore: false },
     records: [
       {
         id: '16079457811075937970',
@@ -152,7 +153,13 @@ function blacklistHit(over: Partial<BlacklistSearchResult> = {}): BlacklistSearc
       dealsAvailable: true,
       hits: [],
     },
-    debtors: { available: true, error: null, records: [] },
+    debtors: {
+      available: true,
+      error: null,
+      records: [],
+      truncated: false,
+      pagination: { page: 1, pageSize: 50, hasMore: false },
+    },
     ...over,
   };
 }
@@ -164,6 +171,7 @@ function citiHit(over: Partial<CitiSearchResult> = {}): CitiSearchResult {
     matchedOn: 'dot',
     notFound: false,
     truncated: false,
+    pagination: { page: 1, pageSize: 200, hasMore: false },
     records: [
       {
         dealId: '6227679000111111111',
@@ -375,6 +383,54 @@ describe('CaseDataCenter Broker snapshot search', () => {
     expect(screen.getByText('row_hash')).toBeInTheDocument();
     expect(screen.getByText('abc')).toBeInTheDocument();
   });
+
+  it('loads the next snapshot page instead of capping silently', async () => {
+    searchBrokerSnapshot
+      .mockResolvedValueOnce(
+        brokerHit({
+          matchedOn: 'name',
+          truncated: true,
+          pagination: { page: 1, pageSize: 50, hasMore: true },
+        }),
+      )
+      .mockResolvedValueOnce(
+        brokerHit({
+          matchedOn: 'name',
+          records: [
+            {
+              id: 'row-2',
+              dotNumber: '100',
+              ownerFullName: 'Ada Cole',
+              phoneNumber: null,
+              email: null,
+              physicalAddress: null,
+              operatingStatus: 'AUTHORIZED FOR PROPERTY',
+              powerUnits: null,
+              truckSize: null,
+              addDate: null,
+              changeDate: null,
+              isActive: true,
+            },
+          ],
+          pagination: { page: 2, pageSize: 50, hasMore: false },
+        }),
+      );
+    render(<CaseDataCenter caseRow={{ firstName: 'Ada', lastName: 'Cole' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Broker snapshot' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('Abdirehin Ahmed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() =>
+      expect(searchBrokerSnapshot).toHaveBeenLastCalledWith({
+        by: 'name',
+        q: 'Ada Cole',
+        page: 2,
+        pageSize: 50,
+      }),
+    );
+    expect(await screen.findByText('Ada Cole')).toBeInTheDocument();
+    expect(screen.getByText('Abdirehin Ahmed')).toBeInTheDocument();
+  });
 });
 
 describe('CaseDataCenter Blacklist search', () => {
@@ -417,6 +473,8 @@ describe('CaseDataCenter Blacklist search', () => {
         debtors: {
           available: true,
           error: null,
+          truncated: false,
+          pagination: { page: 1, pageSize: 50, hasMore: false },
           records: [
             {
               carrierId: '4421',
@@ -517,5 +575,42 @@ describe('CaseDataCenter CITI Fuel search', () => {
     fireEvent.click(toggle);
     expect(screen.getByText('citifuel_Status')).toBeInTheDocument();
     expect(screen.getByText('ops@kaiser.test')).toBeInTheDocument();
+  });
+
+  it('loads the next Deal page when Zoho says more remain', async () => {
+    searchCiti
+      .mockResolvedValueOnce(
+        citiHit({ truncated: true, pagination: { page: 1, pageSize: 200, hasMore: true } }),
+      )
+      .mockResolvedValueOnce(
+        citiHit({
+          records: [
+            {
+              dealId: '6227679000222222222',
+              dealName: 'Second Deal LLC',
+              dotNumber: '3921884',
+              mcNumber: '778211',
+              stage: 'Application Filled',
+              citifuelStatus: 'no',
+              citifuelVerdict: 'clear',
+            },
+          ],
+          pagination: { page: 2, pageSize: 200, hasMore: false },
+        }),
+      );
+    render(<CaseDataCenter caseRow={{ dot: '3921884' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'CITI Fuel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('Kaiser Freight LLC')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() =>
+      expect(searchCiti).toHaveBeenLastCalledWith({
+        by: 'dot',
+        q: '3921884',
+        page: 2,
+        pageSize: 200,
+      }),
+    );
+    expect(await screen.findByText('Second Deal LLC')).toBeInTheDocument();
   });
 });

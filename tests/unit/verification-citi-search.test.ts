@@ -78,7 +78,7 @@ describe('GET /verification/flow/citi/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(res.statusCode).toBe(200);
-    expect(searchCitifuel).toHaveBeenCalledWith({ by: 'dot', q: '3921884' });
+    expect(searchCitifuel).toHaveBeenCalledWith(expect.objectContaining({ by: 'dot', q: '3921884' }));
     expect(res.json().records[0].dealName).toBe('Kaiser Freight LLC');
   });
 
@@ -89,7 +89,7 @@ describe('GET /verification/flow/citi/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(mc.statusCode).toBe(200);
-    expect(searchCitifuel).toHaveBeenCalledWith({ by: 'mc', q: '778211' });
+    expect(searchCitifuel).toHaveBeenCalledWith(expect.objectContaining({ by: 'mc', q: '778211' }));
 
     const email = await app.inject({
       method: 'GET',
@@ -97,7 +97,7 @@ describe('GET /verification/flow/citi/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(email.statusCode).toBe(200);
-    expect(searchCitifuel).toHaveBeenCalledWith({ by: 'email', q: 'ops@kaiser.test' });
+    expect(searchCitifuel).toHaveBeenCalledWith(expect.objectContaining({ by: 'email', q: 'ops@kaiser.test' }));
 
     const name = await app.inject({
       method: 'GET',
@@ -105,7 +105,19 @@ describe('GET /verification/flow/citi/search', () => {
       headers: bearer(await workerToken('Verification')),
     });
     expect(name.statusCode).toBe(200);
-    expect(searchCitifuel).toHaveBeenCalledWith({ by: 'name', q: 'Kaiser Freight' });
+    expect(searchCitifuel).toHaveBeenCalledWith(expect.objectContaining({ by: 'name', q: 'Kaiser Freight' }));
+  });
+
+  it('forwards page and pageSize onto queryDealsForNeedles', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/citi/search?by=dot&q=3921884&page=2&pageSize=200',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(searchCitifuel).toHaveBeenCalledWith(
+      expect.objectContaining({ by: 'dot', q: '3921884', page: 2, pageSize: 200 }),
+    );
   });
 
   it('rejects phone — that COQL does not filter on it', async () => {

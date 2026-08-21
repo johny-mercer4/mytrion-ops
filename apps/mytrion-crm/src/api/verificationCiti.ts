@@ -21,17 +21,29 @@ export interface CitiDealRecord {
   fields?: Record<string, unknown>;
 }
 
+export interface SearchPagination {
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 export interface CitiSearchResult {
   available: boolean;
   error: string | null;
   matchedOn: CitiSearchBy | null;
   notFound: boolean;
   truncated: boolean;
+  pagination: SearchPagination;
   records: CitiDealRecord[];
 }
 
-export async function searchCiti(query: { by: CitiSearchBy; q: string }): Promise<CitiSearchResult> {
+export async function searchCiti(query: {
+  by: CitiSearchBy;
+  q: string;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}): Promise<CitiSearchResult> {
   return (await request('GET', '/verification/flow/citi/search', {
-    query: { by: query.by, q: query.q },
+    query: { by: query.by, q: query.q, page: query.page, pageSize: query.pageSize },
   })) as CitiSearchResult;
 }

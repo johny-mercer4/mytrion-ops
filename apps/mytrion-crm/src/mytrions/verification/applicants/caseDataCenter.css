@@ -67,6 +67,10 @@
   gap: var(--space-2);
 }
 
+[data-mytrion='verification'] .va-dc-list > button {
+  align-self: flex-start;
+}
+
 [data-mytrion='verification'] .va-dc-block {
   display: flex;
   flex-direction: column;

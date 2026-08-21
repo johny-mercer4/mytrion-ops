@@ -43,21 +43,36 @@ export interface BlacklistProbe<T> {
   hits: T[];
 }
 
+export interface SearchPagination {
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 export interface BlacklistSearchResult {
   matchedOn: BlacklistSearchBy;
   ban: BlacklistProbe<BlacklistBanHit> & { ownAvailable: boolean; platformAvailable: boolean };
   duplicates: BlacklistProbe<BlacklistDuplicateHit> & {
     casesAvailable: boolean;
     dealsAvailable: boolean;
+    truncated?: boolean;
   };
-  debtors: { available: boolean; error: string | null; records: BlacklistDebtorRecord[] };
+  debtors: {
+    available: boolean;
+    error: string | null;
+    records: BlacklistDebtorRecord[];
+    truncated: boolean;
+    pagination: SearchPagination;
+  };
 }
 
 export async function searchBlacklist(query: {
   by: BlacklistSearchBy;
   q: string;
+  page?: number | undefined;
+  pageSize?: number | undefined;
 }): Promise<BlacklistSearchResult> {
   return (await request('GET', '/verification/flow/blacklist/search', {
-    query: { by: query.by, q: query.q },
+    query: { by: query.by, q: query.q, page: query.page, pageSize: query.pageSize },
   })) as BlacklistSearchResult;
 }

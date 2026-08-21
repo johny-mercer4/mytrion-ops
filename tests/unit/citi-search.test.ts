@@ -12,9 +12,16 @@ vi.mock('../../src/integrations/zohoCrm.js', () => ({
 }));
 
 const { searchCitifuel } = await import('../../src/modules/verificationFlow/citiSearch.js');
-const { queryDealsForNeedles, screenDealsForCase } = await import(
-  '../../src/integrations/verificationDealScreening.js'
-);
+const {
+  CITI_SEARCH_DEFAULT_PAGE_SIZE,
+  DEAL_SCREENING_LIMIT,
+  queryDealsForNeedles,
+  screenDealsForCase,
+} = await import('../../src/integrations/verificationDealScreening.js');
+
+function withoutLimit(sql: string): string {
+  return sql.replace(/\s+limit\s+\d+\s*,\s*\d+\s*$/i, '');
+}
 
 const ROW = {
   id: '6227679000111111111',
@@ -37,6 +44,7 @@ describe('searchCitifuel COQL', () => {
   it('is the same statement queryDealsForNeedles / screenDealsForCase already build', async () => {
     await searchCitifuel({ by: 'dot', q: '3921884' });
     const citiSql = String(runCoql.mock.calls[0]![0]);
+    expect(citiSql).toContain(`limit 0, ${CITI_SEARCH_DEFAULT_PAGE_SIZE}`);
     runCoql.mockClear();
     await queryDealsForNeedles({
       dealId: null,
@@ -45,7 +53,9 @@ describe('searchCitifuel COQL', () => {
       dot: '3921884',
       companyName: null,
     });
-    expect(String(runCoql.mock.calls[0]![0])).toBe(citiSql);
+    const phaseSql = String(runCoql.mock.calls[0]![0]);
+    expect(phaseSql).toContain(`limit 0, ${DEAL_SCREENING_LIMIT}`);
+    expect(withoutLimit(citiSql)).toBe(withoutLimit(phaseSql));
 
     runCoql.mockClear();
     await screenDealsForCase({
@@ -55,7 +65,7 @@ describe('searchCitifuel COQL', () => {
       dot: '3921884',
       companyName: null,
     });
-    expect(String(runCoql.mock.calls[0]![0])).toBe(citiSql);
+    expect(withoutLimit(String(runCoql.mock.calls[0]![0]))).toBe(withoutLimit(citiSql));
   });
 
   it('filters USDOT on DOT1, MC, both emails, and exact Deal_Name', async () => {
@@ -114,6 +124,23 @@ describe('searchCitifuel payload', () => {
       DOT1: 3921884,
       citifuel_Status: 'yes',
     });
+    expect(out.pagination).toEqual({
+      page: 1,
+      pageSize: CITI_SEARCH_DEFAULT_PAGE_SIZE,
+      hasMore: false,
+    });
+  });
+
+  it('pages the same COQL with Zoho offset and surfaces more_records as hasMore', async () => {
+    runCoql.mockResolvedValue({
+      rows: Array.from({ length: 200 }, (_, i) => ({ ...ROW, id: `id-${i}` })),
+      count: 200,
+      moreRecords: true,
+    });
+    const out = await searchCitifuel({ by: 'name', q: 'Kaiser Freight LLC', page: 2, pageSize: 200 });
+    expect(String(runCoql.mock.calls[0]![0])).toContain('limit 200, 200');
+    expect(out.truncated).toBe(true);
+    expect(out.pagination).toEqual({ page: 2, pageSize: 200, hasMore: true });
   });
 
   it('degrades to available:false when Zoho is down', async () => {
