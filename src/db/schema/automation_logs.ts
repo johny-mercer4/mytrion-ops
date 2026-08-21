@@ -15,6 +15,15 @@ export type AutomationOriginSource = (typeof AUTOMATION_ORIGIN_SOURCES)[number];
 export const DEFAULT_AUTOMATION_ORIGIN: AutomationOriginSource = 'Mytrion Zoho';
 export const AUTOMATION_PHASES = ['started', 'succeeded', 'failed'] as const;
 export type AutomationPhase = (typeof AUTOMATION_PHASES)[number];
+/**
+ * What a caller may write: ONE row per submit, at the outcome.
+ *
+ * 'started' stays in `AUTOMATION_PHASES` only so the 24 rows written on 2026-08-20 still read back
+ * as their own phase — the endpoint no longer accepts it. A submit that produced a `started` row
+ * and then a `succeeded` row put two records in the table for one click, which is what the
+ * Automation Logs tab is meant to count once.
+ */
+export const AUTOMATION_TERMINAL_PHASES = ['succeeded', 'failed'] as const;
 
 /**
  * Automation_Logs — an append-only log of automation triggers, written from the front-end

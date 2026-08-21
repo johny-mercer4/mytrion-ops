@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AUTOMATION_ORIGIN_SOURCES, AUTOMATION_PHASES } from '../../db/schema/index.js';
+import { AUTOMATION_ORIGIN_SOURCES, AUTOMATION_TERMINAL_PHASES } from '../../db/schema/index.js';
 import { RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { automationLogRepo } from '../../repos/automationLogRepo.js';
@@ -10,7 +10,7 @@ const logSchema = z
   .object({
     automationType: z.string().min(1).max(200),
     runId: z.string().uuid().optional(),
-    phase: z.enum(AUTOMATION_PHASES).optional(),
+    phase: z.enum(AUTOMATION_TERMINAL_PHASES).optional(),
     durationMs: z.number().int().min(0).max(86_400_000).optional(),
     errorCode: z.enum([
       'timeout',
@@ -30,10 +30,7 @@ const logSchema = z
     if (lifecycle && (!value.runId || !value.phase)) {
       ctx.addIssue({ code: 'custom', message: 'runId and phase are required together' });
     }
-    if (value.phase === 'started' && (value.durationMs !== undefined || value.errorCode)) {
-      ctx.addIssue({ code: 'custom', message: 'started rows cannot contain terminal fields' });
-    }
-    if (value.phase && value.phase !== 'started' && value.durationMs === undefined) {
+    if (value.phase && value.durationMs === undefined) {
       ctx.addIssue({ code: 'custom', message: 'terminal rows require durationMs' });
     }
     if (value.phase === 'failed' && !value.errorCode) {
@@ -44,7 +41,10 @@ const logSchema = z
     }
   });
 
-/** Automation logging — the legacy API-key widget and verified Sales sessions post lifecycle rows. */
+/**
+ * Automation logging — the legacy API-key widget and verified Sales sessions post ONE row per
+ * submit, once the automation has finished (`succeeded` or `failed`).
+ */
 export async function automationRoutes(app: FastifyInstance): Promise<void> {
   app.post('/automation/logs', { onRequest: [app.sessionOrApiKey] }, async (request) => {
     const body = logSchema.parse(request.body);

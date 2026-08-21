@@ -239,7 +239,6 @@ export function AutoTab() {
     if (!bm) return;
     const lifecycleRunId = crypto.randomUUID();
     const lifecycleStartedAt = performance.now();
-    logAutomation(bm.id, { runId: lifecycleRunId, phase: 'started' });
     runInFlight.current = true;
     setAutoRunErr(null); setAutoResult(null); setAutoStep('running'); setTxnReport(null);
     const phases = PHASE_MAP[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
