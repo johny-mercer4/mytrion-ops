@@ -13,8 +13,10 @@ index, not a second copy of those rules.
 | Product facts (Collection, Sales, CS, Billing, HR, Admin, Verification) | `.claude/skills/<name>-mytrion/` |
 | CRM `ds/` component conventions | `apps/mytrion-crm/src/ds/CONVENTIONS.md` |
 
-Workspace product skills are mirrored to `.cursor/skills/` and `.agents/skills/`. `.agents/` is
-gitignored — `git add -f` skill updates like the Zoho mirrors.
+Canonical skill tree is `.claude/skills` (policy in `.claude/skills/README.md`). Product skills
+(`*-mytrion`) are mirrored to `.cursor/skills`. `.agents/skills` is gitignored — `git add -f` if
+that mirror is present. Do not keep four copies of `impeccable` in sync. `.github/skills` is
+GitHub-agent / impeccable only unless we explicitly add a product skill there.
 
 Optional tooling: `ast-grep` (not MCP), `context7` (library docs plugin — not this repo's
 `mcp.json`), `render-logs` (Octane Render map). UI verify: `.cursor/rules/ui-verify.mdc`.

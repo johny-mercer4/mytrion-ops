@@ -3,6 +3,20 @@
 Reference skills for this repo. Each `SKILL.md` is auto-surfaced by Claude Code when its
 `description` matches the task, or invokable directly.
 
+## Skill trees (canonical vs mirrors)
+
+**Canonical tree is `.claude/skills`.** Edit here first. Product skills (`*-mytrion`) are mirrored
+to `.cursor/skills` so Cursor agents see the same facts. `.agents/skills` is gitignored — `git add -f`
+only when that mirror is present (same pattern as the Zoho API skills).
+
+**Do not** try to keep four full copies of `impeccable` in sync (`.claude`, `.cursor`, `.agents`,
+`.github`). Impeccable is a tooling pack, not a product skill. `.github/skills` is GitHub-agent /
+impeccable only unless we explicitly add a product skill there. No sync script unless one already
+exists and is broken.
+
+When a product skill changes, update `.claude` and copy the file to `.cursor` in the same PR
+(byte-identical). Do not invent a fourth product-skill tree.
+
 ## Zoho API references (for building tool-calling integrations)
 
 | Skill | Covers |
@@ -43,6 +57,7 @@ Live desks only. Update the skill in the same PR when that Mytrion’s schema, r
 | [`billing-mytrion`](billing-mytrion/SKILL.md) | Billing desk: Data Center, Transactions, Ledger, Debtors, Prepay, Returns. Not Finance Mytrion. |
 | [`hr-mytrion`](hr-mytrion/SKILL.md) | HR desk: app-PG directory/org/leave; Zoho People is admin one-way pull; attendance is Ganga. |
 | [`admin-mytrion`](admin-mytrion/SKILL.md) | Admin rail (21 tabs). Gate is `allDepartmentAccess`, not `department: 'admin'`. |
+| [`verification-mytrion`](verification-mytrion/SKILL.md) | Credit desk: 10-phase rail, Sales intake vs `/verification/flow/*`, write gates, Octane vs Credit Platform vendors, SOP vs shipped code. Not the Sales Verification tab. |
 
 ## Agent tooling
 
