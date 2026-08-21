@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './transport';
-import { callTouchpoint, logAutomation } from './touchpoints';
+import { automationErrorCode, callTouchpoint, logAutomation } from './touchpoints';
 import { jsonResponse } from '../test/sse';
 
 const SESSION_KEY = 'octane.session.v1';
@@ -62,6 +62,29 @@ describe('callTouchpoint', () => {
 });
 
 describe('logAutomation', () => {
+  it('sends only the idempotent lifecycle fields for a terminal failure', async () => {
+    seedSession();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse(200, { id: '1' }));
+    vi.stubGlobal('fetch', fetchMock);
+    logAutomation('balance', {
+      runId: '11111111-1111-4111-8111-111111111111',
+      phase: 'failed',
+      durationMs: 723,
+      errorCode: 'network',
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      automationType: 'balance_check',
+      runId: '11111111-1111-4111-8111-111111111111',
+      phase: 'failed',
+      durationMs: 723,
+      errorCode: 'network',
+    });
+    expect(body).not.toHaveProperty('errorMessage');
+  });
+
   it('fires one POST with the session agent name and swallows failures', async () => {
     seedSession();
     const fetchMock = vi.fn(async () => jsonResponse(500, {}));
@@ -113,5 +136,13 @@ describe('logAutomation', () => {
     ) as { automationType: string; originSource: string };
     expect(body.automationType).toBe(expected);
     expect(body.originSource).toBe('Mytrion Horizon');
+  });
+
+  it('reduces errors to coarse, non-sensitive buckets', () => {
+    expect(automationErrorCode(new Error('Failed to fetch carrier 123'))).toBe('network');
+    expect(automationErrorCode(new Error('Card number is required'))).toBe('validation');
+    expect(automationErrorCode(new Error('upstream returned a private payload'))).toBe(
+      'automation_failed',
+    );
   });
 });

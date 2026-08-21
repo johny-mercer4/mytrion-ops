@@ -6,13 +6,22 @@
  *
  * Writes: (1) INSERT-only inbox tables (`kxd.sales_agent_updates`, `kxd.sales_agent_files`) a
  * flag-gated consumer drains; (2) Orchestration config (`stop_factors`, `system_state`,
- * `audit_log`) matching verification-mono. Never mutates live case / request rows. All SQL goes
- * through the helpers below (never inline in a route). Postgres dialect: `$1` placeholders.
+ * `audit_log`) matching verification-mono; (3) INSERT-only bans into the shared
+ * `public.blacklist_entries` ban list, on `Decline + Blacklist`. Never mutates live case / request
+ * rows, and never edits or deletes a ban row somebody else added. All SQL goes through the helpers
+ * below (never inline in a route). Postgres dialect: `$1` placeholders.
+ *
+ * TWO INDEPENDENT GATES. (1) and (2) belong to the legacy Decision Desk and are killed by
+ * VERIFICATION_CP_WRITEBACK_ENABLED; (3) is the ban list our own Check A reads and has its own
+ * switch. Both still answer to the VERIFICATION_WRITE_ENABLED master flag.
  */
 import pg from 'pg';
 import type { Pool, QueryResultRow } from 'pg';
 import { env } from '../config/env.js';
-import { VERIFICATION_CP_WRITEBACK_ENABLED } from '../modules/verification/killSwitches.js';
+import {
+  VERIFICATION_BAN_WRITEBACK_ENABLED,
+  VERIFICATION_CP_WRITEBACK_ENABLED,
+} from '../modules/verification/killSwitches.js';
 import { logger } from '../lib/logger.js';
 
 let pool: Pool | null = null;
@@ -25,10 +34,24 @@ export function isWriteConfigured(): boolean {
   return env.VERIFICATION_WRITE_ENABLED && Boolean(env.VERIFICATION_DATABASE_URL);
 }
 
+/**
+ * True when the ban-list write-back is enabled and the DB URL is set.
+ *
+ * Deliberately NOT `isWriteConfigured()`: that flag governs the legacy desk's inbox tables and is
+ * off, and a confirmed fraud ban must not depend on reviving a writeback into a system we no longer
+ * own. The master VERIFICATION_WRITE_ENABLED still applies.
+ */
+export function isBanListWriteConfigured(): boolean {
+  if (!VERIFICATION_BAN_WRITEBACK_ENABLED) return false;
+  return env.VERIFICATION_WRITE_ENABLED && Boolean(env.VERIFICATION_DATABASE_URL);
+}
+
 /** Lazily create the writable pool over VERIFICATION_DATABASE_URL. Throws if write-back is disabled. */
 function getWritePool(): Pool {
   if (pool) return pool;
-  if (!isWriteConfigured()) {
+  // Either writer may open the pool — they are gated independently above, and each checks its own
+  // switch before it gets here.
+  if (!isWriteConfigured() && !isBanListWriteConfigured()) {
     throw new Error('[credit-platform-write] write-back disabled — set VERIFICATION_WRITE_ENABLED=1 and VERIFICATION_DATABASE_URL');
   }
   pool = new pg.Pool({
@@ -86,6 +109,83 @@ export async function withWriteTransaction<T>(fn: (query: WriteQueryFn) => Promi
     client.release();
   }
 }
+
+/** Stamped on every ban this desk files. */
+export const BAN_ADDED_BY = 'mytrion-verification';
+
+/** One ban to file, already normalised the way the read probe normalises its needles. */
+export interface BanListEntry {
+  /** A CP `type` — see `canonicalCpType`. Types CP does not model are dropped before they get here. */
+  type: string;
+  value: string;
+  reason: string;
+}
+
+export interface BanListWriteResult {
+  /** False when a switch is off, the URL is unset, or the write failed. Never conflated with 0 rows. */
+  available: boolean;
+  attempted: number;
+  /** Rows that did not already exist. `attempted - inserted` were already banned. */
+  inserted: number;
+  error?: string;
+}
+
+/**
+ * File confirmed bans on the shared credit-platform ban list.
+ *
+ * WHY NORMALISED VALUES GO IN. `blacklist_entries` has UNIQUE (type, value) and no normalisation of
+ * its own — which is why the read probe carries a stored-side mirror of `normalizeIdentifier` to find
+ * anything at all. Writing the raw form would file a ban our own Check A then has to normalise its way
+ * back to, and would insert a second row for a number already banned in a different format. Writing
+ * the normalised form makes the ban immediately findable by both sides and dedupes against what is
+ * there. The human-readable original is kept on OUR row (`value_display`), so nothing is lost.
+ *
+ * `ON CONFLICT DO NOTHING`, not `DO UPDATE`: 6,802 of the 6,803 rows came from someone else's import,
+ * and overwriting their `reason` or `added_by` with ours would rewrite another team's provenance for a
+ * ban we merely re-confirmed.
+ *
+ * NEVER THROWS. A Decline + Blacklist must land even when the credit platform is unreachable — the
+ * local ban and the Collections notice are the parts we control, and losing the decision because a
+ * remote insert timed out would be the worse failure. The caller reports what happened.
+ */
+export async function insertBanListEntries(
+  entries: readonly BanListEntry[],
+): Promise<BanListWriteResult> {
+  if (entries.length === 0) return { available: true, attempted: 0, inserted: 0 };
+  if (!isBanListWriteConfigured()) {
+    return {
+      available: false,
+      attempted: entries.length,
+      inserted: 0,
+      error: 'ban-list write-back disabled',
+    };
+  }
+  try {
+    // One statement, so a slow link costs one round trip rather than one per identifier. `unnest`
+    // keeps the values parameterised — never interpolated into the SQL.
+    const result = await getWritePool().query<{ id: number }>(
+      `INSERT INTO public.blacklist_entries (type, value, reason, added_by)
+       SELECT t, v, r, $4
+         FROM unnest($1::text[], $2::text[], $3::text[]) AS s(t, v, r)
+       ON CONFLICT (type, value) DO NOTHING
+       RETURNING id`,
+      [
+        entries.map((e) => e.type),
+        entries.map((e) => e.value),
+        entries.map((e) => e.reason),
+        // Distinguishable from the 6,802 `blocklist-import` rows and the one `admin` row, so the
+        // credit-platform team can see at a glance which bans this desk filed.
+        BAN_ADDED_BY,
+      ],
+    );
+    return { available: true, attempted: entries.length, inserted: result.rows.length };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.error({ error, attempted: entries.length }, 'credit-platform ban-list write failed');
+    return { available: false, attempted: entries.length, inserted: 0, error };
+  }
+}
+
 
 /**
  * Queue an applicant-field edit for the credit-platform consumer. INSERT-only; the consumer applies

@@ -9,7 +9,7 @@
  *  - the Suspense fallback is the SAME skeleton shape the tab shows while its data loads, so a cold
  *    open plays one loading state instead of spinner → skeleton → content.
  */
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { s } from './dc';
 import { Icon } from './icons';
@@ -182,11 +182,12 @@ export function SalesRedesign() {
   const go = useCallback((next: string) => {
     setSection(next);
     setDetail(null);
-    emitKpiActivity('navigation.tab_open', {
-      entityType: 'tab',
-      entityId: next,
-    });
   }, []);
+  // Observe the rendered section, not the click callback: this covers initial Home, direct jumps,
+  // and avoids counting a click on an already-active item as another exposure.
+  useEffect(() => {
+    emitKpiActivity('navigation.tab_open', { entityType: 'tab', entityId: section });
+  }, [section]);
   const openDash = useCallback((sub?: 'sales' | 'company' | 'debtors' | 'powerbi') => {
     setFocusDashSub(sub ?? 'sales');
     setSection('dash');
@@ -194,6 +195,7 @@ export function SalesRedesign() {
   }, []);
   const clearFocusDashSub = useCallback(() => setFocusDashSub(null), []);
   const openClient = useCallback((c: ClientRecord) => {
+    emitKpiActivity('ui.record_open', { entityType: 'client', entityId: c.id });
     setClient(c);
     setClientTab('overview');
   }, []);

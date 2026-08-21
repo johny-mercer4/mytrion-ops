@@ -30,6 +30,9 @@ export interface HasSalesOwner {
   zohoOwnerName?: string | null;
   ownerZohoUserId?: string | null;
   ownerName?: string | null;
+  /** The desk's own assignee, written by Stage-0 routing. Absent on pre-0129 rows. */
+  verificationOwnerZohoUserId?: string | null;
+  verificationOwnerName?: string | null;
 }
 
 export const UNASSIGNED_SALES_OWNER = 'Unassigned in Zoho';
@@ -52,26 +55,29 @@ export function salesOwnerLabel(row: HasSalesOwner): string {
 /**
  * The VERIFICATION agent on a case — the credit agent, never a Sales name.
  *
- * TWO sources, in order, because nothing in the schema records a per-case underwriter:
+ * THREE sources, in order:
  *
- *   1. the row's assignee, but ONLY when it is somebody other than the Sales agent. `owner_*` holds
- *      a credit agent only as the ingest fallback — when a Deal arrives unowned, the row goes to
- *      `VERIFICATION_CASE_OWNER_NAME` instead. When the Deal has an owner, `owner_*` merely mirrors
- *      it, so returning it there would print a Sales agent under a Verification heading: the same
- *      misattribution as reading `owner_name` for the Sales owner, pointing the other way. Matched on
- *      both id and name, so one of the two being absent cannot leak the name through.
+ *   1. `verification_owner_name` — the real per-case assignee, written by Stage-0 round-robin. This is
+ *      the source the previous version of this comment predicted ("when per-phase deciders start being
+ *      recorded, THAT becomes source 1 and this is the one place to change"), and it arrived.
  *
- *   2. `deskOwner` — the tenant's configured Verification agent, from the policy payload. This is the
- *      answer for almost every case, and it is not a guess: that agent is notified about every
- *      application and is who an unowned Deal falls back to. `decided_by` is unwritten on every case
- *      and all 210 phase rows, case events carry no actor, `cp_owner_username` is null and
- *      `distribute_type` is `shared` — there is no finer-grained truth to read yet. When per-phase
- *      deciders start being recorded, THAT becomes source 1 and this is the one place to change.
+ *   2. the row's `owner_*` assignee, but ONLY when it is somebody other than the Sales agent. Kept for
+ *      rows written BEFORE migration 0129, where the ingest parked the credit agent there whenever a
+ *      Deal arrived unowned. On a Deal that HAS an owner, `owner_*` merely mirrors it, so returning it
+ *      there would print a Sales agent under a Verification heading — the same misattribution as
+ *      reading `owner_name` for the Sales owner, pointing the other way. Matched on both id and name,
+ *      so one of the two being absent cannot leak the name through.
  *
- * Null only when the desk owner has not loaded or could not be resolved. Callers render nothing then,
- * rather than a placeholder word: "Desk pool" under a Sales agent's name read as if it described HIM.
+ *   3. `deskOwner` — the tenant's configured Verification agent, from the policy payload. The answer
+ *      for a case that predates routing and arrived on an owned Deal.
+ *
+ * Null only when nothing above resolves. Callers render nothing then, rather than a placeholder word:
+ * "Desk pool" under a Sales agent's name read as if it described HIM.
  */
 export function verificationOwnerName(row: HasSalesOwner, deskOwner: string | null): string | null {
+  const assigned = row.verificationOwnerName?.trim();
+  if (assigned) return assigned;
+
   const assignee = row.ownerName?.trim();
   const assigneeId = row.ownerZohoUserId?.trim() || null;
   const dealId = salesOwnerId(row);

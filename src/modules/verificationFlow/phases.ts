@@ -58,6 +58,12 @@ export function buildRail(
   return PHASE_CATALOG.map((descriptor) => {
     const row = byCode.get(descriptor.code);
     const applies = phaseApplies(descriptor, applicantType);
+    const stored = row?.status;
+    const status = applies
+      ? stored === 'skipped' || stored == null
+        ? 'not_started'
+        : stored
+      : 'skipped';
     return {
       code: descriptor.code,
       label: descriptor.label,
@@ -65,7 +71,7 @@ export function buildRail(
       description: descriptor.description,
       applies,
       skipReason: skipReason(descriptor, applicantType),
-      status: row?.status ?? (applies ? 'not_started' : 'skipped'),
+      status,
       outcome: row?.outcome ?? null,
       findings: row?.findings ?? {},
       note: row?.note ?? null,

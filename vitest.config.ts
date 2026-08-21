@@ -148,6 +148,13 @@ export default defineConfig({
       AWS_MYSQL_PASSWORD: '',
       DROPBOX_REFRESH_TOKEN: '',
       CREDIT_PLATFORM_API_KEY: '',
+      // Phase 4 authority lookups. The BASE URLs are pinned empty too, not just the key: they carry
+      // real public defaults in the schema, so leaving them set would let a suite that forgot to
+      // stub fetch reach FMCSA and data.transportation.gov for real.
+      FMCSA_API_KEY: '',
+      FMCSA_BASE_URL: '',
+      SOCRATA_BASE_URL: '',
+      SOCRATA_APP_TOKEN: '',
     },
     coverage: {
       provider: 'v8',

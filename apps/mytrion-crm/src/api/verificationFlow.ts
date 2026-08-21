@@ -5,8 +5,10 @@
  * (underwriting). They address the same rows, so the DTOs live together: if the shape drifts, it
  * drifts for both at once rather than silently for one.
  */
-import { request, requestMultipart } from './transport';
+import { request, requestBlob, requestMultipart } from './transport';
 import { openSignedFile } from '../lib/openSignedFile';
+import { deliverExport } from '../lib/deliverExport';
+import { isTelegramWebView } from '../telegram/webApp';
 
 export type VerificationApplicantType = 'owner_operator' | 'carrier' | 'company';
 export type VerificationRoute = 'octane_internal' | 'wex';
@@ -162,6 +164,15 @@ export interface VerificationScreeningHit {
   entryType: string;
   matchedValueDisplay: string | null;
   matchedCaseLabel: string | null;
+  /**
+   * WHICH LIST OR POPULATION the hit came from, carried as a prefix rather than a separate column.
+   *
+   * `cp:<id>` is a credit-platform ban-list row, `deal:<zoho id>` is a Zoho Deal, and anything else is
+   * one of this desk's own blacklist entries. The pane splits Check B's two populations on this — a
+   * duplicate CASE is a live application here, a duplicate DEAL may be a closed one from last
+   * quarter, and the reviewer needs to tell them apart.
+   */
+  matchedEntryId: string | null;
   verdict: VerificationScreeningVerdict;
   note: string | null;
 }
@@ -352,23 +363,71 @@ export async function getDocumentLink(
   caseId: string,
   documentId: string,
 ): Promise<VerificationDocumentLink> {
-  const base =
-    desk === 'sales'
-      ? `/verification/applications/${encodeURIComponent(caseId)}`
-      : `/verification/flow/cases/${encodeURIComponent(caseId)}`;
   return (await request(
     'GET',
-    `${base}/documents/${encodeURIComponent(documentId)}/download`,
+    `${documentBase(desk, caseId)}/documents/${encodeURIComponent(documentId)}/download`,
   )) as VerificationDocumentLink;
 }
 
-/** Open a stored document in a new tab. Tab-before-await lives in `openSignedFile`. */
+/** Both desks' door onto one document. Shared by the link route and the bytes route. */
+function documentBase(desk: 'sales' | 'verification', caseId: string): string {
+  return desk === 'sales'
+    ? `/verification/applications/${encodeURIComponent(caseId)}`
+    : `/verification/flow/cases/${encodeURIComponent(caseId)}`;
+}
+
+/**
+ * The document's BYTES, from our own origin.
+ *
+ * Not the Dropbox link: that URL is served `Content-Disposition: attachment` with no CORS, which is
+ * why clicking a file used to open a blank tab and then download it. The proxy route sends the real
+ * MIME with `inline`, and a `blob:` URL built here is same-origin to this document — so the browser's
+ * own PDF and image viewers render it.
+ */
+export async function fetchDocumentBytes(
+  desk: 'sales' | 'verification',
+  caseId: string,
+  documentId: string,
+): Promise<Blob> {
+  return requestBlob(
+    `${documentBase(desk, caseId)}/documents/${encodeURIComponent(documentId)}/bytes`,
+    // A 20 MB bank statement over a phone tether needs longer than the 20s default.
+    { timeoutMs: 60_000 },
+  );
+}
+
+/**
+ * PREVIEW a stored document in a new tab.
+ *
+ * Two things have to be true at once, and they pull in opposite directions: the tab must be claimed
+ * while the click is still a user gesture (`openSignedFile`), and the URL can only exist after a
+ * fetch that carries the session bearer — a new tab cannot send an Authorization header, so a plain
+ * navigation to the API would 401. Claiming first and resolving a `blob:` URL second satisfies both.
+ *
+ * Inside the Telegram WebView there is no tab to claim, so the file is delivered through the Horizon
+ * bot instead — the same fallback every other export in the app uses.
+ */
 export async function openDocument(
   desk: 'sales' | 'verification',
   caseId: string,
   documentId: string,
+  fileName = 'document',
 ): Promise<void> {
-  await openSignedFile(async () => (await getDocumentLink(desk, caseId, documentId)).url);
+  await openSignedFile(
+    async () => {
+      const url = URL.createObjectURL(await fetchDocumentBytes(desk, caseId, documentId));
+      // Revoked on a delay, never synchronously: the new tab has not loaded the URL yet when this
+      // returns, and revoking first leaves a blank viewer. Same 5s the shared download path uses.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return url;
+    },
+    {
+      shouldUseFallback: isTelegramWebView,
+      fallback: async () => {
+        await deliverExport(await fetchDocumentBytes(desk, caseId, documentId), fileName);
+      },
+    },
+  );
 }
 
 export async function patchApplication(
@@ -478,10 +537,31 @@ export async function patchDeskIntake(
   })) as VerificationDeskDetail;
 }
 
+/**
+ * Reopen a phase — the desk's way back through the rail.
+ *
+ * `reason` is required by the route (min 3 chars): this withdraws a decision somebody else recorded,
+ * and it lands on the case timeline as the `phase_reopened` note. Every phase after the reopened one is
+ * un-decided server-side; the response is the fresh detail, so the caller never refetches.
+ */
+export async function reopenPhase(
+  id: string,
+  phase: string,
+  body: { reason: string },
+): Promise<VerificationDeskDetail> {
+  return (await request('POST', `/verification/flow/cases/${id}/phases/${phase}/reopen`, {
+    body,
+  })) as VerificationDeskDetail;
+}
+
 export async function decidePhase(
   id: string,
   phase: string,
-  body: { outcome: VerificationPhaseOutcome; note?: string },
+  body: {
+    outcome: VerificationPhaseOutcome;
+    note?: string;
+    findings?: Record<string, unknown>;
+  },
 ): Promise<VerificationDeskDetail> {
   return (await request('POST', `/verification/flow/cases/${id}/phases/${phase}/decision`, {
     body,
@@ -560,7 +640,13 @@ export async function resumeAfterDocuments(id: string): Promise<VerificationDesk
 
 export async function submitFinalDecision(
   id: string,
-  body: { decision: VerificationFinalDecision; approvedLimit?: number; note?: string },
+  body: {
+    decision: VerificationFinalDecision;
+    approvedLimit?: number;
+    note?: string;
+    /** Which arrangement a `deposit_prepaid` outcome is — the status column cannot tell them apart. */
+    instrument?: 'deposit_1_1' | 'prepaid';
+  },
 ): Promise<VerificationDeskDetail> {
   return (await request('POST', `/verification/flow/cases/${id}/decision`, {
     body,

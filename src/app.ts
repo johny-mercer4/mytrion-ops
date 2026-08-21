@@ -43,7 +43,10 @@ import { verificationClientsRoutes } from './routes/v1/verificationClients.route
 import { verificationCaseQueueRoutes } from './routes/v1/verificationCaseQueue.routes.js';
 import { verificationCasesRoutes } from './routes/v1/verificationCases.routes.js';
 import { verificationApplicationsRoutes } from './routes/v1/verificationApplications.routes.js';
+import { verificationDocumentPreviewRoutes } from './routes/v1/verificationDocumentPreview.routes.js';
+import { verificationAuthorityRoutes } from './routes/v1/verificationAuthority.routes.js';
 import { verificationFlowRoutes } from './routes/v1/verificationFlow.routes.js';
+import { verificationPolicyRoutes } from './routes/v1/verificationPolicy.routes.js';
 import { mytrionWatchRoutes } from './routes/v1/mytrionWatch.routes.js';
 import { collectionRoutes } from './routes/v1/collection.routes.js';
 import { collectionActionRoutes } from './routes/v1/collectionActions.routes.js';
@@ -489,6 +492,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       // plugin's `/verification/cases/:id` style params. Same ordering reason as the queue routes.
       await v1.register(verificationApplicationsRoutes);
       await v1.register(verificationFlowRoutes);
+      await v1.register(verificationAuthorityRoutes);
+      await v1.register(verificationPolicyRoutes);
+      // The inline-preview byte routes for BOTH desks — see the file header for why they are not in
+      // their siblings' plugins.
+      await v1.register(verificationDocumentPreviewRoutes);
       await v1.register(mytrionWatchRoutes);
       // Order matters. All three plugins live under /collection; the agency queue goes first so
       // `/collection/placement-queue` is matched before the parameterised `/collection/cases/:id`

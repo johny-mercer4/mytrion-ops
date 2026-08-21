@@ -1,18 +1,55 @@
 import { createInboxMessage } from '../inbox/service.js';
 import { errorMessage } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { publishInboxEvent } from '../realtime/hub.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { VERIFICATION_CASE_OWNER_NAME } from './verificationOwner.js';
 
 export const VERIFICATION_INBOX_TAG = 'verification';
+
+export const APPLICATION_DOCUMENTS_UPLOADED = 'verification.application.documents_uploaded';
+export const APPLICATION_UPDATED = 'verification.application.updated';
+
+/**
+ * Live refresh for a Sales write — not an inbox MESSAGE.
+ *
+ * Attaching a file must not spam the desk. Same `verification` tag / `verification.*` type the
+ * Verification inbox already listens for, published on the credit agent's topic plus the admin
+ * firehose (`publishInboxEvent`). `detail` carries `caseId=` so an open case can ignore everyone
+ * else's attach.
+ */
+export function publishVerificationApplicationEvent(input: {
+  caseId: string;
+  type: string;
+  verificationOwnerZohoUserId?: string | null | undefined;
+  title: string;
+}): number {
+  const now = new Date().toISOString();
+  const ownerId = (input.verificationOwnerZohoUserId ?? '').trim() || 'verification';
+  return publishInboxEvent({
+    id: `vf:${input.caseId}:${input.type}:${now}`,
+    type: input.type,
+    tag: VERIFICATION_INBOX_TAG,
+    ownerKind: 'worker',
+    ownerId,
+    title: input.title,
+    detail: `caseId=${input.caseId}`,
+    priority: 'low',
+    readAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 export interface ApplicationCreatedRecipients {
   caseId: string;
   /** The Deal owner in Zoho — the agent who has to complete intake. */
   salesOwnerZohoUserId: string | null | undefined;
   salesOwnerName?: string | null | undefined;
-  /** `VERIFICATION_CASE_OWNER_ZOHO_USER_ID` — the credit agent who will underwrite it. */
+  /** The credit agent Stage-0 routing picked. Empty when none is configured — then nobody is told. */
   verificationOwnerZohoUserId: string;
+  /** Their directory name, for the message's `ownerName`. Falls back to the configured constant. */
+  verificationOwnerName?: string | null | undefined;
   companyName: string;
   zohoDealId: string;
 }
@@ -79,7 +116,10 @@ export async function notifyApplicationCreated(
   if (verificationOwner && verificationOwner !== salesOwner) {
     await post('verification', {
       ownerZohoUserId: verificationOwner,
-      ownerName: VERIFICATION_CASE_OWNER_NAME,
+      // The agent the rotation actually picked. The constant is only the fallback for when the
+      // directory could not name them — it used to be the answer for every case, because every case
+      // went to the same person.
+      ownerName: (input.verificationOwnerName ?? '').trim() || VERIFICATION_CASE_OWNER_NAME,
       subject: `New application · ${company}`,
       name: company,
       content: salesOwner

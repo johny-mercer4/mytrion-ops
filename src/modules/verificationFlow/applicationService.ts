@@ -147,19 +147,32 @@ export interface IntakePatch {
  *
  * Returns the refreshed case. Called after EVERY mutation — patch, principal add/remove, document
  * add/remove — so the red card's missing list can never describe a state the row is no longer in.
+ *
+ * ROUND TRIPS ARE THE COST HERE, not CPU. The app Postgres is in Oregon and the repo's own measured
+ * figure is ~300ms per statement warm, so every sequential await is a third of a second the agent
+ * watches. `row` is therefore accepted from callers that already hold it — a mutation's own
+ * `UPDATE … RETURNING` gives them the same row this function would re-SELECT — and the policy read
+ * joins the three list reads rather than following them.
  */
 async function refreshGate(
   ctx: TenantContext,
   caseId: string,
-  opts: { submitting?: boolean; actor?: string | undefined; actorName?: string | undefined } = {},
+  opts: {
+    submitting?: boolean;
+    actor?: string | undefined;
+    actorName?: string | undefined;
+    /** The row as the caller's own write just returned it. Saves one re-SELECT of the same row. */
+    row?: VerificationCase | undefined;
+  } = {},
 ): Promise<ApplicationDetail> {
-  const row = await verificationFlowRepo.findById(ctx, caseId);
+  const row = opts.row ?? (await verificationFlowRepo.findById(ctx, caseId));
   if (!row) throw new NotFoundError('Application not found');
 
-  const [principals, documents, seededPhases] = await Promise.all([
+  const [principals, documents, seededPhases, routingPolicy] = await Promise.all([
     verificationCaseAssetRepo.listPrincipals(ctx, caseId),
     verificationCaseAssetRepo.listDocuments(ctx, caseId),
     verificationCaseAssetRepo.listPhases(ctx, caseId),
+    verificationPolicyRepo.routing(ctx),
   ]);
 
   const verdict = evaluateIntakeCompleteness(
@@ -223,6 +236,9 @@ async function refreshGate(
         statusCode,
         submittedByZohoUserId: opts.actor,
         actorName: opts.actorName,
+        // The row as it stands, so `setGate` does not re-SELECT what this function already read to
+        // decide the verdict. It needs the BEFORE state only to spot a gate flip.
+        before: row,
       });
   if (!updated) throw new NotFoundError('Application not found');
 
@@ -238,15 +254,14 @@ async function refreshGate(
     updated.applicantType,
   );
 
-  const policy = await verificationPolicyRepo.routing(ctx);
   return {
     case: updated,
     principals,
     documents,
     intake: verdict,
     phases,
-    underwritingRoute: resolveUnderwritingRoute(updated.fuelCardsRequested, policy),
-    reviewOrder: resolveReviewOrder(updated.applicantType, updated.trucksCount, policy),
+    underwritingRoute: resolveUnderwritingRoute(updated.fuelCardsRequested, routingPolicy),
+    reviewOrder: resolveReviewOrder(updated.applicantType, updated.trucksCount, routingPolicy),
   };
 }
 
@@ -293,49 +308,125 @@ export const applicationService = {
   },
 
   /**
-   * Non-admin Sales agents may only touch their own applications, and only while the desk has not
-   * taken over. Once Verification is working a case, Sales edits would move ground under a reviewer.
+   * The two facts the warehouse prefill needs, and nothing else.
+   *
+   * The prefill route used to call `get`, which runs the whole gate refresh — six statements and, on
+   * a case whose verdict has moved, a WRITE — purely to read a phone number, a DOT and a principal
+   * count. That is a mutation on the path of a read that the form does not even wait for, and it ran
+   * on every open before the ~600ms warehouse scan had started. Two reads, in parallel.
    */
-  async assertSalesMayEdit(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+  async prefillInputs(
+    ctx: TenantContext,
+    caseId: string,
+  ): Promise<{ case: VerificationCase; principalCount: number }> {
+    return withFlowSchemaGuard(async () => {
+      const [row, principals] = await Promise.all([
+        verificationFlowRepo.findById(ctx, caseId),
+        verificationCaseAssetRepo.listPrincipals(ctx, caseId),
+      ]);
+      if (!row) throw new NotFoundError('Application not found');
+      return { case: row, principalCount: principals.length };
+    });
+  },
+
+  /**
+   * Ownership only: the row exists and this Sales agent may touch it at all.
+   *
+   * Split out because the two Sales write gates below share the ownership rule and differ only on
+   * WHEN they close — one read of the row serves both.
+   */
+  async assertSalesOwns(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
     const row = await verificationFlowRepo.findById(ctx, caseId);
     if (!row) throw new NotFoundError('Application not found');
+    if (isAdmin(ctx)) return row;
 
-    if (!isAdmin(ctx)) {
-      const self = zohoFromCtx(ctx);
-      // Same three routes as the list query — a cron-created application reaches its agent via
-      // `zohoOwnerId`, and an agent who can see a row but not edit it is a dead end.
-      const owns =
-        row.submittedByZohoUserId === self ||
-        row.ownerZohoUserId === self ||
-        row.zohoOwnerId === self;
-      if (!owns) {
-        throw new AppError('You can only edit applications you raised.', {
-          statusCode: 403,
-          code: 'VERIFICATION_NOT_YOUR_APPLICATION',
-          expose: true,
-        });
-      }
+    const self = zohoFromCtx(ctx);
+    // Same three routes as the list query — a cron-created application reaches its agent via
+    // `zohoOwnerId`, and an agent who can see a row but not edit it is a dead end.
+    const owns =
+      row.submittedByZohoUserId === self ||
+      row.ownerZohoUserId === self ||
+      row.zohoOwnerId === self;
+    if (!owns) {
+      throw new AppError('You can only edit applications you raised.', {
+        statusCode: 403,
+        code: 'VERIFICATION_NOT_YOUR_APPLICATION',
+        expose: true,
+      });
     }
+    return row;
+  },
 
-    // Pending Documents is the one open state where Sales SHOULD write — the desk asked them to.
-    const editable =
-      !row.verificationProcess ||
-      row.statusCode === VERIFICATION_STATUS.intakeSubmitted ||
-      row.statusCode === VERIFICATION_STATUS.pendingDocs;
-    if (!editable) {
+  /**
+   * Sales may change the APPLICATION DATA only until they submit it. Submit is the handover.
+   *
+   * `intake_submitted` and `pending_docs` used to be editable here too, and both were wrong for the
+   * same reason: the figures a reviewer is underwriting — the requested limit, the card count, the
+   * EIN, the principals — must not move under them, and a case in Pending Documents is one where the
+   * desk has already read the file and asked for a missing PDF. What Sales owes there is the
+   * document, which goes through `assertSalesMayAttach`, not a second pass over the form.
+   *
+   * A correction after submit is the DESK's to make (`assertDeskMayCorrect`, same columns, its own
+   * door) — which is also who Sales rings, so the refusal names them.
+   */
+  async assertSalesMayEdit(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+    const row = await this.assertSalesOwns(ctx, caseId);
+    if (row.verificationProcess) {
       throw new AppError(
-        'This application is being underwritten by Verification and can no longer be edited from Sales.',
+        'This application has been submitted to Verification and can no longer be changed from Sales. Ask the Verification desk to correct it.',
         { statusCode: 409, code: 'VERIFICATION_LOCKED', expose: true },
       );
     }
     return row;
   },
 
+  /**
+   * Sales may ATTACH a document for as long as the case is open — adding is not overriding.
+   *
+   * This is the whole point of Pending Documents: the desk asks for the third bank statement and the
+   * agent uploads it without a form pass. Removing one is not covered here (see the delete route,
+   * which stays on `assertSalesMayEdit`): pulling a file the desk is reading is exactly the kind of
+   * change under a reviewer that submit is supposed to end.
+   */
+  async assertSalesMayAttach(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+    const row = await this.assertSalesOwns(ctx, caseId);
+    if (row.closedAt) {
+      throw new AppError('This application has already been decided and can no longer be changed.', {
+        statusCode: 409,
+        code: 'VERIFICATION_CASE_CLOSED',
+        expose: true,
+      });
+    }
+    return row;
+  },
+
+  /**
+   * The desk may correct a red case — that is the point of this door. Only a decided file is off
+   * limits. Sales' ownership and "underwriting has started" rules must not apply here: a
+   * verification worker is not the Deal owner, and they attach the last statement after Sales has
+   * already handed the case over.
+   */
+  async assertDeskMayCorrect(ctx: TenantContext, caseId: string): Promise<VerificationCase> {
+    const row = await verificationFlowRepo.findById(ctx, caseId);
+    if (!row) throw new NotFoundError('Application not found');
+    if (row.closedAt) {
+      throw new AppError('This application has already been decided and can no longer be edited.', {
+        statusCode: 409,
+        code: 'VERIFICATION_CASE_CLOSED',
+        expose: true,
+      });
+    }
+    return row;
+  },
+
   async patch(ctx: TenantContext, caseId: string, patch: IntakePatch): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
+      // The guard's own read is not thrown away: `assertSalesMayEdit` SELECTs the row to authorize
+      // the write, and `patchIntake` returns the row it wrote. Between them the gate refresh needs no
+      // SELECT of its own — three reads of one row became one read and one write.
       await this.assertSalesMayEdit(ctx, caseId);
-      await verificationFlowRepo.patchIntake(ctx, caseId, patch);
-      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
+      const row = await verificationFlowRepo.patchIntake(ctx, caseId, patch);
+      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx), ...(row ? { row } : {}) });
     });
   },
 
@@ -352,11 +443,16 @@ export const applicationService = {
       email?: string | undefined;
       address?: string | undefined;
     },
+    opts: { asDesk?: boolean } = {},
   ): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
-      await this.assertSalesMayEdit(ctx, caseId);
+      if (opts.asDesk) await this.assertDeskMayCorrect(ctx, caseId);
+      else await this.assertSalesMayEdit(ctx, caseId);
       await verificationCaseAssetRepo.addPrincipal(ctx, { caseId, ...input });
-      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
+      return refreshGate(ctx, caseId, {
+        actor: zohoFromCtx(ctx),
+        ...(opts.asDesk ? { submitting: true, actorName: ctx.userName || ctx.userId } : {}),
+      });
     });
   },
 
@@ -364,12 +460,17 @@ export const applicationService = {
     ctx: TenantContext,
     caseId: string,
     principalId: string,
+    opts: { asDesk?: boolean } = {},
   ): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
-      await this.assertSalesMayEdit(ctx, caseId);
+      if (opts.asDesk) await this.assertDeskMayCorrect(ctx, caseId);
+      else await this.assertSalesMayEdit(ctx, caseId);
       const removed = await verificationCaseAssetRepo.deletePrincipal(ctx, caseId, principalId);
       if (!removed) throw new NotFoundError('Principal not found');
-      return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
+      return refreshGate(ctx, caseId, {
+        actor: zohoFromCtx(ctx),
+        ...(opts.asDesk ? { submitting: true, actorName: ctx.userName || ctx.userId } : {}),
+      });
     });
   },
 

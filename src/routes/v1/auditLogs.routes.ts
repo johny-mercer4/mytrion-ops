@@ -84,8 +84,8 @@ function requireAdmin(request: FastifyRequest): ReturnType<typeof requireContext
 /**
  * Turn "code is running ahead of its migration" into an answer instead of a bare 500.
  *
- * `origin_source` is new in 0118, and the realistic way to meet this is an environment one
- * migration behind — a local backend pointed at a database that has not had 0118 applied. Left raw
+ * `origin_source` arrived in 0118 and lifecycle fields in 0128. The realistic way to meet this is
+ * an environment one migration behind. Left raw
  * it surfaces as `Internal server error` on a screen that can explain the problem precisely, and
  * sends whoever hit it to the logs to find a one-line answer. `isMissingColumn` is scoped per table
  * because Postgres does not name the table in an undefined-column message.
@@ -96,7 +96,7 @@ async function withAutomationReadiness<T>(run: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (isMissingColumn(error, 'automation_logs') || isMissingTable(error, 'automation_logs')) {
       throw new AppError(
-        'Automation Logs migration 0118 is not applied to this database (automation_logs.origin_source is missing).',
+        'Automation Logs migrations 0118/0128 are not fully applied to this database.',
         { statusCode: 503, code: 'AUTOMATION_LOGS_NOT_READY', expose: true, cause: error },
       );
     }

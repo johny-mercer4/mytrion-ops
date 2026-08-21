@@ -10,6 +10,7 @@ import { SalesPage, SalesPageHead, SalesSubTabs, type SalesSubTab } from '../Sal
 import { SalesDashPanel } from '../SalesDashPanel';
 import { CompanyDashPanel } from '../CompanyDashPanel';
 import { DebtorsDashPanel } from '../DebtorsDashPanel';
+import { emitKpiActivity } from '../kpiTelemetry';
 
 type DashId = 'sales' | 'company' | 'debtors' | 'powerbi';
 
@@ -41,6 +42,13 @@ export function DashTab() {
     setDashSub(focusDashSub);
     clearFocusDashSub();
   }, [focusDashSub, clearFocusDashSub]);
+
+  useEffect(() => {
+    emitKpiActivity('navigation.view_open', {
+      entityType: 'view',
+      entityId: `dash.${dashSub}`,
+    });
+  }, [dashSub]);
 
   const tabs: ReadonlyArray<SalesSubTab<DashId>> = [
     { id: 'sales', label: 'Sales', icon: TAB_ICONS.sales },

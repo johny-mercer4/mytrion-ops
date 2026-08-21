@@ -188,6 +188,23 @@ export function routeLabel(route: VerificationRoute | null): string {
   return route == null ? 'Route not set' : ROUTE_LABEL[route];
 }
 
+/**
+ * Whole dollars, narrow symbol. Lives here rather than in the queue that first needed it because
+ * the Sales projection of this queue prints the same figure in the same column — two formatters for
+ * one number is how "$38,000" and "$38000.00" end up on two screens of the same case.
+ */
+export function money(value: string | null): string {
+  if (value == null) return '\u2014';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '\u2014';
+  return n.toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    currencyDisplay: 'narrowSymbol',
+    maximumFractionDigits: 0,
+  });
+}
+
 export function inScope(row: VerificationCaseRow, scope: Scope): boolean {
   switch (scope) {
     case 'workable':

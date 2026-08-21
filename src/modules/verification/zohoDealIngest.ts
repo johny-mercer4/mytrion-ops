@@ -20,11 +20,11 @@ import { verificationCaseRepo } from '../../repos/verificationCaseRepo.js';
 import { verificationIngestStateRepo } from '../../repos/verificationIngestStateRepo.js';
 import { createApplicationFromDeal } from '../verificationFlow/dealIntake.js';
 import { matchBrokerSnapshot } from './carrierEnrich.js';
-import {
-  VERIFICATION_CASE_OWNER_NAME,
-  resolveVerificationCaseOwnerId,
-} from './verificationOwner.js';
+import { resolveVerificationCaseOwnerIds } from './verificationOwner.js';
 import { notifyApplicationCreated } from './caseNotify.js';
+import { pickStage0Assignee } from './stage0Routing.js';
+import { verificationCaseAssignmentRepo } from '../../repos/verificationCaseAssignmentRepo.js';
+import { verificationFlowRepo } from '../../repos/verificationFlowRepo.js';
 import {
   buildDealPollCoql,
   isDealAfterWatermark,
@@ -42,9 +42,14 @@ export interface VerificationIngestSummary {
 }
 
 export async function ingestVerificationDeals(ctx: TenantContext): Promise<VerificationIngestSummary> {
-  // The credit agent who underwrites. Notified about every application, and also stands in as the
-  // row owner when a Deal has no owner in Zoho — see `createApplicationFromDeal`.
-  const verificationOwnerZohoUserId = await resolveVerificationCaseOwnerId();
+  /**
+   * EVERY credit agent the desk can route to, in declaration order.
+   *
+   * Resolved once per run rather than per Deal — it is env plus, in the no-config case, a CRM
+   * directory lookup. The rotation itself is decided per case inside the loop, because each
+   * assignment changes who is next.
+   */
+  const creditAgentIds = await resolveVerificationCaseOwnerIds();
   const state = await verificationIngestStateRepo.getOrCreate(ctx);
   const watermark = resolveFreshIngestWatermark(state.pollDealDateWatermark);
   if (watermark !== state.pollDealDateWatermark) {
@@ -147,10 +152,46 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         zohoOwnerId: mapped.zohoOwnerId,
         zohoOwnerName: mapped.zohoOwnerName,
         zohoRaw: mapped.zohoRaw,
-      }, {
-        fallbackOwnerZohoUserId: verificationOwnerZohoUserId,
-        fallbackOwnerName: VERIFICATION_CASE_OWNER_NAME,
       });
+
+      /**
+       * STAGE 0 — hand the case to a credit agent, and record who.
+       *
+       * Two writes, and both matter. The case row carries the CURRENT assignee so the desk queue can
+       * name it without a subquery per row; `verification_case_assignments` carries the history, which
+       * is also where the next rotation reads "who has waited longest".
+       *
+       * Best-effort, like the enrichment above: an application that exists but is unassigned shows on
+       * the desk queue as unassigned and can be picked up, whereas failing the ingest would mean the
+       * application does not exist at all.
+       */
+      let assignee: Awaited<ReturnType<typeof pickStage0Assignee>> = null;
+      try {
+        assignee = await pickStage0Assignee(ctx, creditAgentIds);
+        if (assignee) {
+          await verificationFlowRepo.patchIntake(ctx, inserted.id, {
+            verificationOwnerZohoUserId: assignee.zohoUserId,
+            verificationOwnerName: assignee.name,
+          });
+          await verificationCaseAssignmentRepo.record(ctx, {
+            caseId: inserted.id,
+            zohoUserId: assignee.zohoUserId,
+            assigneeName: assignee.name,
+            reason: 'stage0_round_robin',
+          });
+        } else {
+          // Said out loud: no credit agent is configured, so nobody has been told to underwrite this.
+          logger.warn(
+            { caseId: inserted.id, dealId },
+            'stage 0 routing: no credit agent configured — application created unassigned',
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { err: errorMessage(err), caseId: inserted.id, dealId },
+          'stage 0 routing failed — application left unassigned',
+        );
+      }
 
       // Enrichment and notification are best-effort: neither is worth losing an application over,
       // and the poller must not re-create a row it already wrote.
@@ -184,7 +225,10 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
           caseId: inserted.id,
           salesOwnerZohoUserId: mapped.zohoOwnerId,
           salesOwnerName: mapped.zohoOwnerName,
-          verificationOwnerZohoUserId,
+          // The agent Stage 0 actually picked, not `ids[0]`. This is the whole point of the rotation:
+          // the "New application" message goes to whoever now owns it.
+          verificationOwnerZohoUserId: assignee?.zohoUserId ?? '',
+          verificationOwnerName: assignee?.name ?? null,
           companyName: mapped.companyName,
           zohoDealId: mapped.zohoDealId,
         });

@@ -55,6 +55,7 @@ export * from './loyalty_client_overrides.js';
 export * from './verification_sales_responses.js';
 export * from './verification_cases.js';
 export * from './verification_flow.js';
+export * from './verification_case_assignments.js';
 export * from './mytrion_watch.js';
 export * from './collection.js';
 export * from './collection_desk.js';

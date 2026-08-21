@@ -122,7 +122,7 @@ templates/reactivity. Existing widgets live in `~/Desktop/Octane-Project/zoho-oc
 | Finance | `finance` | `mytrion-finance` | **cleanest** (client already framework-agnostic): octane-client fetch→shared transport, date presets, card-masking, 7-route+4-subtab structure→`routes.ts`, pattern classification | servercrm/DWH REST |
 | Customer Service | `customer-service` | `mytrion-customer-service` | column defs, picklist colors, DEAL_FIELD_MAP, modal validation→Zod, DWH ticket/call analytics | servercrm + Zoho Desk REST |
 | Retention | `retention` | — (NEW) | stub: churn signals, win-back, metrics | TBD |
-| Verification | `verification` | — (NEW) | stub: verification queue, checklist, audit trail | TBD |
+| Verification | `verification` | — | live 10-phase rail (`src/modules/verificationFlow/phases.ts`); CRM `/main/verificationmytrion` tabs Main · Inbox · Verification Case · Mytrion Watch · Existing clients (`soon`: Tickets). Desk `/v1/verification/flow/*`; Sales intake `/v1/verification/applications*` | octane-ops `/v1/verification/*` |
 | Manager | `manager` | — (NEW) | stub: team metrics roll-up, cross-dept KPIs (scope depends on §8 decision) | TBD |
 
 > Sales' full endpoint inventory (carrier/card/EFS/WEX/invoice/transaction/automation/WS) is large —

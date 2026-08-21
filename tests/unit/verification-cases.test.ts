@@ -241,6 +241,9 @@ describe('getVerificationCase', () => {
       businessType: null,
       creditsafeGrade: null,
       zohoOwnerId: null,
+      // The desk's own assignee, added with Stage-0 routing. Unassigned on this fixture.
+      verificationOwnerZohoUserId: null,
+      verificationOwnerName: null,
       zohoOwnerName: null,
       zohoRaw: {},
       carrierUnits: null,

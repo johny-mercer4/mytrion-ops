@@ -1,0 +1,1528 @@
+/**
+ * The open case refetches on the same verification socket the inbox already uses.
+ * Intake on this desk must expose Sales' fields, attach any file, and unlock Pass.
+ */
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { VerificationDeskDetail, VerificationRailPhase } from '@/api/verificationFlow';
+
+const getDeskCase = vi.fn();
+const getPolicy = vi.fn();
+const patchDeskIntake = vi.fn();
+const uploadDeskDocuments = vi.fn();
+const decidePhase = vi.fn();
+const requestDocuments = vi.fn();
+const reopenPhase = vi.fn();
+vi.mock('@/api/verificationFlow', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/verificationFlow')>();
+  return {
+    ...actual,
+    getDeskCase,
+    getPolicy,
+    patchDeskIntake,
+    uploadDeskDocuments,
+    decidePhase,
+    requestDocuments,
+    reopenPhase,
+    saveRiskAssessment,
+    submitFinalDecision,
+  };
+});
+
+/** Phase 9's save. Unmocked, a click would reach the real transport from jsdom. */
+const saveRiskAssessment = vi.fn();
+/** Phase 10's decision. Same reason — and this one closes the case, so it must never reach the wire. */
+const submitFinalDecision = vi.fn();
+const getDeskBrokerSnapshot = vi.fn();
+/**
+ * `runAuthorityLookup` is mocked alongside the snapshot for the reason the snapshot is: Phase 4's Run
+ * control is live on a locked case now, so an unmocked click would reach the real transport from jsdom.
+ */
+const runAuthorityLookup = vi.fn();
+const saveHighwayReview = vi.fn();
+vi.mock('@/api/verificationDeskWrites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/verificationDeskWrites')>();
+  return { ...actual, getDeskBrokerSnapshot, runAuthorityLookup, saveHighwayReview };
+});
+
+let onInboxEvent: ((event: { tag: string | null; type: string; detail?: string | null }) => void) | undefined;
+vi.mock('../../sales/redesign/useOctaneRealtime', () => ({
+  useOctaneRealtime: (opts: { onInboxEvent?: typeof onInboxEvent }) => {
+    onInboxEvent = opts.onInboxEvent;
+  },
+}));
+
+const { CaseView } = await import('./CaseView');
+
+function phase(over: Partial<VerificationRailPhase> = {}): VerificationRailPhase {
+  return {
+    code: 'p2_identity',
+    label: 'Identity',
+    order: 2,
+    description: '',
+    applies: true,
+    skipReason: null,
+    status: 'in_progress',
+    outcome: null,
+    findings: {},
+    note: null,
+    decidedAt: null,
+    decidedBy: null,
+    ...over,
+  };
+}
+
+function desk(): VerificationDeskDetail {
+  return {
+    case: {
+      id: 'vc_ridgevale01',
+      companyName: 'Ridgevale Freight',
+      firstName: null,
+      lastName: null,
+      email: null,
+      phone: null,
+      applicantType: 'carrier',
+      ein: '12-3456789',
+      mc: '123456',
+      dot: '987654',
+      underwritingRoute: 'octane_internal',
+      verificationProcess: true,
+      phaseCode: 'p2_identity',
+      statusCode: 'in_review',
+      trucksCount: 4,
+      fuelCardsRequested: 4,
+      requestedLimit: '5000',
+      approvedLimitAmount: null,
+      intakeMissing: [],
+      submittedAt: '2026-08-18T10:00:00.000Z',
+      ownerName: 'Credit Agent',
+      ownerZohoUserId: 'credit-42',
+      zohoOwnerId: 'sales-7',
+      zohoOwnerName: 'Sales Agent',
+      closedAt: null,
+      createdAt: '2026-08-14T10:00:00.000Z',
+      updatedAt: '2026-08-18T10:00:00.000Z',
+    },
+    rail: [phase()],
+    principals: [],
+    documents: [],
+    events: [],
+    screening: {
+      hits: [],
+      summary: { blacklistConfirmed: false, duplicateConfirmed: false, unresolved: 0, clear: true },
+    },
+    credit: null,
+    banking: null,
+    risk: null,
+    hardStops: { passed: true, triggered: [], outcome: 'clear' },
+    indicators: [],
+    routing: {
+      underwritingRoute: 'octane_internal',
+      reviewOrder: 'banking_first',
+      bankFirstTruckMin: 5,
+      wexCardCutoff: 20,
+    },
+    policy: {
+      strongFactor: null,
+      moderateFactor: null,
+      weakFactor: null,
+      tierPriceable: { strong: true, moderate: true, weak: false },
+    },
+  };
+}
+
+beforeEach(() => {
+  onInboxEvent = undefined;
+  getDeskCase.mockReset();
+  getPolicy.mockReset();
+  patchDeskIntake.mockReset();
+  uploadDeskDocuments.mockReset();
+  decidePhase.mockReset();
+  requestDocuments.mockReset();
+  getDeskBrokerSnapshot.mockReset();
+  getDeskBrokerSnapshot.mockResolvedValue({ match: null });
+  runAuthorityLookup.mockReset();
+  saveHighwayReview.mockReset();
+  saveRiskAssessment.mockReset();
+  getDeskCase.mockResolvedValue(desk());
+  getPolicy.mockResolvedValue({
+    nsfReviewThreshold: 3,
+    wexCardCutoff: 20,
+    verificationOwner: { name: 'Credit Agent' },
+  });
+});
+
+describe('CaseView live refresh', () => {
+  it('refetches on a verification socket event for this case, and ignores everyone else’s', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    await waitFor(() => expect(getDeskCase).toHaveBeenCalledTimes(1));
+    expect(onInboxEvent).toBeTypeOf('function');
+
+    onInboxEvent?.({ tag: 'retention', type: 'retention.claim_request' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getDeskCase).toHaveBeenCalledTimes(1);
+
+    onInboxEvent?.({
+      tag: 'verification',
+      type: 'verification.application.documents_uploaded',
+      detail: 'caseId=vc_other',
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getDeskCase).toHaveBeenCalledTimes(1);
+
+    onInboxEvent?.({
+      tag: 'verification',
+      type: 'verification.application.documents_uploaded',
+      detail: 'caseId=vc_ridgevale01',
+    });
+    await waitFor(() => expect(getDeskCase).toHaveBeenCalledTimes(2));
+  });
+});
+
+function intakeDesk(over: Partial<VerificationDeskDetail['case']> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: {
+      ...base.case,
+      verificationProcess: false,
+      statusCode: 'intake_incomplete',
+      phaseCode: 'p1_intake',
+      intakeMissing: ['dateOfBirth', 'residentialAddress', 'businessAddress', 'bankStatements'],
+      dateOfBirth: null,
+      residentialAddress: null,
+      businessAddress: null,
+      ...over,
+    },
+    rail: [
+      phase({
+        code: 'p1_intake',
+        label: 'Intake',
+        order: 1,
+        status: 'in_progress',
+        description: 'Applicant type, full application, documents.',
+      }),
+    ],
+  };
+}
+
+describe('CaseView intake writes', () => {
+  it('lets the desk edit a Sales intake field that used to be hidden', async () => {
+    getDeskCase.mockResolvedValue(intakeDesk());
+    const unlocked = intakeDesk({
+      verificationProcess: true,
+      statusCode: 'intake_submitted',
+      intakeMissing: [],
+      dateOfBirth: '1990-04-12',
+    });
+    patchDeskIntake.mockResolvedValue(unlocked);
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    const dob = await screen.findByLabelText('Date of birth');
+    expect(screen.getByLabelText('Residential address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Business address')).toBeInTheDocument();
+    fireEvent.change(dob, { target: { value: '1990-04-12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save corrections' }));
+    await waitFor(() =>
+      expect(patchDeskIntake).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        expect.objectContaining({ dateOfBirth: '1990-04-12' }),
+      ),
+    );
+    expect(await screen.findByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  it('attaches an arbitrary file from the desk Documents aside', async () => {
+    getDeskCase.mockResolvedValue(intakeDesk());
+    uploadDeskDocuments.mockResolvedValue(intakeDesk());
+    const { container } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByLabelText('Date of birth');
+    expect(screen.getByRole('combobox', { name: 'Attach as' })).toBeInTheDocument();
+    const input = container.querySelector('input[type="file"]');
+    expect(input).toBeTruthy();
+    const file = new File(['scan'], 'extra.pdf', { type: 'application/pdf' });
+    fireEvent.change(input!, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(uploadDeskDocuments).toHaveBeenCalledWith('vc_ridgevale01', [file], {
+        docType: 'other',
+      }),
+    );
+  });
+
+  /**
+   * THE TYPE THE SELECT SAYS, not the default.
+   *
+   * Choosing a file uploads it immediately with whatever `attachType` currently holds, and the picker
+   * used to sit ABOVE its type select — so a reviewer working down the panel in reading order filed
+   * every document as "Something else" and then had to ask Sales to re-upload it. The select now comes
+   * first and the button names the choice; this is the assertion that the choice is actually carried.
+   */
+  it('attaches under the type the reviewer picked', async () => {
+    getDeskCase.mockResolvedValue(intakeDesk());
+    uploadDeskDocuments.mockResolvedValue(intakeDesk());
+    const { container } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByLabelText('Date of birth');
+
+    fireEvent.pointerDown(
+      screen.getByRole('combobox', { name: 'Attach as' }).closest('[data-focus-shell]')!,
+    );
+    fireEvent.click(screen.getByRole('option', { name: 'Bank statement' }));
+    // The control names what it will do, so the choice is visible without reopening the select.
+    expect(screen.getByText('Attach bank statement')).toBeInTheDocument();
+
+    const file = new File(['scan'], 'march.pdf', { type: 'application/pdf' });
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(uploadDeskDocuments).toHaveBeenCalledWith('vc_ridgevale01', [file], {
+        docType: 'bank_statement',
+      }),
+    );
+  });
+});
+
+describe('CaseView phase decisions', () => {
+  it('hides Pass / manager / Decline once the open phase is already passed', async () => {
+    getDeskCase.mockResolvedValue({
+      ...desk(),
+      rail: [phase({ status: 'passed' })],
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to manager' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+    expect(screen.getByText('This phase is signed off.')).toBeInTheDocument();
+  });
+
+  it('hides the same actions when the case has moved past the spine step', async () => {
+    getDeskCase.mockResolvedValue({
+      ...desk(),
+      case: { ...desk().case, phaseCode: 'p3_screening' },
+      rail: [
+        phase({ status: 'passed' }),
+        phase({
+          code: 'p3_screening',
+          label: 'Screening',
+          order: 3,
+          status: 'in_progress',
+        }),
+      ],
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    fireEvent.click(screen.getByRole('button', { name: /Identity/ }));
+    await screen.findByText(/No warehouse match|This phase is signed off/);
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+  });
+
+  it('shows the carrier checklist and keeps Pass disabled until every check is OK', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.getAllByText('Legal company name and EIN').length).toBeGreaterThan(0);
+    expect(screen.queryByText("Driver's licence")).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    for (const btn of screen.getAllByRole('radio', { name: 'OK' })) {
+      fireEvent.click(btn);
+    }
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  it('asks Sales for documents through the existing request path when a check is missing', async () => {
+    requestDocuments.mockResolvedValue(desk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Missing' })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Pending documents' }));
+    await waitFor(() =>
+      expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {
+        phaseCode: 'p2_identity',
+        items: [{ docType: 'other', label: 'Company / EIN documentation' }],
+      }),
+    );
+  });
+
+  it('shows the owner-operator checklist instead of the carrier one', async () => {
+    getDeskCase.mockResolvedValue({
+      ...desk(),
+      case: { ...desk().case, applicantType: 'owner_operator', firstName: 'Ada', lastName: 'Cole' },
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect((await screen.findAllByText("Driver's licence")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('SSN documentation').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Legal company name and EIN')).not.toBeInTheDocument();
+  });
+});
+
+function screeningDesk(
+  over: Partial<VerificationDeskDetail['case']> = {},
+): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, phaseCode: 'p3_screening', ...over },
+    rail: [
+      phase({ status: 'passed' }),
+      phase({ code: 'p3_screening', label: 'Screening', order: 3, status: 'in_progress' }),
+    ],
+  };
+}
+
+describe('CaseView Phase 3 screening', () => {
+  it('shows carrier identity facts and keeps Pass disabled until both checks are clear', async () => {
+    getDeskCase.mockResolvedValue(screeningDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    /**
+     * ONE facts block, not two. The pane printed the same eight identifiers in both check columns —
+     * eight facts read twice to notice they are identical. They are a label/value grid now, stated once
+     * above the two verdicts, so the label and the value are separate elements and `EIN:` with its old
+     * colon no longer exists.
+     */
+    // Scoped to the `.va-recorded` block, not to the heading's own row: the heading now shares a
+    // `.va-pane-head` with the Run Check A button, and the case HEADER carries an `EIN` fact of its own.
+    const facts = screen
+      .getByText('Identifiers to compare')
+      .closest<HTMLElement>('.va-recorded')!;
+    expect(within(facts).getAllByText('Name / owner / principals')).toHaveLength(1);
+    expect(within(facts).getAllByText('EIN')).toHaveLength(1);
+    expect(within(facts).getByText('12-3456789')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: 'No match' }));
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: 'No duplicate' }));
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  it('shows owner-operator name and SSN rather than company principals', async () => {
+    getDeskCase.mockResolvedValue(
+      screeningDesk({
+        applicantType: 'owner_operator',
+        companyName: null,
+        firstName: 'Ada',
+        lastName: 'Cole',
+        ssnLast4: '7788',
+        residentialAddress: '1 Oak St',
+      }),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ada Cole' });
+    expect(screen.getAllByText(/SSN last 4/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Residential address/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Name \/ owner \/ principals/)).not.toBeInTheDocument();
+  });
+
+  it('sends a confirmed blacklist through Decline as decline_blacklist', async () => {
+    const row = screeningDesk();
+    getDeskCase.mockResolvedValue(row);
+    decidePhase.mockResolvedValue(row);
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Confirmed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    await waitFor(() =>
+      expect(decidePhase).toHaveBeenCalledWith('vc_ridgevale01', 'p3_screening', {
+        outcome: 'decline_blacklist',
+      }),
+    );
+  });
+
+  it('sends a duplicate to the existing manager path', async () => {
+    const row = screeningDesk();
+    getDeskCase.mockResolvedValue(row);
+    decidePhase.mockResolvedValue(row);
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Duplicate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to manager' }));
+    await waitFor(() =>
+      expect(decidePhase).toHaveBeenCalledWith('vc_ridgevale01', 'p3_screening', {
+        outcome: 'manager_review',
+      }),
+    );
+  });
+
+  it('hides Pass / manager / Decline once Phase 3 is passed', async () => {
+    getDeskCase.mockResolvedValue({
+      ...screeningDesk(),
+      rail: [
+        phase({ status: 'passed' }),
+        phase({ code: 'p3_screening', label: 'Screening', order: 3, status: 'passed' }),
+      ],
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to manager' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+  });
+});
+
+function authorityDesk(
+  over: Partial<VerificationDeskDetail['case']> = {},
+  railOver: Partial<VerificationRailPhase> = {},
+): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, phaseCode: 'p4_authority', ...over },
+    rail: [
+      phase({ status: 'passed' }),
+      phase({
+        code: 'p4_authority',
+        label: 'Authority',
+        order: 4,
+        status: 'in_progress',
+        applies: true,
+        ...railOver,
+      }),
+    ],
+  };
+}
+
+describe('CaseView Phase 4 authority', () => {
+  it('skips the working pane and decision buttons for an owner-operator', async () => {
+    getDeskCase.mockResolvedValue(
+      authorityDesk(
+        {
+          applicantType: 'owner_operator',
+          companyName: null,
+          firstName: 'Ada',
+          lastName: 'Cole',
+        },
+        {
+          applies: false,
+          status: 'skipped',
+          skipReason: 'Not applicable — owner-operator has no MC/DOT authority to verify.',
+        },
+      ),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Not applicable to this applicant');
+    expect(screen.getByText(/owner-operator has no MC\/DOT authority/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Applicant type')).toBeInTheDocument();
+    expect(screen.getByLabelText('MC number')).toBeInTheDocument();
+    expect(screen.getByLabelText('USDOT')).toBeInTheDocument();
+    expect(screen.queryByText('MC status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+  });
+
+  it('patches type and MC/DOT from the N/A fallback so the phase can apply', async () => {
+    getDeskCase.mockResolvedValue(
+      authorityDesk(
+        {
+          applicantType: 'owner_operator',
+          companyName: null,
+          firstName: 'Ada',
+          lastName: 'Cole',
+          mc: null,
+          dot: null,
+        },
+        {
+          applies: false,
+          status: 'skipped',
+          skipReason: 'Not applicable — owner-operator has no MC/DOT authority to verify.',
+        },
+      ),
+    );
+    patchDeskIntake.mockResolvedValue(
+      authorityDesk(
+        { applicantType: 'carrier', firstName: 'Ada', lastName: 'Cole', mc: '123456', dot: '987654' },
+        { applies: true, status: 'not_started' },
+      ),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Not applicable to this applicant');
+    fireEvent.change(screen.getByLabelText('MC number'), { target: { value: '123456' } });
+    fireEvent.change(screen.getByLabelText('USDOT'), { target: { value: '987654' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Applicant type' }), {
+      target: { value: 'carrier' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save corrections' }));
+    await waitFor(() =>
+      expect(patchDeskIntake).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        expect.objectContaining({ applicantType: 'carrier', mc: '123456', dot: '987654' }),
+      ),
+    );
+    expect((await screen.findAllByText('MC status')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+  });
+
+  it('does not apply Phase 4 when MC/DOT are filled but the type stays owner-operator', async () => {
+    const skipped = {
+      applies: false,
+      status: 'skipped' as const,
+      skipReason: 'Not applicable — owner-operator has no MC/DOT authority to verify.',
+    };
+    getDeskCase.mockResolvedValue(
+      authorityDesk(
+        {
+          applicantType: 'owner_operator',
+          companyName: null,
+          firstName: 'Ada',
+          lastName: 'Cole',
+          mc: null,
+          dot: null,
+        },
+        skipped,
+      ),
+    );
+    patchDeskIntake.mockResolvedValue(
+      authorityDesk(
+        { applicantType: 'owner_operator', firstName: 'Ada', lastName: 'Cole', mc: '123456', dot: '987654' },
+        skipped,
+      ),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Not applicable to this applicant');
+    fireEvent.change(screen.getByLabelText('MC number'), { target: { value: '123456' } });
+    fireEvent.change(screen.getByLabelText('USDOT'), { target: { value: '987654' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save corrections' }));
+    await waitFor(() =>
+      expect(patchDeskIntake).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        expect.objectContaining({ applicantType: 'owner_operator', mc: '123456', dot: '987654' }),
+      ),
+    );
+    expect(screen.getByText('Not applicable to this applicant')).toBeInTheDocument();
+    expect(screen.queryByText('MC status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+  });
+
+  it('shows the carrier checklist and keeps Pass disabled until authority is verified', async () => {
+    getDeskCase.mockResolvedValue(authorityDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.getAllByText('MC status').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Operating authority').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    /**
+     * SIX checks now, not five. "Authority age" was the one item on the SOP's Phase 4 list with no
+     * check of its own, so a reviewer had nowhere to record it and Phase 9 — which reads authority age
+     * for the risk tier — had nothing to inherit. And they are `radiogroup`s now: mutually exclusive
+     * verdicts, sharing Phase 2's control.
+     */
+    for (const label of [
+      'MC status',
+      'USDOT status',
+      'Operating authority',
+      'Insurance status',
+      'Operating history',
+      'Authority age',
+    ]) {
+      const group = screen.getByRole('radiogroup', { name: label });
+      fireEvent.click(within(group).getByRole('radio', { name: 'OK' }));
+    }
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  it('asks Sales for documents when an authority check is missing', async () => {
+    const row = authorityDesk();
+    getDeskCase.mockResolvedValue(row);
+    requestDocuments.mockResolvedValue(row);
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    const insurance = screen.getByRole('radiogroup', { name: 'Insurance status' });
+    fireEvent.click(within(insurance).getByRole('radio', { name: 'Missing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pending documents' }));
+    await waitFor(() =>
+      expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {
+        phaseCode: 'p4_authority',
+        items: [{ docType: 'insurance', label: 'Insurance certificate' }],
+      }),
+    );
+  });
+
+  it('hides Pass / manager / Decline once Phase 4 is passed', async () => {
+    getDeskCase.mockResolvedValue(
+      authorityDesk({}, { status: 'passed' }),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to manager' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+  });
+});
+
+function routingDesk(
+  over: Partial<VerificationDeskDetail['case']> = {},
+  railOver: Partial<VerificationRailPhase> = {},
+): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, phaseCode: 'p5_routing', trucksCount: 12, ...over },
+    rail: [
+      phase({
+        code: 'p5_routing',
+        label: 'Routing',
+        order: 5,
+        status: 'in_progress',
+        applies: true,
+        ...railOver,
+      }),
+    ],
+  };
+}
+
+function creditDesk(
+  over: Partial<VerificationDeskDetail['case']> = {},
+  rail: VerificationRailPhase[] = [],
+): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, phaseCode: 'p6_credit_banking', ...over },
+    rail:
+      rail.length > 0
+        ? rail
+        : [
+            phase({
+              code: 'p6_credit_banking',
+              label: 'Credit & banking',
+              order: 6,
+              status: 'in_progress',
+            }),
+          ],
+  };
+}
+
+/**
+ * PHASE 8, which had no pane at all: it fell through `PhaseBody`'s switch to the generic recorded-so-far
+ * summary, so the phase the SOP gives eleven review items had nothing to review with and "Pass phase"
+ * was enabled on a carrier nobody had opened in Highway.
+ *
+ * It is CARRIER-ONLY, and the one live case in the system is an owner-operator with every carrier case
+ * still behind the Sales gate — so this suite is the only place the pane is exercised. It proves
+ * structure, not geometry; jsdom does no layout.
+ */
+function highwayDesk(over: Partial<VerificationDeskDetail['case']> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: {
+      ...base.case,
+      applicantType: 'carrier',
+      phaseCode: 'p8_highway',
+      fuelCardsRequested: 12,
+      ...over,
+    },
+    rail: [
+      phase({
+        code: 'p8_highway',
+        label: 'Carrier Operational Review (Highway)',
+        order: 8,
+        status: 'in_progress',
+        applies: true,
+      }),
+    ],
+  };
+}
+
+/**
+ * PHASE 9. It had no gate — `passReady` never mentioned it, so the phase Phase 10 prices the approval
+ * from could be passed with no assessment at all — and the pane defaulted the tier to `strong`, the
+ * most generous factor in policy.
+ */
+function riskDesk(over: Record<string, unknown> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p9_risk_capacity' },
+    banking: {
+      ...(base.banking ?? {}),
+      recurringWeeklyIncome: '5000',
+      recurringWeeklyExpenses: '3000',
+      avgWeeklyFuelExpense: '800',
+    },
+    credit: { ...(base.credit ?? {}), creditScore: 700 },
+    rail: [
+      phase({ code: 'p9_risk_capacity', label: 'Risk tier', order: 9, status: 'in_progress' }),
+    ],
+    ...over,
+  } as unknown as VerificationDeskDetail;
+}
+
+describe('CaseView Phase 9 risk and capacity', () => {
+  it('shows the three SOP steps before a tier is chosen', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    // 5000 − 3000 = 2000, + 800 fuel = 2800. Visible without saving anything.
+    expect(screen.getByText('$2,000')).toBeInTheDocument();
+    expect(screen.getByText('$2,800')).toBeInTheDocument();
+  });
+
+  /** An owner-operator has neither an authority nor a Highway presence. */
+  it('asks for four inputs on an owner-operator, not six', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    expect(screen.queryByRole('radiogroup', { name: 'Authority age' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Highway data' })).toBeNull();
+  });
+
+  it('keeps Pass off until every input is read and a tier is assigned', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    for (const group of screen
+      .getAllByRole('radiogroup')
+      .filter((g) => g.getAttribute('aria-label') !== 'Risk tier')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /Strong/ }));
+    }
+    // Inputs read, but no tier — still refused.
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    const tiers = screen.getByRole('radiogroup', { name: 'Risk tier' });
+    fireEvent.click(within(tiers).getByRole('radio', { name: /strong/i }));
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  /**
+   * The SOP leaves the moderate and weak factors to approved policy, and the calculator refuses to
+   * guess one — so the pane has to say the tier is assessable but not priceable.
+   */
+  it('says so when the assigned tier has no approved factor', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    const tiers = screen.getByRole('radiogroup', { name: 'Risk tier' });
+    fireEvent.click(within(tiers).getByRole('radio', { name: /weak/i }));
+    expect(screen.getByText(/No approved risk factor is set for the weak tier/i)).toBeInTheDocument();
+    // And the capacity is still known — only the pricing is not.
+    expect(screen.getByText('$2,800')).toBeInTheDocument();
+  });
+
+  it('sends business age and key risks, which the pane never used to', async () => {
+    getDeskCase.mockResolvedValue(riskDesk());
+    saveRiskAssessment.mockResolvedValue(riskDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit report' });
+    // The unit suffix disambiguates the FIELD from the input-read radiogroup of the same name.
+    fireEvent.change(screen.getByLabelText(/Business age · mo/), { target: { value: '30' } });
+    fireEvent.change(screen.getByPlaceholderText(/A risk this file carries/), {
+      target: { value: 'Thin operating history' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Risk tier' })).getByRole('radio', {
+        name: /strong/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Assess risk/ }));
+    await waitFor(() =>
+      expect(saveRiskAssessment).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        expect.objectContaining({
+          riskTier: 'strong',
+          businessAgeMonths: 30,
+          keyRisks: ['Thin operating history'],
+        }),
+      ),
+    );
+  });
+
+  /** "Avoid double-counting fuel" — the server 422s, so the pane must warn before the click. */
+  it('warns when fuel was entered outside recurring expenses', async () => {
+    getDeskCase.mockResolvedValue(
+      riskDesk({
+        banking: {
+          recurringWeeklyIncome: '5000',
+          recurringWeeklyExpenses: '500',
+          avgWeeklyFuelExpense: '800',
+        },
+      }),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText(/Fuel is being double-counted/i)).toBeInTheDocument();
+  });
+});
+
+describe('CaseView Phase 8 Highway', () => {
+  it('renders the SOP review items and the consistency verdict', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Highway consistency' });
+    // Nine review rows plus the verdict — "overall consistency" IS the verdict, never a row too.
+    expect(screen.getAllByRole('radiogroup')).toHaveLength(10);
+    expect(screen.getByRole('radiogroup', { name: 'Safety score' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Authority age' })).toBeInTheDocument();
+  });
+
+  it('keeps Pass off until every item is ruled on AND the verdict is consistent', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Highway consistency' });
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    // Verdict alone is not enough — the nine rows are the review.
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Highway consistency' })).getByRole('radio', {
+        name: /Consistent/,
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    for (const group of screen
+      .getAllByRole('radiogroup')
+      .filter((g) => g.getAttribute('aria-label') !== 'Highway consistency')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /^OK/ }));
+    }
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  /** The SOP's failure branch is Manager Review, so a discrepancy must not enable Pass. */
+  it('refuses to pass on a suspicious discrepancy however complete the review', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Highway consistency' });
+    for (const group of screen
+      .getAllByRole('radiogroup')
+      .filter((g) => g.getAttribute('aria-label') !== 'Highway consistency')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /^OK/ }));
+    }
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Highway consistency' })).getByRole('radio', {
+        name: /Suspicious/,
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    expect(screen.getByText(/goes to Manager Review, not to a decline/i)).toBeInTheDocument();
+  });
+
+  /**
+   * THE SOP'S CAVEAT ON SCREEN. Cards against fleet is an indicator and the pane has to say so — it is
+   * the single easiest thing on this phase to read as a cap.
+   */
+  it('reads cards against fleet as an indicator, and says it is not a cap', async () => {
+    getDeskCase.mockResolvedValue(highwayDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    const observed = await screen.findByLabelText(/Power units observed/);
+    fireEvent.change(observed, { target: { value: '4' } });
+    expect(screen.getByText(/more cards than trucks/i)).toBeInTheDocument();
+    expect(screen.getByText(/do not cap the limit/i)).toBeInTheDocument();
+  });
+
+  /** Owner-operators never reach it, and the pane must not appear for them. */
+  it('does not render for a non-carrier', async () => {
+    getDeskCase.mockResolvedValue({
+      ...highwayDesk({ applicantType: 'owner_operator' }),
+      rail: [
+        phase({
+          code: 'p8_highway',
+          label: 'Carrier Operational Review (Highway)',
+          order: 8,
+          status: 'not_started',
+          applies: false,
+        }),
+      ],
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    // Two things say "Not applicable" on this screen — the skipped pane and the decision note — so
+    // the query has to name which, or it throws on the ambiguity rather than failing the assertion.
+    await screen.findByText('Not applicable to this applicant');
+    expect(screen.queryByRole('radiogroup', { name: 'Highway consistency' })).toBeNull();
+  });
+});
+
+describe('CaseView Phase 5 routing', () => {
+  it('shows banking-first for a 10+ truck carrier and stores that order on Pass', async () => {
+    getDeskCase.mockResolvedValue(routingDesk());
+    decidePhase.mockResolvedValue(routingDesk({}, { status: 'passed' }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Banking → Credit')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pass phase' }));
+    await waitFor(() =>
+      expect(decidePhase).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        'p5_routing',
+        expect.objectContaining({
+          outcome: 'pass',
+          findings: { reviewOrder: 'banking_first' },
+        }),
+      ),
+    );
+  });
+
+  it('shows credit-first for an owner-operator whatever the truck count', async () => {
+    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'owner_operator', trucksCount: 25 }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
+  });
+
+  /**
+   * THE THRESHOLD COMES FROM THE POLICY, and this fixture proves the old pane ignored it: it has set
+   * `bankFirstTruckMin: 5` all along while the client compared against a hard-coded 10. So a 9-truck
+   * carrier tested as credit-first when the state machine would have routed it banking-first — the
+   * pane and the server disagreeing, silently, on the one thing this phase exists to decide.
+   */
+  it('honours the policy threshold rather than a hard-coded 10', async () => {
+    // 9 is under 10 but at or above the fixture's real policy of 5 -> banking first.
+    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: 9 }));
+    const { unmount } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Banking → Credit')).toBeInTheDocument();
+    expect(screen.getByText(/5-truck policy/)).toBeInTheDocument();
+    unmount();
+
+    // 4 is below it -> credit first, and the copy names the same policy number.
+    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: 4 }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
+  });
+
+  it('assumes credit-first when trucks are missing and does not invent the threshold', async () => {
+    getDeskCase.mockResolvedValue(routingDesk({ applicantType: 'carrier', trucksCount: null }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Credit → Banking')).toBeInTheDocument();
+    expect(screen.getByText(/counted as 0/)).toBeInTheDocument();
+  });
+
+  /**
+   * THE OTHER HALF OF ROUTING, which this pane never showed: fuel cards against the WEX cutoff decide
+   * whether Octane underwrites the case at all. The server has been sending it on `detail.routing`
+   * the whole time.
+   */
+  it('shows the underwriting route and the card cutoff it was decided against', async () => {
+    getDeskCase.mockResolvedValue(routingDesk({ fuelCardsRequested: 25 }));
+    const { unmount } = render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('WEX')).toBeInTheDocument();
+    expect(screen.getByText(/above the 20-card cutoff/)).toBeInTheDocument();
+    unmount();
+
+    getDeskCase.mockResolvedValue(routingDesk({ fuelCardsRequested: 8 }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText('Octane internal')).toBeInTheDocument();
+  });
+
+  it('patches type and truck count from the routing pane', async () => {
+    getDeskCase.mockResolvedValue(routingDesk({ trucksCount: null }));
+    patchDeskIntake.mockResolvedValue(routingDesk({ trucksCount: 12 }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Credit → Banking');
+    fireEvent.change(screen.getByLabelText('Trucks'), { target: { value: '12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save corrections' }));
+    await waitFor(() =>
+      expect(patchDeskIntake).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        expect.objectContaining({ applicantType: 'carrier', trucksCount: 12 }),
+      ),
+    );
+  });
+
+  it('hides Pass once Routing is passed', async () => {
+    getDeskCase.mockResolvedValue(routingDesk({}, { status: 'passed' }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+  });
+});
+
+describe('CaseView Phase 6 credit and banking', () => {
+  /**
+   * PHASE 5'S ORDER IS A SEQUENCE NOW, not a column position. The pane used to render both reviews
+   * side by side, so "banking first" only meant "banking on the left" — which on a wide screen is no
+   * ordering at all. One step shows at a time and step one is whichever review Phase 5 put first, so
+   * this asserts the tab order and which tab is selected rather than two headings' x-positions.
+   */
+  it('starts on banking, and lists it first, when Phase 5 stored banking-first', async () => {
+    getDeskCase.mockResolvedValue(
+      creditDesk({ trucksCount: 4 }, [
+        phase({
+          code: 'p5_routing',
+          label: 'Routing',
+          order: 5,
+          status: 'passed',
+          findings: { reviewOrder: 'banking_first' },
+        }),
+        phase({
+          code: 'p6_credit_banking',
+          label: 'Credit & banking',
+          order: 6,
+          status: 'in_progress',
+        }),
+      ]),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    expect(await screen.findByText(/Banking → Credit/)).toBeInTheDocument();
+    expect(screen.getByText(/confirmed in Routing/)).toBeInTheDocument();
+    const tabs = screen.getAllByRole('tab').map((n) => n.textContent ?? '');
+    expect(tabs[0]).toContain('Banking');
+    expect(tabs[1]).toContain('Credit report review');
+    // And the one actually open is step one, not merely the one drawn leftmost.
+    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+    expect(screen.getByRole('heading', { level: 4 }).textContent).toContain('Banking review');
+  });
+
+  /** Credit-first is the other branch of the same decision, and must open on the other step. */
+  it('starts on credit when the order is credit-first', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('tab', { selected: true });
+    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Credit report review');
+  });
+
+  /**
+   * THE SEQUENCE IS GUIDANCE, NOT A LOCK. A reviewer with the statements already open must be able to
+   * start on either step, and a correction to a saved step cannot require walking the flow again.
+   */
+  it('lets the reviewer switch to the other step', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    const bankingTab = await screen.findByRole('tab', { name: /Banking/ });
+    fireEvent.click(bankingTab);
+    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+  });
+
+  it('keeps Pass off until credit is strong/acceptable and banking has no missing rows', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit profile result' });
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: /Strong/ }));
+    // Credit alone is not enough, and the banking rows live on the OTHER step — which is the point of
+    // the sequence: a reviewer cannot pass Phase 6 without having opened both halves.
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Banking/ }));
+    for (const group of screen.getAllByRole('radiogroup')) {
+      fireEvent.click(within(group).getByRole('radio', { name: /OK/ }));
+    }
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeEnabled();
+  });
+
+  it('sends borderline to the manager and unacceptable to deposit/prepaid', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    decidePhase.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('radiogroup', { name: 'Credit profile result' });
+    fireEvent.click(screen.getByRole('radio', { name: /Borderline/ }));
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: /Unacceptable/ }));
+    expect(screen.getByRole('button', { name: 'Deposit / prepaid' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit / prepaid' }));
+    await waitFor(() =>
+      expect(decidePhase).toHaveBeenCalledWith(
+        'vc_ridgevale01',
+        'p6_credit_banking',
+        expect.objectContaining({ outcome: 'deposit_prepaid' }),
+      ),
+    );
+  });
+
+  it('asks Sales for statements when a banking row is missing', async () => {
+    getDeskCase.mockResolvedValue(creditDesk());
+    requestDocuments.mockResolvedValue(creditDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    // The banking judgement rows live on the banking step, which credit-first does not open first.
+    fireEvent.click(await screen.findByRole('tab', { name: /Banking/ }));
+    const ownership = screen.getByRole('radiogroup', {
+      name: 'Account ownership — applicant/company name and address',
+    });
+    fireEvent.click(within(ownership).getByRole('radio', { name: /Missing/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pending documents' }));
+    await waitFor(() =>
+      expect(requestDocuments).toHaveBeenCalledWith('vc_ridgevale01', {
+        phaseCode: 'p6_credit_banking',
+        items: [{ docType: 'bank_statement', label: 'Bank statements (last 3 months)' }],
+      }),
+    );
+  });
+});
+
+/**
+ * REOPENING A PHASE — the desk's way back, and the rules about where the control appears.
+ *
+ * The rail only ever moved forward, so a phase signed off on the wrong reading had no remedy short of a
+ * database edit. The control is deliberately narrow: there must be a verdict to withdraw, and the case
+ * must still be open. The server enforces the same three guards (`verification-desk-reopen.test.ts`);
+ * this is the half that decides whether the agent is offered the button at all.
+ */
+describe('reopening a phase', () => {
+  const railOf = (status: VerificationRailPhase['status']) => [
+    phase({ code: 'p1_intake', label: 'Application Intake', order: 1, status: 'passed' }),
+    phase({ code: 'p2_identity', label: 'Identity', order: 2, status }),
+    phase({ code: 'p3_screening', label: 'Screening', order: 3, status: 'not_started' }),
+  ];
+
+  beforeEach(() => {
+    reopenPhase.mockReset();
+    getPolicy.mockResolvedValue({ wexCardCutoff: 20 });
+  });
+
+  it('offers Reopen on a phase this case has passed', async () => {
+    getDeskCase.mockResolvedValue({ ...desk(), rail: railOf('passed') });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    expect(await screen.findByRole('button', { name: 'Reopen' })).toBeInTheDocument();
+  });
+
+  it('offers nothing on a phase with no verdict to withdraw', async () => {
+    getDeskCase.mockResolvedValue({ ...desk(), rail: railOf('not_started') });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('heading', { name: 'Identity' });
+    expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument();
+  });
+
+  it('offers nothing once the case is decided', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, statusCode: 'approved', closedAt: '2026-08-19T09:00:00.000Z' },
+      rail: railOf('passed'),
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('heading', { name: 'Identity' });
+    expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The dialog exists BECAUSE a reason is required — and it has to say what reopening costs, because
+   * everything downstream is un-decided too. A bare confirm would hide both.
+   */
+  it('requires a reason, and says what it costs before taking one', async () => {
+    getDeskCase.mockResolvedValue({ ...desk(), rail: railOf('passed') });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reopen' }));
+
+    expect(screen.getByRole('heading', { name: /Reopen Identity/ })).toBeInTheDocument();
+    // One applicable phase sits after Identity in this rail.
+    expect(screen.getByText(/1 phase after it/)).toBeInTheDocument();
+    expect(screen.getByText(/Findings already recorded stay/)).toBeInTheDocument();
+
+    const confirm = screen.getByRole('button', { name: 'Reopen phase' });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Why is it being reopened?'), {
+      target: { value: 'Licence belonged to a different person' },
+    });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(reopenPhase).toHaveBeenCalledWith('vc_ridgevale01', 'p2_identity', {
+        reason: 'Licence belonged to a different person',
+      }),
+    );
+  });
+});
+
+/**
+ * STAGE 1 (Intake) and STAGE 2 (Identity) — the pane structure and the verdict control.
+ *
+ * The three defects here were all "the screen says something that is not true": a documents sentence
+ * rendered inside the Owners / principals block so it read as a principals requirement, an Owners /
+ * principals section on owner-operator cases where the server never asks for one, and a verdict control
+ * whose three verdicts looked identical.
+ */
+describe('Phase 1 — the intake pane', () => {
+  beforeEach(() => {
+    getPolicy.mockResolvedValue({ wexCardCutoff: 20 });
+  });
+
+  const intakeRail = [phase({ code: 'p1_intake', label: 'Application Intake', order: 1, status: 'in_progress' })];
+
+  /**
+   * `evaluateIntakeCompleteness` requires a principal on the CARRIER flow only — an owner-operator IS
+   * the person, so there is nobody else to name. Sales' own form has always hidden it there.
+   */
+  it('hides Owners / principals on an owner-operator case', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p1_intake' },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('textbox', { name: 'First name' });
+    expect(screen.queryByText('Owners / principals')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Owner or principal full name')).not.toBeInTheDocument();
+  });
+
+  it('keeps it on a carrier case, where the server asks for one', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'carrier', phaseCode: 'p1_intake' },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    expect(await screen.findByText('Owners / principals')).toBeInTheDocument();
+  });
+
+  /**
+   * The sentence is about DOCUMENTS. It used to render bare, straight after the principals list, so
+   * "Still needed as files: Bank statements" read as a requirement of the section it sat inside.
+   */
+  it('gives the outstanding-files sentence its own heading', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'carrier', phaseCode: 'p1_intake', intakeMissing: ['bankStatements'] },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    const heading = await screen.findByText('Still needed as files');
+    expect(heading).toBeInTheDocument();
+    // And the sentence lives under THAT heading, not under the principals one.
+    expect(heading.parentElement).toHaveTextContent(/Bank statements/);
+  });
+
+  /** Every column stays reachable — a case whose type was set wrong at ingest has to be correctable. */
+  it('keeps both flows’ columns editable, grouped and labelled', async () => {
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p1_intake' },
+      rail: intakeRail,
+    });
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findByRole('textbox', { name: 'First name' });
+    // The other flow's fields are present, and the group says it is not required here.
+    expect(screen.getByRole('textbox', { name: 'Company' })).toBeEnabled();
+    expect(screen.getByText('Business')).toBeInTheDocument();
+    expect(screen.getByText(/Not required for an owner-operator/)).toBeInTheDocument();
+  });
+});
+
+describe('Phase 2 — the verdict control and What to check', () => {
+  const idRail = [phase({ code: 'p2_identity', label: 'Identity', order: 2, status: 'in_progress' })];
+
+  beforeEach(() => {
+    getPolicy.mockResolvedValue({ wexCardCutoff: 20 });
+    const base = desk();
+    getDeskCase.mockResolvedValue({
+      ...base,
+      case: { ...base.case, applicantType: 'owner_operator', phaseCode: 'p2_identity' },
+      rail: idRail,
+    });
+  });
+
+  /**
+   * A radio GROUP, not three toggles. These are mutually exclusive verdicts; `aria-pressed` on three
+   * buttons announces three independent switches, which is a different control from the one they mean.
+   */
+  it('is a radio group with exactly one verdict selected', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    // BY ITS LABEL, not by index: `ReviewPanes` declares radiogroups of its own ("Risk tier", "Final
+    // decision"), so `[0]` is not reliably a verdict control.
+    const group = await screen.findByRole('radiogroup', { name: 'Full name' });
+    expect(within(group).getAllByRole('radio')).toHaveLength(3);
+    // `queryAll`, not `getAll`: nothing is checked yet, and `getAllByRole` throws on zero matches.
+    expect(within(group).queryAllByRole('radio', { checked: true })).toHaveLength(0);
+    fireEvent.click(within(group).getByRole('radio', { name: 'OK' }));
+    expect(within(group).getAllByRole('radio', { checked: true })).toHaveLength(1);
+  });
+
+  /** The aside used to light up all at once when the phase passed. Now it follows the marks. */
+  it('moves What to check as the reviewer marks each row', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findAllByRole('radiogroup');
+    const aside = screen.getByRole('heading', { name: 'What to check' }).closest('section')!;
+    expect(within(aside).getByText('0 of 7')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('radio', { name: 'OK' })[0]!);
+    expect(within(aside).getByText('1 of 7')).toBeInTheDocument();
+
+    // `attention` outranks the count — it is the thing the reviewer has to come back to.
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Missing' })[1]!);
+    expect(within(aside).getByText('1 needs work')).toBeInTheDocument();
+    expect(within(aside).getByText(/request the document/i)).toBeInTheDocument();
+  });
+
+  it('says the ticks follow the marks, not the clock', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => {}} />);
+    await screen.findAllByRole('radiogroup');
+    expect(screen.getByText(/Follows the marks you set beside each check/)).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * PHASE 10 — the final decision.
+ *
+ * A decided case is read-only, so the fixture is an OPEN case sitting on `p10_decision` with a stored
+ * risk assessment: that is the one state in which this pane accepts input.
+ */
+function decisionDesk(over: Record<string, unknown> = {}): VerificationDeskDetail {
+  const base = desk();
+  return {
+    ...base,
+    case: { ...base.case, phaseCode: 'p10_decision', requestedLimit: '5000' },
+    banking: {
+      ...(base.banking ?? {}),
+      recurringWeeklyIncome: '5000',
+      recurringWeeklyExpenses: '3000',
+      avgWeeklyFuelExpense: '800',
+    },
+    credit: { ...(base.credit ?? {}), creditScore: 700 },
+    risk: { riskTier: 'strong', recommendedLimit: '4000', riskFactor: '1.43', keyRisks: [] },
+    rail: [phase({ code: 'p10_decision', label: 'Decision', order: 10, status: 'in_progress' })],
+    ...over,
+  } as unknown as VerificationDeskDetail;
+}
+
+describe('CaseView Phase 10 final decision', () => {
+  beforeEach(() => {
+    submitFinalDecision.mockReset();
+    submitFinalDecision.mockResolvedValue(decisionDesk());
+  });
+
+  it('separates the outcomes that close the case from the ones that do not', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    expect(screen.getByText('Keeps the case open')).toBeInTheDocument();
+  });
+
+  it('preselects nothing, and says so instead of greying the button silently', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    for (const option of screen.getAllByRole('radio')) {
+      expect(option).toHaveAttribute('aria-checked', 'false');
+    }
+    expect(screen.getByText('Choose an outcome.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Record final decision/ })).toBeDisabled();
+  });
+
+  it('shows the three limits so the decision is made against the recommendation', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    // Scoped: the case-facts header carries a "Requested limit" of its own, so an unscoped
+    // getByText('$5,000') matches two nodes.
+    const figs = screen.getByText('Recommended').closest('.va-figs') as HTMLElement;
+    expect(within(figs).getByText('$5,000')).toBeInTheDocument();
+    expect(within(figs).getByText('$4,000')).toBeInTheDocument();
+  });
+
+  it('offers the limit box only once approve is chosen, prefilled by the shortcut', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    expect(screen.queryByLabelText(/Approved credit limit/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Approve — standard LOC/ }));
+    expect(screen.getByText('Enter the approved credit limit.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use recommended' }));
+    expect(screen.getByRole('button', { name: /Record final decision/ })).toBeEnabled();
+  });
+
+  it('names an over-recommended approval an exception and demands a reason', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Approve — standard LOC/ }));
+    fireEvent.change(screen.getByLabelText(/Approved credit limit/), {
+      target: { value: '9000' },
+    });
+    expect(screen.getByText('Above the recommended limit')).toBeInTheDocument();
+    expect(screen.getByText('125% over recommended')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Record final decision/ })).toBeDisabled();
+  });
+
+  it('refuses to approve at all when Phase 9 never ran', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk({ risk: null }));
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Approve — standard LOC/ }));
+    expect(screen.getByText(/Phase 9 has not assessed/)).toBeInTheDocument();
+  });
+
+  it('asks which arrangement a deposit is, through a real radiogroup', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Deposit 1:1 \/ Prepaid/ }));
+    // A radiogroup, not three loose radios — arrow keys have to work here like everywhere else.
+    const group = screen.getByRole('radiogroup', { name: 'Arrangement' });
+    expect(within(group).getByRole('radio', { name: 'Deposit 1:1' })).toBeInTheDocument();
+    expect(screen.getByText(/1:1 deposit or a prepaid account/)).toBeInTheDocument();
+  });
+
+  it('blocks a documents hold with nothing outstanding, and offers the way out', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Pending documents/ }));
+    expect(screen.getByText(/Request the missing documents first/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to the current phase/ })).toBeInTheDocument();
+  });
+
+  it('names the phase a documents hold will return to', async () => {
+    getDeskCase.mockResolvedValue(
+      decisionDesk({
+        documents: [
+          {
+            id: 'd1',
+            status: 'requested',
+            docType: 'bank_statement',
+            label: 'Bank statement — March',
+            requestedInPhase: 'p6_credit_banking',
+          },
+        ],
+        rail: [
+          phase({ code: 'p6_credit_banking', label: 'Credit & banking', order: 6 }),
+          phase({ code: 'p10_decision', label: 'Decision', order: 10 }),
+        ],
+      }),
+    );
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Pending documents/ }));
+    const banner = screen
+      .getByText('Returns to Credit & banking once received.')
+      .closest('.va-banner') as HTMLElement;
+    expect(within(banner).getByText('Bank statement — March')).toBeInTheDocument();
+  });
+
+  it('says what Decline + blacklist actually does, and arms before it does it', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Decline \+ blacklist/ }));
+    expect(screen.getByText('This bans the applicant, not just this case')).toBeInTheDocument();
+    expect(screen.getByText(/shared credit-platform ban list/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Confirmed fraud' } });
+    const button = screen.getByRole('button', { name: /Record final decision/ });
+    fireEvent.click(button);
+    // First click arms only — nothing is sent.
+    expect(submitFinalDecision).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /cannot be undone/ })).toBeInTheDocument();
+  });
+
+  it('sends the decision, the limit and the instrument together', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Deposit 1:1 \/ Prepaid/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Deposit 1:1' }));
+    fireEvent.change(screen.getByLabelText(/Secured line amount/), { target: { value: '2000' } });
+    fireEvent.change(screen.getByLabelText(/Reason and conditions/), {
+      target: { value: 'Thin file, deposit agreed' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Record final decision/ }));
+    expect(submitFinalDecision).toHaveBeenCalledWith('vc_ridgevale01', {
+      decision: 'deposit_prepaid',
+      approvedLimit: 2000,
+      note: 'Thin file, deposit agreed',
+      instrument: 'deposit_1_1',
+    });
+  });
+
+  it('warns that a borderline referral does not end the application', async () => {
+    getDeskCase.mockResolvedValue(decisionDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByText('Closes the case');
+    fireEvent.click(screen.getByRole('radio', { name: /Borderline \/ exception/ }));
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Inconsistent figures' } });
+    expect(screen.getByText(/The case stays open/)).toBeInTheDocument();
+  });
+});

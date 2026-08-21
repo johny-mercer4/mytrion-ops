@@ -353,10 +353,41 @@ export function DataTable<T>({
         </TableHead>
         <TableBody>
           {loading ? (
-            <TableMessageRow colSpan={columns.length}>
-              <span className={styles.srOnly}>Loading…</span>
-              <span className={styles.skeletonLine} aria-hidden="true" />
-            </TableMessageRow>
+            /**
+             * `skeletonRows` ROWS, not one message row.
+             *
+             * Card mode has always honoured this prop; table mode drew a single shimmer bar, so a
+             * desktop table's loading state was ~90px tall and then leapt to a full page when the
+             * rows landed — under the reader's cursor. Every caller with a page-sized table was
+             * hand-reserving that height through `scrollerStyle`, which is the caller paying for a
+             * gap in here. Real rows, at the real density, reserve it by construction.
+             *
+             * One `srOnly` announcement for the whole body: N rows of placeholder cells must not be
+             * read out as N "Loading…"s.
+             */
+            <>
+              <TableRow>
+                {/* Zero-height: the announcement is for assistive tech only, and a cell with the
+                    body's normal padding put a ~50px empty band between the header and the first
+                    placeholder row. `srOnly` handles the span; the CELL needs collapsing too. */}
+                <TableCell colSpan={columns.length} style={{ padding: 0, blockSize: 0, border: 0 }}>
+                  <span className={styles.srOnly}>Loading…</span>
+                </TableCell>
+              </TableRow>
+              {Array.from({ length: skeletonRows }, (_, i) => (
+                <TableRow key={`sk-${i}`} aria-hidden="true">
+                  {columns.map((column) => (
+                    <TableCell
+                      key={column.id}
+                      {...(column.numeric ? { numeric: true } : {})}
+                      {...(effectivePriority(column) ? { priority: effectivePriority(column) } : {})}
+                    >
+                      <span className={styles.skeletonLine} />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </>
           ) : rows.length === 0 ? (
             <TableMessageRow colSpan={columns.length}>{empty ?? 'No rows.'}</TableMessageRow>
           ) : (

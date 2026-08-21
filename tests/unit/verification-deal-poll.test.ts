@@ -16,6 +16,9 @@ const createApplicationFromDeal = vi.fn();
 const createInboxMessage = vi.fn();
 const matchBrokerSnapshot = vi.fn();
 const saveRun = vi.fn();
+const pickStage0Assignee = vi.fn();
+const recordAssignment = vi.fn();
+const patchIntake = vi.fn();
 
 vi.mock('../../src/integrations/zohoCrm.js', () => ({
   zohoCrm: { runCoql: (...a: unknown[]) => runCoql(...a) },
@@ -48,6 +51,18 @@ vi.mock('../../src/modules/verification/carrierEnrich.js', () => ({
 vi.mock('../../src/modules/verification/verificationOwner.js', () => ({
   VERIFICATION_CASE_OWNER_NAME: 'Verification',
   resolveVerificationCaseOwnerId: vi.fn().mockResolvedValue('9001'),
+  // A LIST now: the desk has more than one credit agent, and Stage-0 routing rotates between them.
+  resolveVerificationCaseOwnerIds: vi.fn().mockResolvedValue(['9001', '9002']),
+}));
+/** Stage-0 routing and its two writes. Stubbed so the poll loop stays the thing under test. */
+vi.mock('../../src/modules/verification/stage0Routing.js', () => ({
+  pickStage0Assignee: (...a: unknown[]) => pickStage0Assignee(...a),
+}));
+vi.mock('../../src/repos/verificationCaseAssignmentRepo.js', () => ({
+  verificationCaseAssignmentRepo: { record: (...a: unknown[]) => recordAssignment(...a) },
+}));
+vi.mock('../../src/repos/verificationFlowRepo.js', () => ({
+  verificationFlowRepo: { patchIntake: (...a: unknown[]) => patchIntake(...a) },
 }));
 
 const { ingestVerificationDeals } = await import('../../src/modules/verification/zohoDealIngest.js');
@@ -66,6 +81,9 @@ beforeEach(() => {
   createInboxMessage.mockReset().mockResolvedValue({});
   matchBrokerSnapshot.mockReset().mockResolvedValue(null);
   saveRun.mockReset().mockResolvedValue(undefined);
+  pickStage0Assignee.mockReset().mockResolvedValue({ zohoUserId: '9001', name: 'Sarvar Asqarov' });
+  recordAssignment.mockReset().mockResolvedValue({});
+  patchIntake.mockReset().mockResolvedValue(undefined);
 });
 
 describe('duplicate handling', () => {

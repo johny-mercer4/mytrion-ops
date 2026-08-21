@@ -16,6 +16,7 @@ vi.mock('../ctx', () => ({
 
 vi.mock('@/api/touchpoints', () => ({
   logAutomation: logAutomationMock,
+  automationErrorCode: () => 'automation_failed',
 }));
 
 vi.mock('../autoRunners', async (importOriginal) => {
@@ -92,6 +93,10 @@ describe('AutoTab active-run guards', () => {
       submit.click();
     });
     expect(runAutomationMock).toHaveBeenCalledOnce();
+    expect(logAutomationMock).toHaveBeenCalledWith(
+      'efs-login',
+      expect.objectContaining({ phase: 'started', runId: expect.any(String) }),
+    );
 
     const guardedClose = screen.getByRole('button', {
       name: 'Close unavailable while action is running',
@@ -109,6 +114,17 @@ describe('AutoTab active-run guards', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument());
+    expect(logAutomationMock).toHaveBeenLastCalledWith(
+      'efs-login',
+      expect.objectContaining({
+        phase: 'succeeded',
+        runId: expect.any(String),
+        durationMs: expect.any(Number),
+      }),
+    );
+    expect(logAutomationMock.mock.calls[0]?.[1]?.runId).toBe(
+      logAutomationMock.mock.calls[1]?.[1]?.runId,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
   });

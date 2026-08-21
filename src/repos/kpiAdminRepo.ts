@@ -129,6 +129,7 @@ export const kpiAdminRepo = {
         max(reporting_date)::text as "to"
       from kpi_daily_rollups
       where tenant_id = ${ctx.tenantId}
+        and calculation_version = 1
     `);
     return {
       from: rows[0]?.from ? String(rows[0].from) : null,
@@ -157,6 +158,7 @@ export const kpiAdminRepo = {
         join kpi_daily_metric_values v
           on v.tenant_id = r.tenant_id and v.rollup_id = r.id
         where r.tenant_id = ${ctx.tenantId}
+          and r.calculation_version = 1
           and r.reporting_date >= ${from}::date
           and r.reporting_date <= ${to}::date
       ),

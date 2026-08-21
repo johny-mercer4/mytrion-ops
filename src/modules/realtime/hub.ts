@@ -262,11 +262,32 @@ export const realtimeHub = {
  * traffic in particular, since a per-message inbox event would put every conversation in
  * the company on one topic.
  */
+/**
+ * The inbox frame, as it goes on the wire — the CRM's `OctaneInboxEvent` verbatim.
+ *
+ * It exists because the parameter below used to be typed `{ ownerKind, ownerId }`, which is only the
+ * part this function READS. Every caller passes the whole frame, and every caller got away with it by
+ * passing a variable: TypeScript's excess-property check fires on object LITERALS only. The one call
+ * site that passed a literal — `verification/caseNotify.ts` — therefore failed to compile, so
+ * `tsc -p tsconfig.build.json` failed, so the API could not be built at all while `tsx` ran it fine
+ * in dev. Naming the real shape here checks all five call sites against one definition.
+ */
+export interface RealtimeInboxEvent {
+  id: string;
+  type: string;
+  tag: string | null;
+  ownerKind: 'worker' | 'client';
+  ownerId: string;
+  title: string;
+  detail: string | null;
+  priority: string;
+  readAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function publishInboxEvent(
-  event: {
-    ownerKind: 'worker' | 'client';
-    ownerId: string;
-  },
+  event: RealtimeInboxEvent,
   opts?: { firehose?: boolean },
 ): number {
   const own = realtimeHub.publish(inboxTopicFor(event.ownerKind, event.ownerId), event);

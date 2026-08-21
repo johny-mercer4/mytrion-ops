@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   postKpiActivity,
   postKpiPresence,
@@ -34,7 +34,7 @@ async function flushActivity(): Promise<void> {
 
 export function emitKpiActivity(
   eventName: KpiActivityName,
-  detail: Pick<KpiActivityEvent, 'entityType' | 'entityId' | 'outcome'> = {},
+  detail: Pick<KpiActivityEvent, 'entityType' | 'entityId' | 'outcome' | 'metadata'> = {},
 ): void {
   activityQueue.push({
     clientEventId: eventId(),
@@ -44,6 +44,35 @@ export function emitKpiActivity(
     ...detail,
   });
   if (!activityTimer) activityTimer = setTimeout(() => void flushActivity(), 750);
+}
+
+/** Reports one settled, non-empty search without ever sending the query itself. */
+export function useKpiSearchCompleted(
+  surface: string,
+  query: string,
+  resultCount: number,
+  settled = true,
+): void {
+  const lastReported = useRef('');
+  useEffect(() => {
+    const normalized = query.trim();
+    if (!settled || !normalized) {
+      if (!normalized) lastReported.current = '';
+      return;
+    }
+    const fingerprint = `${normalized}\u0000${resultCount > 0 ? 'nonzero' : 'zero'}`;
+    if (lastReported.current === fingerprint) return;
+    const timer = window.setTimeout(() => {
+      lastReported.current = fingerprint;
+      emitKpiActivity('ui.search_completed', {
+        entityType: 'search',
+        entityId: surface,
+        outcome: 'success',
+        metadata: { resultState: resultCount > 0 ? 'nonzero' : 'zero' },
+      });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [surface, query, resultCount, settled]);
 }
 
 async function sendPresence(state: 'active' | 'idle' | 'hidden' | 'ended'): Promise<void> {

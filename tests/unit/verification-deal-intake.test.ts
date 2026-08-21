@@ -25,7 +25,6 @@ const { createApplicationFromDeal, inferApplicantType } = await import(
 );
 
 const ctx = { tenantId: DEFAULT_TENANT_ID, userId: 'system', audience: 'internal', role: 'admin' } as TenantContext;
-const FALLBACK = { fallbackOwnerZohoUserId: 'desk-owner', fallbackOwnerName: 'Verification' };
 
 beforeEach(() => {
   insertMock.mockReset().mockResolvedValue({ id: 'vc_1', applicantType: null });
@@ -85,14 +84,14 @@ describe('the fuel-card count comes off the Deal', () => {
   it('carries Cards_Requested onto the case', async () => {
     // Populated on every live Deal and never read, so "Number of fuel cards requested" sat on
     // EVERY case's missing list and the roster showed a dash.
-    await createApplicationFromDeal(ctx, deal({ cardsRequested: '5' }), FALLBACK);
+    await createApplicationFromDeal(ctx, deal({ cardsRequested: '5' }));
     expect((insertMock.mock.calls[0]?.[1] as Record<string, unknown>).fuelCardsRequested).toBe(5);
   });
 
   it('treats a blank or zero count as no information, not a request for zero', async () => {
     for (const value of ['', '0', 'n/a', undefined]) {
       insertMock.mockClear();
-      await createApplicationFromDeal(ctx, deal({ cardsRequested: value }), FALLBACK);
+      await createApplicationFromDeal(ctx, deal({ cardsRequested: value }));
       expect(
         (insertMock.mock.calls[0]?.[1] as Record<string, unknown>).fuelCardsRequested,
         String(value),
@@ -104,8 +103,7 @@ describe('the fuel-card count comes off the Deal', () => {
     await createApplicationFromDeal(
       ctx,
       deal({ email: '', secondaryEmail: 'ops@blueridge.test', phone: '', cell: '', alternativeContact: '6145550110' }),
-      FALLBACK,
-    );
+        );
     const row = insertMock.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(row.email).toBe('ops@blueridge.test');
     expect(row.phone).toBe('6145550110');
@@ -114,7 +112,7 @@ describe('the fuel-card count comes off the Deal', () => {
 
 describe('creating an application from a deal', () => {
   it('lands RED, at phase 1, from the deal origin', async () => {
-    await createApplicationFromDeal(ctx, deal({ mc: '1234567' }), FALLBACK);
+    await createApplicationFromDeal(ctx, deal({ mc: '1234567' }));
     const row = insertMock.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(row.verificationProcess).toBe(false);
     expect(row.phaseCode).toBe('p1_intake');
@@ -124,25 +122,36 @@ describe('creating an application from a deal', () => {
   });
 
   it('gives the application to the DEAL owner, which is what makes Sales able to see it', async () => {
-    await createApplicationFromDeal(ctx, deal(), FALLBACK);
+    await createApplicationFromDeal(ctx, deal());
     const row = insertMock.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(row.ownerZohoUserId).toBe('zoho-42');
     expect(row.zohoOwnerId).toBe('zoho-42');
     expect(row.ownerName).toBe('Dana Reed');
   });
 
-  it('still creates an unowned deal, but does not invent a Sales owner for it', async () => {
-    await createApplicationFromDeal(ctx, deal({ zohoOwnerId: '', zohoOwnerName: '' }), FALLBACK);
+  /**
+   * The credit-agent fallback is GONE, and that is the fix rather than a simplification.
+   *
+   * `owner_zoho_user_id` is ORed into the Sales list scope (`salesOwnership`) AND into the Sales write
+   * gate (`assertSalesMayEdit`), so parking the configured credit agent there put other people's
+   * applications in that agent's own Sales Verification tab with edit rights attached. The desk's
+   * assignee has its own columns now, written by Stage-0 routing.
+   */
+  it('leaves BOTH Sales owner columns empty on an unowned deal, naming no credit agent', async () => {
+    await createApplicationFromDeal(ctx, deal({ zohoOwnerId: '', zohoOwnerName: '' }));
     const row = insertMock.mock.calls[0]?.[1] as Record<string, unknown>;
-    // Owned by the desk so the NOT NULL column is satisfied and the row is not orphaned...
-    expect(row.ownerZohoUserId).toBe('desk-owner');
-    // ...but zohoOwnerId stays null, so the Sales list does not claim an agent who does not exist.
+    // NOT NULL columns, so empty string rather than null — `salesOwnerName` reads a blank as absent.
+    expect(row.ownerZohoUserId).toBe('');
+    expect(row.ownerName).toBe('');
+    // And zohoOwnerId stays null, so the Sales list does not claim an agent who does not exist.
     expect(row.zohoOwnerId).toBeNull();
+    // Nothing here assigns a credit agent: that is Stage-0 routing's job, after the row exists.
+    expect(row.verificationOwnerZohoUserId).toBeUndefined();
   });
 
   it('seeds all ten phases, marking the carrier-only ones skipped for an owner-operator', async () => {
     insertMock.mockResolvedValue({ id: 'vc_1', applicantType: 'owner_operator' });
-    await createApplicationFromDeal(ctx, deal({ companyName: 'Ray Diaz', mc: '', dot: '' }), FALLBACK);
+    await createApplicationFromDeal(ctx, deal({ companyName: 'Ray Diaz', mc: '', dot: '' }));
     // No confident signal → applicantType null → the carrier phases are still seeded as applicable,
     // because we do not yet know they do not apply.
     const phases = seedPhasesMock.mock.calls[0]?.[2] as Array<{ phaseCode: string; status: string }>;
@@ -151,7 +160,7 @@ describe('creating an application from a deal', () => {
   });
 
   it('marks phases 4 and 8 skipped when the deal is clearly a company', async () => {
-    await createApplicationFromDeal(ctx, deal(), FALLBACK);
+    await createApplicationFromDeal(ctx, deal());
     const phases = seedPhasesMock.mock.calls[0]?.[2] as Array<{ phaseCode: string; status: string }>;
     const byCode = new Map(phases.map((p) => [p.phaseCode, p.status]));
     expect(byCode.get('p4_authority')).toBe('skipped');
@@ -160,21 +169,21 @@ describe('creating an application from a deal', () => {
   });
 
   it('computes the missing list immediately, so the red card is not empty', async () => {
-    await createApplicationFromDeal(ctx, deal(), FALLBACK);
+    await createApplicationFromDeal(ctx, deal());
     expect(refreshGateMock).toHaveBeenCalledWith(ctx, 'vc_1');
   });
 
   it('keeps the application when the gate refresh fails rather than losing the deal', async () => {
     refreshGateMock.mockRejectedValue(new Error('db down'));
-    await expect(createApplicationFromDeal(ctx, deal(), FALLBACK)).resolves.toMatchObject({ id: 'vc_1' });
+    await expect(createApplicationFromDeal(ctx, deal())).resolves.toMatchObject({ id: 'vc_1' });
   });
 
   it('reads a truck count out of free text, and treats nonsense as no information', async () => {
-    await createApplicationFromDeal(ctx, deal({ truckCount: '12 trucks' }), FALLBACK);
+    await createApplicationFromDeal(ctx, deal({ truckCount: '12 trucks' }));
     expect((insertMock.mock.calls[0]?.[1] as Record<string, unknown>).trucksCount).toBe(12);
 
     insertMock.mockClear();
-    await createApplicationFromDeal(ctx, deal({ truckCount: 'a few' }), FALLBACK);
+    await createApplicationFromDeal(ctx, deal({ truckCount: 'a few' }));
     // Not 0 — zero trucks is a claim, and "a few" is not one.
     expect((insertMock.mock.calls[0]?.[1] as Record<string, unknown>).trucksCount).toBeNull();
   });

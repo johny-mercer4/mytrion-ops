@@ -91,6 +91,24 @@ describe('the verification agent', () => {
     expect(verificationOwnerName(OWNED_BY_SALES, DESK)).not.toBe('Robert Toms');
   });
 
+  /**
+   * Stage-0 routing writes a REAL per-case assignee, and it outranks everything else.
+   *
+   * Before it existed the desk chip printed the tenant's one configured credit agent on every case
+   * alike, because there was no finer truth to read. Now there is, and a case routed to the second
+   * credit agent must say so — otherwise the rotation is invisible to the desk it is rotating.
+   */
+  it('prefers the routed credit agent over the desk fallback', () => {
+    const routed = {
+      ...OWNED_BY_SALES,
+      verificationOwnerZohoUserId: '980006',
+      verificationOwnerName: 'Nodira Yusupova',
+    };
+    expect(verificationOwnerName(routed, DESK)).toBe('Nodira Yusupova');
+    // And a blank routed name is absent, not an empty label — fall through, never print nothing.
+    expect(verificationOwnerName({ ...routed, verificationOwnerName: '  ' }, DESK)).toBe(DESK);
+  });
+
   it('excludes the Sales agent by NAME too, not only by id', () => {
     // One of the two ids missing must not be enough to leak the Sales name through.
     expect(verificationOwnerName({ ownerName: 'Robert Toms', zohoOwnerName: 'Robert Toms' }, DESK)).toBe(DESK);

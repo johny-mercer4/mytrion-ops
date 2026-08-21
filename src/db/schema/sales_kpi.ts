@@ -272,6 +272,13 @@ export const kpiPresenceEvents = pgTable(
       table.sessionId,
       table.receivedAt,
     ),
+    tenantTimeIdx: index('kpi_presence_events_tenant_time_idx').on(
+      table.tenantId,
+      table.receivedAt,
+      table.workerId,
+      table.sessionId,
+      table.id,
+    ),
   }),
 );
 

@@ -258,6 +258,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
         ...callerIdentitySchema.shape,
         lookback_days: z.coerce.number().int().min(3).max(365).optional(),
         limit: z.coerce.number().int().min(1).max(2000).optional(),
+        days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(31).optional(),
       })
       .parse(request.body ?? {});
     const ctx = await buildCallerContext(request, body);
@@ -268,6 +269,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
     const payload: Record<string, unknown> = {};
     if (body.lookback_days !== undefined) payload.lookbackDays = body.lookback_days;
     if (body.limit !== undefined) payload.limit = body.limit;
+    if (body.days !== undefined) payload.days = body.days;
 
     const result = await triggerCatalogJob(params.name, payload);
     await auditFromContext(ctx, {

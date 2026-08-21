@@ -20,6 +20,26 @@
   flex: 1;
   display: flex;
   min-height: 0;
+  /* Clipping here is what keeps the DOCUMENT from scrolling.
+     `.center` inside is the one scroll container, but without this the row's own scrollable-overflow
+     region still extended past its border box, so `.shell`, the app root and finally the document
+     inherited it. Measured on the Verification case detail in a 568px viewport: both children were
+     504px tall while this box reported scrollHeight 995, and the document scrolled the 491px
+     difference — which slid the whole app up and exposed `html`'s background as a grey slab under
+     the content. The 995 was there before any of the scroll work, at every viewport size; a tall
+     page is simply what made it visible. */
+  /* `clip`, NOT `hidden`. `hidden` stops the scrollBAR but still makes this box a scroll CONTAINER,
+     so anything that programmatically scrolls it — most easily a `focus()` on an absolutely
+     positioned descendant that escaped its own ancestor and resolved against this box — still slid
+     the whole app up, with no scrollbar left to scroll back. That is exactly what the Verification
+     desk's hidden file input did on every click of "Attach a file", and the drop grew by one row per
+     document already attached. Its own anchor is fixed at the source; `clip` is what stops the next
+     escapee doing it again — `hub/hubDialog.css`'s reward-grid input was a second, live instance,
+     found and anchored at the same time.
+     `.body` is `display: flex`, so the block formatting context `hidden` created is not load-bearing
+     here, and `clip` adds no stacking context — which the `.body` guard in breakpoints.test.ts is
+     there to protect. */
+  overflow: clip;
 }
 
 /* Absolute rather than the global .hzMesh utility, which is position: fixed and would therefore
