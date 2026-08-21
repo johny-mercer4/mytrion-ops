@@ -9,6 +9,8 @@ import {
   fmcsaRows,
   flattenFields,
   motusPrefill,
+  brokerPrefill,
+  brokerSnapshotTitle,
 } from './caseDataCenterModel';
 
 function row(over: Partial<FmcsaCarrierRow> = {}): FmcsaCarrierRow {
@@ -110,6 +112,41 @@ describe('motusPrefill', () => {
       q: 'Stone Express',
     });
     expect(motusPrefill({ mc: '307348' })).toEqual({ by: 'dot', q: '' });
+  });
+});
+
+describe('brokerPrefill', () => {
+  it('uses USDOT or the person name, never MC', () => {
+    expect(brokerPrefill({ dot: '8844425', mc: '307348', companyName: 'Stone', firstName: 'Ada', lastName: 'Cole' })).toEqual({
+      by: 'dot',
+      q: '8844425',
+    });
+    expect(brokerPrefill({ mc: '307348', firstName: 'Ada', lastName: 'Cole', companyName: 'Stone Express' })).toEqual({
+      by: 'name',
+      q: 'Ada Cole',
+    });
+    expect(brokerPrefill({ mc: '307348', companyName: 'Stone Express' })).toEqual({
+      by: 'name',
+      q: 'Stone Express',
+    });
+    expect(brokerPrefill({ mc: '307348' })).toEqual({ by: 'dot', q: '' });
+  });
+
+  it('names the owner, not a missing legal name', () => {
+    expect(brokerSnapshotTitle({
+      id: '1',
+      dotNumber: '8844425',
+      ownerFullName: 'Abdirehin Ahmed',
+      phoneNumber: null,
+      email: null,
+      physicalAddress: null,
+      operatingStatus: null,
+      powerUnits: null,
+      truckSize: null,
+      addDate: null,
+      changeDate: null,
+      isActive: true,
+    })).toBe('Abdirehin Ahmed');
   });
 });
 

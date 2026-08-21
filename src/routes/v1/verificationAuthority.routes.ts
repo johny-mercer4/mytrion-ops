@@ -1,7 +1,7 @@
 /**
  * The two CARRIER-ONLY phase surfaces — Phase 4's authority lookup and Phase 8's Highway review —
- * plus the Data Center FMCSA (QCMobile) and Motus (Socrata) searches, which read the same
- * sources without writing findings.
+ * plus the Data Center FMCSA (QCMobile), Motus (Socrata), and Broker Snapshot (DWH)
+ * searches, which read the same sources without writing findings.
  *
  * Both writes belong to the phases that apply to carriers alone, and both were kept out of
  * `verificationFlow.routes.ts` because that file already sits over the house 600-line cap and cannot
@@ -17,6 +17,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { lookupFmcsaCarrier } from '../../integrations/fmcsaQcMobile.js';
+import { searchBrokerSnapshot } from '../../modules/verificationFlow/brokerSnapshotSearch.js';
 import { searchMotus } from '../../modules/verificationFlow/motusSearch.js';
 import { deskService } from '../../modules/verificationFlow/deskService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -43,6 +44,12 @@ const fmcsaSearchQuery = z.object({
 
 /** USDOT and legal name only — insurance / BOC-3 have no MC or name client. */
 const motusSearchQuery = z.object({
+  by: z.enum(['dot', 'name']),
+  q: z.string().trim().min(1).max(160),
+});
+
+/** USDOT and owner name only — `stg_broker_snapshot` has no MC column. */
+const brokerSnapshotSearchQuery = z.object({
   by: z.enum(['dot', 'name']),
   q: z.string().trim().min(1).max(160),
 });
@@ -102,6 +109,17 @@ export async function verificationAuthorityRoutes(app: FastifyInstance): Promise
   app.get('/verification/flow/motus/search', auth, async (request) => {
     requireVerificationRead(request);
     return searchMotus(motusSearchQuery.parse(request.query));
+  });
+
+  /**
+   * Live DWH lookup for the Broker Snapshot Data Center tab.
+   *
+   * READ-ONLY. USDOT is exact `dot_number`; name is a prefix on `owner_full_name`.
+   * Always 200 with `{ available, error, ... }` — a missing DWH URL is "could not read".
+   */
+  app.get('/verification/flow/broker-snapshot/search', auth, async (request) => {
+    requireVerificationRead(request);
+    return searchBrokerSnapshot(brokerSnapshotSearchQuery.parse(request.query));
   });
 
   /**

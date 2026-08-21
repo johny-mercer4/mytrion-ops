@@ -94,12 +94,12 @@ function tabsFor(
   {
     id: 'data-center',
     label: 'Data Center',
-    description: 'Search FMCSA (QCMobile) and Motus (Socrata) without writing the case.',
+    description: 'Search FMCSA, Motus, and the broker snapshot without writing the case.',
     icon: Database,
     tone: 'var(--tone-sky)',
     group: 'Queue',
     hideKicker: true,
-    keywords: ['data center', 'fmcsa', 'qcmobile', 'motus', 'socrata', 'usdot', 'dot', 'mc', 'carrier', 'authority', 'lookup', 'insurance'],
+    keywords: ['data center', 'fmcsa', 'qcmobile', 'motus', 'socrata', 'broker', 'snapshot', 'usdot', 'dot', 'mc', 'carrier', 'authority', 'lookup', 'insurance'],
     content: (
       <CaseDataCenter
         caseRow={fmcsaPrefillFromSearch(typeof window === 'undefined' ? '' : window.location.search)}

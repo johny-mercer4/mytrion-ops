@@ -1,9 +1,9 @@
 /**
- * Data Center — live vendor search (FMCSA QCMobile + Motus / Socrata).
+ * Data Center — live vendor search (FMCSA QCMobile + Motus / Socrata + DWH snapshot).
  *
  * Workspace tab and the open-case chrome both render this. `caseRow` is optional: standalone
  * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
- * not auto-run. Broker snapshot / Blacklist / CITI Fuel stay Soon.
+ * not auto-run. Blacklist / CITI Fuel stay Soon.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  */
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -22,6 +22,15 @@ import {
   type MotusSearchResult,
 } from '@/api/verificationMotus';
 import {
+  searchBrokerSnapshot,
+  type BrokerSnapshotSearchBy,
+  type BrokerSnapshotSearchResult,
+} from '@/api/verificationBrokerSnapshot';
+import {
+  brokerPrefill,
+  brokerSnapshotFacts,
+  brokerSnapshotTitle,
+  brokerStatusVerdict,
   fmcsaCarrierTitle,
   fmcsaCityState,
   fmcsaDetailFacts,
@@ -38,12 +47,12 @@ import {
 } from './caseDataCenterModel';
 import './caseDataCenter.css';
 
-type Source = 'fmcsa' | 'motus';
+type Source = 'fmcsa' | 'motus' | 'broker';
 
 const SOURCES: TabItem[] = [
   { value: 'fmcsa', label: 'FMCSA' },
   { value: 'motus', label: 'Motus' },
-  { value: 'broker', label: 'Broker snapshot', disabled: true, title: 'Soon' },
+  { value: 'broker', label: 'Broker snapshot' },
   { value: 'blacklist', label: 'Blacklist', disabled: true, title: 'Soon' },
   { value: 'citi', label: 'CITI Fuel', disabled: true, title: 'Soon' },
 ];
@@ -70,6 +79,16 @@ const MOTUS_PLACEHOLDER: Record<MotusSearchBy, string> = {
   name: 'Legal name',
 };
 
+const BROKER_KEYS: TabItem[] = [
+  { value: 'dot', label: 'USDOT' },
+  { value: 'name', label: 'Name' },
+];
+
+const BROKER_PLACEHOLDER: Record<BrokerSnapshotSearchBy, string> = {
+  dot: 'USDOT',
+  name: 'Owner name',
+};
+
 const STATUS_INTENT: Record<FmcsaStatusVerdict, BadgeIntent> = {
   active: 'success',
   inactive: 'danger',
@@ -91,21 +110,29 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const [error, setError] = useState<string | null>(null);
   const [fmcsa, setFmcsa] = useState<FmcsaSearchResult | null>(null);
   const [motus, setMotus] = useState<MotusSearchResult | null>(null);
+  const [broker, setBroker] = useState<BrokerSnapshotSearchResult | null>(null);
   const req = useRef(0);
   const keysId = useId();
   const motusBy: MotusSearchBy = by === 'name' ? 'name' : 'dot';
+  const brokerBy: BrokerSnapshotSearchBy = by === 'name' ? 'name' : 'dot';
 
   useEffect(() => {
-    const next = source === 'motus' ? motusPrefill(caseRow ?? {}) : fmcsaPrefill(caseRow ?? {});
+    const next =
+      source === 'motus'
+        ? motusPrefill(caseRow ?? {})
+        : source === 'broker'
+          ? brokerPrefill(caseRow ?? {})
+          : fmcsaPrefill(caseRow ?? {});
     setBy(next.by);
     setQ(next.q);
     setFmcsa(null);
     setMotus(null);
+    setBroker(null);
     setError(null);
   }, [source, seed.by, seed.q]);
 
   const changeSource = (next: string): void => {
-    if (next === 'fmcsa' || next === 'motus') setSource(next);
+    if (next === 'fmcsa' || next === 'motus' || next === 'broker') setSource(next);
   };
 
   const submit = (event: FormEvent): void => {
@@ -116,22 +143,32 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
     setBusy(true);
     setError(null);
     const run =
-      source === 'motus'
-        ? searchMotus({ by: motusBy, q: value }).then((next) => {
+      source === 'broker'
+        ? searchBrokerSnapshot({ by: brokerBy, q: value }).then((next) => {
             if (id !== req.current) return;
-            setMotus(next);
+            setBroker(next);
             setFmcsa(null);
-          })
-        : searchFmcsa({ by, q: value }).then((next) => {
-            if (id !== req.current) return;
-            setFmcsa(next);
             setMotus(null);
-          });
+          })
+        : source === 'motus'
+          ? searchMotus({ by: motusBy, q: value }).then((next) => {
+              if (id !== req.current) return;
+              setMotus(next);
+              setFmcsa(null);
+              setBroker(null);
+            })
+          : searchFmcsa({ by, q: value }).then((next) => {
+              if (id !== req.current) return;
+              setFmcsa(next);
+              setMotus(null);
+              setBroker(null);
+            });
     void run
       .catch((err: unknown) => {
         if (id !== req.current) return;
         setFmcsa(null);
         setMotus(null);
+        setBroker(null);
         setError(err instanceof Error ? err.message : 'Search did not answer.');
       })
       .finally(() => {
@@ -146,13 +183,27 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
       ? fmcsa.error ?? 'FMCSA did not answer.'
       : source === 'motus' && motus && !motus.available
         ? motus.error ?? 'Socrata did not answer.'
-        : null);
+        : source === 'broker' && broker && !broker.available
+          ? broker.error ?? 'Warehouse did not answer.'
+          : null);
   const empty =
     source === 'fmcsa'
       ? Boolean(fmcsa?.available && fmcsa.notFound && fmcsaRowsList.length === 0)
-      : Boolean(motus?.available && motus.notFound);
-  const placeholder = source === 'motus' ? MOTUS_PLACEHOLDER[motusBy] : FMCSA_PLACEHOLDER[by];
-  const keyValue = source === 'motus' ? motusBy : by;
+      : source === 'motus'
+        ? Boolean(motus?.available && motus.notFound)
+        : Boolean(broker?.available && broker.notFound);
+  const placeholder =
+    source === 'broker'
+      ? BROKER_PLACEHOLDER[brokerBy]
+      : source === 'motus'
+        ? MOTUS_PLACEHOLDER[motusBy]
+        : FMCSA_PLACEHOLDER[by];
+  const keyValue = source === 'broker' ? brokerBy : source === 'motus' ? motusBy : by;
+  const keyItems = source === 'broker' ? BROKER_KEYS : source === 'motus' ? MOTUS_KEYS : FMCSA_KEYS;
+  const keyLabel =
+    source === 'broker' ? 'Snapshot key' : source === 'motus' ? 'Socrata key' : 'QCMobile key';
+  const searching =
+    source === 'broker' ? 'Searching snapshot' : source === 'motus' ? 'Searching Motus' : 'Searching FMCSA';
 
   return (
     <div className="va-dc">
@@ -170,13 +221,13 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         <form className="va-dc-form" onSubmit={submit}>
           <Tabs
             className="va-dc-keys"
-            items={source === 'motus' ? MOTUS_KEYS : FMCSA_KEYS}
+            items={keyItems}
             value={keyValue}
             onValueChange={(next) => setBy(next as FmcsaSearchBy)}
             variant="pill"
             size="sm"
             idBase={keysId}
-            aria-label={source === 'motus' ? 'Socrata key' : 'QCMobile key'}
+            aria-label={keyLabel}
           />
           <Input
             className="va-dc-q"
@@ -201,10 +252,16 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ) : null}
         {empty ? (
           <p className="va-dc-status" role="status">
-            {source === 'motus' ? 'No carrier in the census.' : 'No carrier in the register.'}
+            {source === 'broker'
+              ? 'No carrier in the snapshot.'
+              : source === 'motus'
+                ? 'No carrier in the census.'
+                : 'No carrier in the register.'}
           </p>
         ) : null}
-        {busy && fmcsa === null && motus === null ? <ResultsSkeleton label={source === 'motus' ? 'Searching Motus' : 'Searching FMCSA'} /> : null}
+        {busy && fmcsa === null && motus === null && broker === null ? (
+          <ResultsSkeleton label={searching} />
+        ) : null}
         {source === 'fmcsa' && fmcsaRowsList.length > 0 ? (
           <FmcsaResults
             rows={fmcsaRowsList}
@@ -213,6 +270,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
           />
         ) : null}
         {source === 'motus' && motus?.available ? <MotusResults result={motus} /> : null}
+        {source === 'broker' && broker?.available ? <BrokerResults result={broker} /> : null}
       </div>
     </div>
   );
@@ -330,6 +388,31 @@ function MotusResults({ result }: { result: MotusSearchResult }) {
           ))}
         </FrozenBlock>
       ) : null}
+    </div>
+  );
+}
+
+function BrokerResults({ result }: { result: BrokerSnapshotSearchResult }) {
+  const rows = result.records;
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="va-dc-list">
+      <p className="va-dc-meta" role="status">
+        {rows.length === 1 ? '1 carrier' : `${rows.length} carriers`}
+        {result.matchedOn === 'name' ? ' · by name' : result.matchedOn === 'dot' ? ' · by USDOT' : ''}
+        {result.truncated ? ' · first 25 — refine the name' : ''}
+      </p>
+      {rows.map((row) => (
+        <ExpandRow
+          key={row.id}
+          title={brokerSnapshotTitle(row)}
+          facts={[row.dotNumber ? `USDOT ${row.dotNumber}` : null, row.phoneNumber]}
+          badge={row.operatingStatus ?? 'Unknown'}
+          badgeIntent={STATUS_INTENT[brokerStatusVerdict(row.operatingStatus)]}
+          details={brokerSnapshotFacts(row)}
+        />
+      ))}
     </div>
   );
 }

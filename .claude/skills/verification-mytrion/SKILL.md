@@ -125,7 +125,7 @@ Declared in `verificationTabs.ts` (undeclared = invisible to non-admins):
 | **Existing clients** | Read-only `octane.dim_company` roster (`/v1/verification/roster*`) |
 | **Tickets** | `soon: true` — not mounted |
 
-**Data Center.** First-class desk tab, not Sales Verification and not Telegram-only. Live `GET /v1/verification/flow/fmcsa/search?by=dot|mc|name&q=` wraps `lookupFmcsaCarrier` with one QCMobile key. Live `GET /v1/verification/flow/motus/search?by=dot|name&q=` is Motus: the four free Socrata placements (`socrata.census` / `socrata.census.name` / `socrata.insurance` / `socrata.process_agents`). USDOT fans out census + frozen insurance + BOC-3; name is census only — there is no MC or VIN client. Both routes return the full vendor row on `fields` plus a typed summary; the UI row is name / DOT / MC / status and expand lists remaining keys (null/empty skipped). Prefills USDOT → MC → name from an open case or from the query (Motus skips MC); does not auto-run; does not write findings (Phase 4 `authority/run` still does that). Broker snapshot / Blacklist / CITI Fuel stay Soon. The record chrome is the same component; a failed case GET hides only that chrome, not the workspace tab.
+**Data Center.** First-class desk tab, not Sales Verification and not Telegram-only. Live `GET /v1/verification/flow/fmcsa/search?by=dot|mc|name&q=` wraps `lookupFmcsaCarrier` with one QCMobile key. Live `GET /v1/verification/flow/motus/search?by=dot|name&q=` is Motus: the four free Socrata placements (`socrata.census` / `socrata.census.name` / `socrata.insurance` / `socrata.process_agents`). USDOT fans out census + frozen insurance + BOC-3; name is census only — there is no MC or VIN client. Live `GET /v1/verification/flow/broker-snapshot/search?by=dot|name&q=` is our DWH `public.stg_broker_snapshot` (17 columns, no MC). USDOT is exact `dot_number`; name is a prefix on `owner_full_name` (a person, not a legal name) with min 3 chars and LIMIT 25. All three return the full vendor/warehouse row on `fields` plus a typed summary; the UI row is name / DOT / MC / status (snapshot has no MC) and expand lists remaining keys (null/empty skipped). Prefills USDOT → MC → name from an open case or from the query (Motus and Broker Snapshot skip MC; snapshot prefers the person name); does not auto-run; does not write findings (Phase 4 `authority/run` still does that). Blacklist / CITI Fuel stay Soon. The record chrome is the same component; a failed case GET hides only that chrome, not the workspace tab.
 
 Legacy “Verification cases” / “Decision rules” stay on disk and **undeclared** while `legacyDesk.ts` is off.
 
@@ -206,7 +206,7 @@ Code `FINAL_DECISIONS`: `approve` (limit required; note required if **above** re
 - Treat a skip as a pass. Treat a failed ban-list probe as a clear.
 - Silently “fix” SOP vs code in product code unless the skill itself was simply wrong.
 - Add a Salesforce TARGET.md / pack from this skill.
-- Write Data Center FMCSA or Motus hits onto the case. Search is view-only; Phase 4 Run still stores the register.
+- Write Data Center FMCSA, Motus, or Broker Snapshot hits onto the case. Search is view-only; Phase 4 Run still stores the register.
 
 ## Keep in sync
 

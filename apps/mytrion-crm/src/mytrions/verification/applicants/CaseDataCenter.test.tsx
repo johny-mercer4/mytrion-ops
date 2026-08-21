@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FmcsaSearchResult } from '@/api/verificationFmcsa';
 import type { MotusSearchResult } from '@/api/verificationMotus';
+import type { BrokerSnapshotSearchResult } from '@/api/verificationBrokerSnapshot';
 
 const searchFmcsa = vi.fn();
 const searchMotus = vi.fn();
+const searchBrokerSnapshot = vi.fn();
 vi.mock('@/api/verificationFmcsa', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFmcsa')>();
   return { ...actual, searchFmcsa };
@@ -12,6 +14,10 @@ vi.mock('@/api/verificationFmcsa', async (importOriginal) => {
 vi.mock('@/api/verificationMotus', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationMotus')>();
   return { ...actual, searchMotus };
+});
+vi.mock('@/api/verificationBrokerSnapshot', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/verificationBrokerSnapshot')>();
+  return { ...actual, searchBrokerSnapshot };
 });
 
 const { CaseDataCenter } = await import('./CaseDataCenter');
@@ -79,11 +85,41 @@ function motusHit(over: Partial<MotusSearchResult> = {}): MotusSearchResult {
   };
 }
 
+function brokerHit(over: Partial<BrokerSnapshotSearchResult> = {}): BrokerSnapshotSearchResult {
+  return {
+    available: true,
+    error: null,
+    matchedOn: 'dot',
+    notFound: false,
+    truncated: false,
+    records: [
+      {
+        id: '16079457811075937970',
+        dotNumber: '8844425',
+        ownerFullName: 'Abdirehin Ahmed',
+        phoneNumber: '6145550110',
+        email: 'owner@example.com',
+        physicalAddress: '1 Main St',
+        operatingStatus: 'AUTHORIZED FOR PROPERTY',
+        powerUnits: 3,
+        truckSize: 2,
+        addDate: '2024-01-15',
+        changeDate: '2026-08-01',
+        isActive: true,
+        fields: { row_hash: 'abc', email: 'owner@example.com', sk: '542539' },
+      },
+    ],
+    ...over,
+  };
+}
+
 beforeEach(() => {
   searchFmcsa.mockReset();
   searchMotus.mockReset();
+  searchBrokerSnapshot.mockReset();
   searchFmcsa.mockResolvedValue(hit());
   searchMotus.mockResolvedValue(motusHit());
+  searchBrokerSnapshot.mockResolvedValue(brokerHit());
 });
 
 describe('CaseDataCenter FMCSA search', () => {
@@ -141,11 +177,13 @@ describe('CaseDataCenter FMCSA search', () => {
     expect(screen.getByText('12')).toBeInTheDocument();
   });
 
-  it('lists remaining sources as Soon and keeps Motus live', () => {
+  it('lists remaining sources as Soon and keeps Motus and Broker snapshot live', () => {
     render(<CaseDataCenter caseRow={{}} />);
     expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Motus' })).not.toHaveAttribute('aria-disabled');
-    expect(screen.getByRole('tab', { name: 'Broker snapshot' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('tab', { name: 'Broker snapshot' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('tab', { name: 'Blacklist' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('tab', { name: 'CITI Fuel' })).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
     expect(screen.getByRole('tab', { name: 'Motus' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -213,5 +251,57 @@ describe('CaseDataCenter Motus search', () => {
     fireEvent.click(toggle);
     expect(screen.getByText('email_address')).toBeInTheDocument();
     expect(screen.getByText('dispatch@stone.example')).toBeInTheDocument();
+  });
+});
+
+describe('CaseDataCenter Broker snapshot search', () => {
+  it('prefills USDOT and searches the snapshot on that key', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '8844425', mc: '307348', firstName: 'Ada', lastName: 'Cole' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Broker snapshot' }));
+    expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('8844425');
+    expect(screen.queryByRole('tab', { name: 'MC' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(searchBrokerSnapshot).toHaveBeenCalledWith({ by: 'dot', q: '8844425' }));
+    expect(await screen.findByText('Abdirehin Ahmed')).toBeInTheDocument();
+    expect(screen.getByText('USDOT 8844425')).toBeInTheDocument();
+  });
+
+  it('searches by owner name on Enter', async () => {
+    render(<CaseDataCenter caseRow={{ firstName: 'Ada', lastName: 'Cole' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Broker snapshot' }));
+    fireEvent.submit(screen.getByRole('searchbox', { name: 'Owner name' }).closest('form')!);
+    await waitFor(() => expect(searchBrokerSnapshot).toHaveBeenCalledWith({ by: 'name', q: 'Ada Cole' }));
+  });
+
+  it('shows a one-line miss', async () => {
+    searchBrokerSnapshot.mockResolvedValue(brokerHit({ notFound: true, records: [] }));
+    render(<CaseDataCenter caseRow={{ dot: '111111' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Broker snapshot' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('No carrier in the snapshot.')).toBeInTheDocument();
+  });
+
+  it('shows a one-line warehouse error', async () => {
+    searchBrokerSnapshot.mockResolvedValue(
+      brokerHit({
+        available: false,
+        error: 'DWH_DATABASE_URL is not configured',
+        records: [],
+      }),
+    );
+    render(<CaseDataCenter caseRow={{ dot: '8844425' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Broker snapshot' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/DWH_DATABASE_URL/);
+  });
+
+  it('expands a row for leftover warehouse columns', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '8844425' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Broker snapshot' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    const toggle = await screen.findByRole('button', { name: /Abdirehin Ahmed/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText('row_hash')).toBeInTheDocument();
+    expect(screen.getByText('abc')).toBeInTheDocument();
   });
 });

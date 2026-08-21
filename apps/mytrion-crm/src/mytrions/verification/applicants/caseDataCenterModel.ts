@@ -16,7 +16,8 @@ import type {
   FmcsaStatusVerdict,
 } from '@/api/verificationFmcsa';
 import type { MotusCensusRecord, MotusSearchBy } from '@/api/verificationMotus';
-import { formatDollars } from './caseAuthority';
+import type { BrokerSnapshotRecord, BrokerSnapshotSearchBy } from '@/api/verificationBrokerSnapshot';
+import { authorityActiveFromStatus, formatDollars } from './caseAuthority';
 
 export interface FmcsaPrefillCase {
   dot?: string | null;
@@ -64,6 +65,20 @@ export function motusPrefill(row: FmcsaPrefillCase): { by: MotusSearchBy; q: str
   if (company) return { by: 'name', q: company };
   const person = personName(row);
   if (person) return { by: 'name', q: person };
+  return { by: 'dot', q: '' };
+}
+
+/**
+ * Snapshot is keyed on DOT and `owner_full_name` (a person). No MC column — never prefill MC
+ * into the DOT box. Person before company because that is the column agents will hit.
+ */
+export function brokerPrefill(row: FmcsaPrefillCase): { by: BrokerSnapshotSearchBy; q: string } {
+  const dot = (row.dot ?? '').trim();
+  if (dot) return { by: 'dot', q: dot };
+  const person = personName(row);
+  if (person) return { by: 'name', q: person };
+  const company = (row.companyName ?? '').trim();
+  if (company) return { by: 'name', q: company };
   return { by: 'dot', q: '' };
 }
 
@@ -214,5 +229,36 @@ export function motusCensusFacts(row: MotusCensusRecord): VendorFact[] {
   const city = [row.address.city, row.address.state].filter((part) => Boolean(part?.trim())).join(', ');
   const address = [row.address.street, city, row.address.zip].filter((part) => Boolean(part?.trim())).join(' · ');
   push('address', address);
+  return curated;
+}
+
+const SNAPSHOT_ROW_KEYS = ['owner_full_name', 'dot_number'] as const;
+
+export function brokerSnapshotTitle(row: BrokerSnapshotRecord): string {
+  return row.ownerFullName?.trim() || row.dotNumber?.trim() || 'Unnamed carrier';
+}
+
+export function brokerStatusVerdict(status: string | null): FmcsaStatusVerdict {
+  const active = authorityActiveFromStatus(status);
+  if (active === true) return 'active';
+  if (active === false) return 'inactive';
+  return 'unknown';
+}
+
+export function brokerSnapshotFacts(row: BrokerSnapshotRecord): VendorFact[] {
+  if (row.fields) return flattenFields(row.fields, SNAPSHOT_ROW_KEYS);
+  const curated: VendorFact[] = [];
+  const push = (label: string, value: string | null | undefined): void => {
+    const text = value?.trim();
+    if (text) curated.push({ label, value: text });
+  };
+  push('phone_number', row.phoneNumber);
+  push('email', row.email);
+  push('physical_address', row.physicalAddress);
+  push('operating_status', row.operatingStatus);
+  if (row.powerUnits != null) push('power_units', String(row.powerUnits));
+  if (row.truckSize != null) push('truck_size', String(row.truckSize));
+  push('add_date', row.addDate);
+  push('change_date', row.changeDate);
   return curated;
 }
