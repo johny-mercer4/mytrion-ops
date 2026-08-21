@@ -88,17 +88,19 @@ export function CaseFullDetailsAttachments({
     <section className="va-full-attach">
       <div className="va-pane-head">
         <h3 className="t-eyebrow va-pane-kicker">Attachments</h3>
-        <span className="va-pane-note">
-          {documents.length === 0 ? 'None' : `${received} of ${documents.length} received`}
-        </span>
+        {documents.length > 0 ? (
+          <span className="va-pane-note">
+            {received} of {documents.length} received
+          </span>
+        ) : null}
       </div>
 
       {documents.length === 0 ? (
         <EmptyState
           size="panel"
           icon="draft"
-          title="Nothing attached"
-          description="Nothing from Sales, and no Plaid connection."
+          title="No files yet"
+          description={canEdit ? 'Attach one below.' : 'None on this case.'}
         />
       ) : (
         <ul className="va-full-docs">
@@ -223,11 +225,7 @@ export function CaseFullDetailsAttachments({
         open={pendingDelete !== null}
         tone="danger"
         title="Remove this file?"
-        body={
-          pendingDelete
-            ? `Remove ${docName(pendingDelete)} from this case. This cannot be undone.`
-            : ''
-        }
+        body={pendingDelete ? `${docName(pendingDelete)} — cannot be undone.` : ''}
         confirmLabel="Remove"
         confirming={busyId === pendingDelete?.id}
         onClose={() => setPendingDelete(null)}

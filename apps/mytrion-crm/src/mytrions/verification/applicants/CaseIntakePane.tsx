@@ -169,6 +169,7 @@ export function IntakePane({
   hideSave?: boolean;
   hideCounts?: boolean;
   hideHead?: boolean;
+  /** Extra sentence after missing-file names. Pass `''` to list the files only. */
   fileHint?: string;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -405,8 +406,10 @@ export function IntakePane({
         <div className="va-recorded" data-stack="true" data-needed="true">
           <h4 className="t-eyebrow va-pane-kicker">Still needed as files</h4>
           <p className="va-pane-body">
-            {fileGaps.map((k) => DOC_MISSING[k]).join(', ')}. {fileHint ??
-              'Attach from Documents on the right — any type will do, including “Something else”.'}
+            {fileGaps.map((k) => DOC_MISSING[k]).join(', ')}
+            {fileHint === ''
+              ? '.'
+              : `. ${fileHint ?? 'Attach from Documents on the right — any type will do, including “Something else”.'}`}
           </p>
         </div>
       ) : null}

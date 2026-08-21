@@ -116,7 +116,6 @@ export function CaseFullDetailsModal({
   });
 
   const facts: Array<{ k: string; v: string }> = [
-    { k: 'Case ID', v: c.id },
     { k: 'Status', v: statusText },
     { k: 'Phase', v: phaseText },
     { k: 'Opened', v: opened },
@@ -130,7 +129,7 @@ export function CaseFullDetailsModal({
         size="lg"
         mobile="fullscreen"
         title="Full details"
-        subtitle={`${caseName(c)} · CASE ${c.id}`}
+        subtitle={caseName(c)}
         closeLabel="Close full details"
         footer={
           closed ? (
@@ -183,7 +182,7 @@ export function CaseFullDetailsModal({
             hideSave
             hideCounts
             hideHead
-            fileHint='Attach under Attachments below — any type will do, including “Something else”.'
+            fileHint=""
             onDirtyChange={onDirtyChange}
             onSave={saveFields}
             onAddPrincipal={async (fullName) => {
@@ -221,7 +220,7 @@ export function CaseFullDetailsModal({
       <ConfirmDialog
         open={discardOpen}
         title="Discard unsaved changes?"
-        body="The application fields you edited will not be saved."
+        body="Edits will be lost."
         confirmLabel="Discard"
         cancelLabel="Keep editing"
         tone="danger"

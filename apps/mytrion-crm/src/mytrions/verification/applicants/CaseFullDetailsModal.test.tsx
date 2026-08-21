@@ -167,7 +167,11 @@ describe('CaseFullDetailsModal', () => {
       />,
     );
     const dialog = screen.getByRole('dialog', { name: /full details/i });
-    expect(within(dialog).getByText('Case ID')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Case ID')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/CASE vc_ridgevale01/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Status')).toBeInTheDocument();
+    expect(within(dialog).getByText('Phase')).toBeInTheDocument();
+    expect(within(dialog).getByText('Opened')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Company')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('First name')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Email')).toBeInTheDocument();
@@ -176,6 +180,27 @@ describe('CaseFullDetailsModal', () => {
     expect(within(dialog).getByText('march.pdf')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Preview march.pdf' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Download march.pdf' })).toBeInTheDocument();
+  });
+
+  it('lists missing files without an attach-elsewhere essay, and names the empty attach path once', () => {
+    render(
+      <CaseFullDetailsModal
+        open
+        caseId="vc_ridgevale01"
+        detail={{ ...detail({ intakeMissing: ['bankStatements'] }), documents: [] }}
+        wexCardCutoff={20}
+        onClose={() => undefined}
+        onUpdated={() => undefined}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: /full details/i });
+    expect(within(dialog).getByText('Still needed as files')).toBeInTheDocument();
+    expect(within(dialog).getByText('Bank statements (upload).')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/any type will do/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/Documents on the right/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText('No files yet')).toBeInTheDocument();
+    expect(within(dialog).getByText('Attach one below.')).toBeInTheDocument();
+    expect(within(dialog).queryByText('None')).not.toBeInTheDocument();
   });
 
   it('saves edited application fields through the desk intake PATCH', async () => {
