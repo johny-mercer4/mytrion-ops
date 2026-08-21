@@ -4,11 +4,23 @@
  * needs attention today.
  *
  * ⚠ EVERY NUMBER IN `DESK_POLICY` IS A PLACEHOLDER THE BUSINESS HAS NOT CONFIRMED.
- * The one real threshold in this domain is the $100 remaining-debt floor at which the finder
- * opens and closes a case, and that lives in the finder, not here. The values below came out of
- * the redesign as plausible defaults so the screens had something to render; they are gathered
- * in one object, named, and exported so changing them is a one-line edit and a grep finds every
- * consumer — not scattered as literals through five components the way the mockups had them.
+ *
+ * The real thresholds live in the finder, not here, and there are two of them depending on which
+ * finder is running (both read on 2026-08-20):
+ *
+ *   - LIVE ON PROD — `servercrm/jobs/collectionCaseFinder.js` on `build`, writing Zoho. Opens a
+ *     case at `remaining >= 0.01` and NEVER closes or deletes one: when a carrier settles or
+ *     leaves CMP it zeroes the money fields and leaves the row ("No case deletion (history
+ *     preserved)").
+ *   - COMING — servercrm PR #187 `feature/collection-cases-ops-db` moves the finder onto THIS
+ *     Postgres and raises the bar to `remaining > 100`, closing cases as `below_threshold` /
+ *     `paid_in_full` / `left_cmp` and reopening them (bumping `reopen_count`) when the debt
+ *     re-qualifies. Still no deletion.
+ *
+ * Whichever is live, neither finder carries an agency floor, a promise grace, a silent window or
+ * an intake SLA — every number below is invented. They are gathered in one object, named, and
+ * exported so changing them is a one-line edit and a grep finds every consumer — not scattered
+ * as literals through five components the way the mockups had them.
  *
  * Pure by design: no db import, no I/O. `tests/unit/collection-desk-policy.test.ts` exercises the
  * whole lane matrix without Postgres.
@@ -87,19 +99,31 @@ export function laneFor(s: WorklistSignals): WorklistLane | null {
   return null;
 }
 
+/**
+ * Stages where "send this to an agency" is not advice worth giving: it is already there, it is
+ * past the agency and with lawyers or a court, or it is finished. Legal and court stages matter
+ * here — a case in civil court that is 200 days past due would otherwise be nagged every morning
+ * to do something it did six months ago.
+ */
+const AGENCY_ADVICE_POINTLESS = new Set([
+  'with_agency',
+  'skip_tracing',
+  'legal_action',
+  'small_claims',
+  'civil_court',
+  'closed_successfully',
+  'case_lost',
+]);
+
 /** Past both agency gates right now. */
 export function isAgencyDue(s: Pick<WorklistSignals, 'daysPastDue' | 'remaining' | 'stage'>): boolean {
-  if (s.stage === 'with_agency' || s.stage === 'closed_successfully' || s.stage === 'case_lost') {
-    return false;
-  }
+  if (AGENCY_ADVICE_POINTLESS.has(s.stage)) return false;
   return s.daysPastDue >= DESK_POLICY.agencyMinDaysPastDue && s.remaining >= DESK_POLICY.agencyMinRemaining;
 }
 
 /** Big enough already, and inside the warning window before the day threshold. */
 function isAgencyNear(s: Pick<WorklistSignals, 'daysPastDue' | 'remaining' | 'stage'>): boolean {
-  if (s.stage === 'with_agency' || s.stage === 'closed_successfully' || s.stage === 'case_lost') {
-    return false;
-  }
+  if (AGENCY_ADVICE_POINTLESS.has(s.stage)) return false;
   if (s.remaining < DESK_POLICY.agencyMinRemaining) return false;
   const toGo = DESK_POLICY.agencyMinDaysPastDue - s.daysPastDue;
   return toGo > 0 && toGo <= DESK_POLICY.agencyWarnWindowDays;

@@ -9,7 +9,7 @@ import { sql } from 'drizzle-orm';
 export type MytrionCallStatus = 'picked_up' | 'missed';
 
 /** Which record the call was placed against — the mapping key back to the source record. */
-export type MytrionCallSourceType = 'lead' | 'deal' | 'retention_case';
+export type MytrionCallSourceType = 'lead' | 'deal' | 'retention_case' | 'collection_case';
 
 /**
  * mytrion_calls — our own call log, independent of RingCentral's history. One row per finished

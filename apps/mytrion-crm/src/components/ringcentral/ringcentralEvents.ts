@@ -57,6 +57,8 @@ interface DialContext {
   leadId?: string;
   dealId?: string;
   retentionCaseId?: string;
+  /** A collection case. The server writes the finished call onto its timeline. */
+  collectionCaseId?: string;
 }
 
 /**
@@ -83,11 +85,12 @@ export function setDialContext(ctx: DialContext): void {
 
 function freshDialContext(): DialContext {
   if (!dialContext || Date.now() - dialContext.at > DIAL_CTX_TTL_MS) return {};
-  const { leadId, dealId, retentionCaseId } = dialContext;
+  const { leadId, dealId, retentionCaseId, collectionCaseId } = dialContext;
   return {
     ...(leadId ? { leadId } : {}),
     ...(dealId ? { dealId } : {}),
     ...(retentionCaseId ? { retentionCaseId } : {}),
+    ...(collectionCaseId ? { collectionCaseId } : {}),
   };
 }
 

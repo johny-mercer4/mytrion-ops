@@ -14,6 +14,7 @@ import { db } from '../db/client.js';
 import { arrayReports, collectionCases, type CollectionCase } from '../db/schema/collection.js';
 import { DESK_POLICY, isAgencyDue } from '../modules/collection/deskPolicy.js';
 import type { TenantContext } from '../types/tenantContext.js';
+import { reportPeriodSortKey } from './arrayPeriod.js';
 import { canReadCollectionSnapshot } from './collectionAccess.js';
 import { normalizePagination } from './util.js';
 
@@ -243,7 +244,7 @@ async function latestReports(carrierIds: readonly string[]): Promise<Map<string,
     })
     .from(arrayReports)
     .where(inArray(arrayReports.carrierId, [...carrierIds]))
-    .orderBy(arrayReports.carrierId, desc(arrayReports.reportPeriod));
+    .orderBy(arrayReports.carrierId, desc(reportPeriodSortKey));
   for (const row of rows) {
     out.set(row.carrierId, {
       reportPeriod: row.reportPeriod,

@@ -39,7 +39,7 @@ import {
   redeemRegistration,
   sendInvoice,
   voidMoneyCodeDraw,
-  sendTransactionsReport,
+  sendTransactionsReports,
   sendCardLookupReport,
   type CarrierBalance,
   type CardFundsResult,
@@ -62,7 +62,7 @@ import {
 } from './lib/api';
 import { getRegistrationId, getStartAction, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
-import { LANGUAGES, useI18n } from './lib/i18n';
+import { LANGUAGES, useI18n, type Lang } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
 import { type InboxItem } from './lib/demo';
@@ -172,6 +172,18 @@ function fmt(v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
   return String(v);
+}
+/** Invoice due dates arrive as ISO timestamps ('2026-08-20T00:00:00.000Z') or yyyy-mm-dd.
+ *  Owner feedback 2026-08-07: the status tile printed the raw string. Calendar date only,
+ *  UTC so a midnight-Z value does not shift a day on US phones. */
+function prettyDate(v: unknown, lang: Lang): string {
+  const raw = fmt(v);
+  if (raw === '—') return raw;
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return raw;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const locale: Record<Lang, string> = { en: 'en-US', ru: 'ru-RU', uz: 'uz-UZ', es: 'es-ES' };
+  return d.toLocaleDateString(locale[lang], { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 /**
  * 'YYYY-MM-DD HH:MM' for a transaction. The clock time is what tells two fuel-ups at the same stop
@@ -427,6 +439,7 @@ function CardPicker({
   allLabel: string;
   searchPlaceholder: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const sel = cards.find((c) => c.cardId === value) ?? null;
@@ -447,7 +460,7 @@ function CardPicker({
   const rowStyle = { width: '100%', display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', gap: 1, padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' as const, fontFamily: "'Geist'" };
   return (
     <div style={{ position: 'relative' }}>
-      <button type="button" onClick={() => { haptic('tap'); setOpen((o) => !o); }} style={{ width: '100%', minHeight: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: sel ? 'var(--fg)' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '6px 10px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <button type="button" aria-expanded={open} onClick={() => { haptic('tap'); setOpen((o) => !o); }} style={{ width: '100%', minHeight: 44, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: sel ? 'var(--fg)' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '6px 10px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {sel ? `${numLabel(sel)}${subLabel(sel) ? ` · ${subLabel(sel)}` : ''}` : allLabel}
         </span>
@@ -455,9 +468,10 @@ function CardPicker({
       </button>
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 30, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)', overflow: 'hidden', boxShadow: '0 10px 34px rgba(0,0,0,.32)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 48, padding: '2px 4px 2px 10px', borderBottom: '1px solid var(--border)' }}>
             <SearchGlyph />
-            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} className="selectable" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
+            <input name="transaction-card-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} aria-label={searchPlaceholder} autoComplete="off" spellCheck={false} className="selectable" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
+            {q && <SearchClearButton onClick={() => setQ('')} label={t('common.clearSearch')} />}
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto' }}>
             <button type="button" className="row-press" onClick={() => { haptic('tap'); onChange(null); setOpen(false); setQ(''); }} style={{ ...rowStyle, borderBottom: '1px solid var(--border)' }}>
@@ -922,14 +936,16 @@ function CardContours() {
     { x: 420, y: 80 },
   ];
   return (
-    // opacity 0.09 -> 0.045 and a thinner stroke: these were set to survive under the amber ribbon.
-    // Without it they are the card's only texture, and at the old weight they compete with the
-    // figures instead of sitting behind them.
-    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.045 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.55}>
-      {Array.from({ length: 26 }, (_, i) => (
-        <path key={i} d={smoothWavePath(base.map((p) => ({ x: p.x, y: p.y - 96 + i * 8.5 })))} />
-      ))}
-    </svg>
+    // height:0 so the SVG's viewBox (400×200) cannot size the card. Telegram's WebKit treats an
+    // absolutely-positioned SVG with inset:0 + height:100% as having that intrinsic ratio, which
+    // stretched the Home owner card into a tall empty shell under EFS BALANCE. The parent clips.
+    <div aria-hidden style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 0, overflow: 'visible', pointerEvents: 'none' }}>
+      <svg style={{ display: 'block', width: '100%', height: 180, opacity: 0.045 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.55}>
+        {Array.from({ length: 26 }, (_, i) => (
+          <path key={i} d={smoothWavePath(base.map((p) => ({ x: p.x, y: p.y - 96 + i * 8.5 })))} />
+        ))}
+      </svg>
+    </div>
   );
 }
 
@@ -937,12 +953,13 @@ function CardContours() {
 const BALANCE_KEY = 'octane.lastBalance';
 
 /**
- * Last-known balance, so coming back to Home paints the number instead of "—".
+ * Last-known balance, so coming back to Home paints the number instead of a skeleton or retry.
  *
  * The balance endpoint reaches live EFS through servercrm and takes 1.9–3.3s (measured), and Home
- * unmounts whenever you visit Services or Inbox — so every return trip re-ran that wait. The cached
- * value is only ever the FIRST paint: the fetch below still runs and overwrites it, so a stale
- * figure is on screen for one request, not for a session.
+ * unmounts whenever you visit Services or Inbox — so every return trip re-ran that wait. Memory
+ * (this module) + localStorage hold the last good figure: first paint is that number, the fetch
+ * still runs and overwrites the same row, so a stale figure is on screen for one request, not a
+ * session.
  *
  * Scoped by CARRIER ID, not company name. The name is display text and is routinely null — an
  * invite created without one, or any registration whose companyName never got filled. Two empty
@@ -952,15 +969,8 @@ const BALANCE_KEY = 'octane.lastBalance';
  * identity — it can repeat and it can change. The carrier id is both always present and the thing
  * that actually distinguishes one carrier's money from another's.
  */
-/**
- * The carrier balance, painted from cache first and refreshed in the background.
- *
- * Shared by both heroes on purpose: the endpoint takes 1.9–3.3s (it reaches live EFS through
- * servercrm) and Home unmounts on every trip to Services or Inbox, so both cards need the same
- * cache-then-refresh behaviour. Two copies of it would drift.
- *
- * Returns null only until the FIRST ever response — that is the one state worth a skeleton.
- */
+let heroBalanceCache: { carrierId: string; balance: CarrierBalance } | null = null;
+
 interface BalanceState {
   balance: CarrierBalance | null;
   /** The fetch failed AND there is no cached figure to fall back on — the card has nothing true to
@@ -969,48 +979,98 @@ interface BalanceState {
   retry: () => void;
 }
 
+/**
+ * The amount the Home hero may paint. `0` is a real empty account; null/blank is not — painting
+ * that as $0.00 or "—" would invent a figure the Copy affordance shouldn't hand out.
+ */
+function balanceFigure(b: CarrierBalance | null | undefined): number | string | null {
+  if (!b) return null;
+  const v = b.efs_balance ?? b.balance;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? v : null;
+  }
+  return null;
+}
+
+function cacheScope(carrierId: string | null | undefined): string | null {
+  const s = carrierId == null ? '' : String(carrierId).trim();
+  return s || null;
+}
+
 function useCarrierBalance(initData: string, carrierId: string | null): BalanceState {
-  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(carrierId));
+  const scope = cacheScope(carrierId);
+  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(scope));
+  const [pending, setPending] = useState(() => balanceFigure(readCachedBalance(scope)) == null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    const cached = readCachedBalance(scope);
+    if (cached) {
+      // Cache-first: the last known figure paints immediately; this fetch only refreshes the row.
+      setBalance(cached);
+      setPending(false);
+    } else {
+      setPending(true);
+      if (scope && heroBalanceCache && heroBalanceCache.carrierId !== scope) setBalance(null);
+    }
     setFailed(false);
     fetchBalance(initData)
       .then((v) => {
         if (cancelled) return;
+        if (balanceFigure(v) == null) {
+          setFailed(true);
+          return;
+        }
         setBalance(v);
-        writeCachedBalance(carrierId, v);
+        setFailed(false);
+        writeCachedBalance(scope, v);
       })
       .catch(() => {
-        // Previously swallowed. The card then sat on its skeleton forever, telling the driver it was
-        // loading something that had already failed — measured against a real outage: the balance
-        // endpoint 502'd and the hero span animated indefinitely. A cached figure for THIS carrier
-        // is still theirs and worth showing; with nothing cached, the card has to admit it.
         if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setPending(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [initData, carrierId, attempt]);
-  return { balance, failed, retry: () => setAttempt((n) => n + 1) };
+  }, [initData, scope, attempt]);
+  const figure = balanceFigure(balance);
+  return {
+    balance,
+    failed: !pending && failed && figure == null,
+    retry: () => {
+      setFailed(false);
+      setPending(true);
+      setAttempt((n) => n + 1);
+    },
+  };
 }
 
 function readCachedBalance(carrierId: string | null): CarrierBalance | null {
-  // No carrier resolved yet — there is nothing to key on, so a hit would be a guess.
   if (!carrierId) return null;
+  if (heroBalanceCache?.carrierId === carrierId && balanceFigure(heroBalanceCache.balance) != null) {
+    return heroBalanceCache.balance;
+  }
   try {
     const raw = localStorage.getItem(BALANCE_KEY);
     if (!raw) return null;
     const v = JSON.parse(raw) as { carrierId?: string; balance?: CarrierBalance };
-    return v.carrierId === carrierId && v.balance ? v.balance : null;
+    if (cacheScope(v.carrierId) !== carrierId || balanceFigure(v.balance) == null) return null;
+    const found = v.balance ?? null;
+    if (found) heroBalanceCache = { carrierId, balance: found };
+    return found;
   } catch {
-    return null; // unparseable or storage blocked — just fetch
+    return null;
   }
 }
 
 function writeCachedBalance(carrierId: string | null, balance: CarrierBalance): void {
-  if (!carrierId) return;
+  if (!carrierId || balanceFigure(balance) == null) return;
+  heroBalanceCache = { carrierId, balance };
   try {
     localStorage.setItem(BALANCE_KEY, JSON.stringify({ carrierId, balance }));
   } catch {
@@ -1021,60 +1081,64 @@ function writeCachedBalance(carrierId: string | null, balance: CarrierBalance): 
 function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: string; company: string; carrierId: string | null; onOpenDetails: () => void }) {
   const { t } = useI18n();
   const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
+  const figure = balanceFigure(balance);
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
   // 100 was the fallback when there is no balance, which painted a FULL bar — i.e. "all your
   // credit is available" — while the number above it was still loading or had failed outright.
   // null means the bar has nothing true to draw and is not drawn.
-  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : null;
+  const pct = figure != null && creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : null;
   const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
+  const heroBtn = { height: 30, flex: 'none' as const, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,.16)', border: 'none', borderRadius: 9, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' };
   return (
     /* Deliberately NOT the fuel-card shell DriverHero uses. That card shows a PAN and depicts the
        plastic, so the plastic's proportion belongs on it. This one shows a company name and a
        balance — an account panel, not a card. Constraining it to the card ratio invented 52px of
        void between the only two things it displays, so its height comes from its content. */
-    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 24, overflow: 'hidden', padding: 18, display: 'flex', flexDirection: 'column', flex: 'none' }}>
       {/* Contours only. The amber ribbon is out for now, and the scrims went with it: they existed
           solely to keep text legible on top of it, and the shell is already near-black. */}
       <CardContours />
 
-      {/* Top row: company left, Details button right */}
+      {/* Top row: company left, Details right — only when a figure is on screen. Details opens
+          account status; with no balance (loading or failed) there is nothing to open. */}
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company || ''}</span>
-        <button type="button" className="press" onClick={onOpenDetails} style={{ height: 30, flex: 'none', background: 'rgba(255,255,255,.16)', border: 'none', borderRadius: 9, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
-          {t('common.details')}
-        </button>
+        {figure != null && (
+          <button type="button" className="press" onClick={onOpenDetails} style={heroBtn}>
+            {t('common.details')}
+          </button>
+        )}
       </div>
 
-      {/* Bottom block: balance amount + credit bar + credit-available (compact) */}
-      {/* The separation from the header is this padding now, not surplus the aspect ratio had to
-          dump somewhere. 10px was what the ratio left behind and reads cramped under a 30px
-          header row; 22 is the breathing room the old 64px void was accidentally providing. */}
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 22 }}>
+      {/* Bottom block hugs the EFS row. A leftover nbsp credit line + 22px pad was empty height
+          under the label when there was no figure; only render the bar/note when they have data. */}
+      {/* Hero is always #161719, even in light theme. Page --skel-* tokens are card-surface greys
+          (near-white on light) and paint a bright brick on this shell; scope the shared octskeleton
+          pulse to low-opacity white so the bars sit in the texture instead of on top of it. */}
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 14, ['--skel-lo']: 'rgba(255,255,255,.08)', ['--skel-hi']: 'rgba(255,255,255,.16)' } as CSSProperties}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={eyebrow}>{t('home.efsBalance')}</span>
-          {balance ? (
+          {figure != null ? (
             <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
-              {money(balance.efs_balance ?? balance.balance)}
+              {money(figure)}
+            </span>
+          ) : !balanceFailed ? (
+            /* 32px matches the $ amount line; two bars (this + subtitle below) so settle doesn't jump. */
+            <span aria-busy="true" aria-label={t('home.efsBalance')}>
+              <Skeleton w={156} h={32} r={6} bg="rgba(255,255,255,.10)" />
             </span>
           ) : (
-            /* Only the very first open lands here — after that the cache paints a real number. A
-               shimmer reads as "loading"; a bare "—" reads as "your balance is unknown". */
-            balanceFailed ? (
-              /* A skeleton here would claim the number is still coming. It isn't — the fetch failed,
-                 and without a retry the only way out is closing the app. */
-              <button
-                type="button"
-                className="press"
-                onClick={retryBalance}
-                style={{ alignSelf: 'flex-start', marginTop: 7, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '7px 12px', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-              >
-                <Icon name="refresh" size={14} strokeWidth={2.2} className="" />
+            /* Caption + Retry as a left-aligned cluster — not space-between, which parked Retry
+               under Details on the far right of the 375px card. */
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 30 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,.55)', lineHeight: 1.3 }}>
                 {t('home.balanceRetry')}
+              </span>
+              <button type="button" className="press" onClick={retryBalance} style={heroBtn}>
+                {t('common.retry')}
               </button>
-            ) : (
-            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 168, height: 33, borderRadius: 9, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
-            )
+            </div>
           )}
         </div>
         {pct != null && (
@@ -1082,13 +1146,15 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
             <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
           </div>
         )}
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {creditLimit != null && creditRemaining != null
-            ? t('home.creditAvailable', { amt: money(creditRemaining) })
-            : balance
-              ? (balance.efs_error ?? t('home.balanceNote'))
-              : '\u00A0'}
-        </div>
+        {figure != null ? (
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {creditLimit != null && creditRemaining != null
+              ? t('home.creditAvailable', { amt: money(creditRemaining) })
+              : (balance?.efs_error ?? t('home.balanceNote'))}
+          </div>
+        ) : !balanceFailed ? (
+          <Skeleton w={188} h={13} r={5} bg="rgba(255,255,255,.08)" />
+        ) : null}
       </div>
     </div>
   );
@@ -1561,6 +1627,39 @@ function SectionLabel({ children, noMargin = false }: { children: ReactNode; noM
   return <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: noMargin ? 0 : '0 2px 11px' }}>{children}</div>;
 }
 
+function SearchClearButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      className="press"
+      onClick={onClick}
+      aria-label={label}
+      style={{ width: 44, height: 44, flex: 'none', border: 'none', background: 'transparent', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+    >
+      <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="x" size={12} strokeWidth={2.2} className="" />
+      </span>
+    </button>
+  );
+}
+
+function FilterResetButton({ onClick }: { onClick: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, marginBottom: 10 }}>
+      <button
+        type="button"
+        className="press"
+        onClick={() => { haptic('tap'); onClick(); }}
+        style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 44, padding: '0 14px', border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+      >
+        <Icon name="x" size={14} strokeWidth={2.2} className="" />
+        {t('common.clearFilters')}
+      </button>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Fleet
 
@@ -1684,6 +1783,7 @@ function FleetView({
     }
     return true;
   });
+  const fleetFiltersDirty = search.trim().length > 0 || filter !== 'all';
 
   function copy(link: string, id: string) {
     try {
@@ -1731,21 +1831,23 @@ function FleetView({
           <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)' }}>{t('fleet.title')}</span>
           <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted-fg)' }}>{t('fleet.count', { n: registeredCount, total })}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 44, padding: '0 13px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 44, padding: '0 0 0 13px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 10 }}>
           <SearchGlyph />
-          <input className="selectable" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('fleet.search')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
+          <input className="selectable" name="fleet-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('fleet.search')} aria-label={t('fleet.search')} autoComplete="off" spellCheck={false} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
+          {search && <SearchClearButton onClick={() => setSearch('')} label={t('common.clearSearch')} />}
         </div>
-        <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: 14, paddingBottom: 2 }}>
+        <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: fleetFiltersDirty ? 8 : 14, paddingBottom: 2 }}>
           {FILTERS.map((f) => {
             const active = filter === f;
             return (
-              <button key={f} type="button" onClick={() => { haptic('tap'); setFilter(f); }} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', height: 40, padding: '0 14px', borderRadius: 11, fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+              <button key={f} type="button" aria-pressed={active} onClick={() => { haptic('tap'); setFilter(f); }} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', height: 44, padding: '0 14px', borderRadius: 11, fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
                 <span>{t(FILTER_LABEL[f])}</span>
                 <span style={{ fontSize: 12, fontWeight: 700, opacity: active ? 1 : 0.65 }}>{counts[f]}</span>
               </button>
             );
           })}
         </div>
+        {fleetFiltersDirty && <FilterResetButton onClick={() => { setSearch(''); setFilter('all'); }} />}
       </div>
 
       {loading && (
@@ -1802,7 +1904,7 @@ function FleetView({
             const busy = busyId === id;
             return (
               <div key={id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <div onClick={() => setExpandedId((x) => (x === id ? null : id))} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', minHeight: 64, cursor: 'pointer' }}>
+                <button type="button" aria-expanded={expanded} onClick={() => setExpandedId((x) => (x === id ? null : id))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', minHeight: 64, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", textAlign: 'left', cursor: 'pointer' }}>
                   <div style={{ width: 44, height: 44, borderRadius: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: c.iconBg, color: c.iconColor }}>
                     <Icon name={c.iconName} size={18} strokeWidth={2} className="" />
                   </div>
@@ -1819,7 +1921,7 @@ function FleetView({
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: c.statusColor, background: 'var(--secondary)', padding: '5px 10px', borderRadius: 9, flex: 'none' }}>{c.statusWord}</span>
                   <Chevron style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .2s ease' }} />
-                </div>
+                </button>
 
                 {expanded && (
                   <div style={{ padding: '0 15px 16px', animation: 'octfade .2s ease' }}>
@@ -2298,7 +2400,7 @@ function ActionSheet({
   /** Diagnosis→fix jumps (e.g. funds sheet's Hold verdict → override sheet in one tap). */
   onSwitchAction?: ((target: OpenAction) => void) | undefined;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   /** Bumped by the error-state Retry button to force the load effect to re-run the same fetch. */
@@ -2601,12 +2703,9 @@ function ActionSheet({
     try {
       const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
       const opts = range === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range, ...cardFilter };
-      // Sequential: each format is a separate document to the bot chat; the progress bar tracks
-      // whichever is in flight.
-      for (const format of formats) {
-        setExportBusy(format);
-        await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
-      }
+      // One request means every selected format is built from the same backend data snapshot.
+      setExportBusy(formats[0]!);
+      await sendTransactionsReports(initData, opts, formats, exportRetail ? 'retail' : 'discount', exportDetailed);
       haptic('success');
       showToast(t('toast.reportSentToTelegram'));
     } catch (e) {
@@ -2705,11 +2804,11 @@ function ActionSheet({
             (() => {
               const b = data.v;
               const tiles: Array<{ label: string; value: string; accent?: boolean }> = [
-                { label: t('svc.balance'), value: money(b.efs_balance ?? b.balance) },
+                { label: t('balance.efsAvailable'), value: money(b.efs_balance ?? b.balance) },
               ];
               if (b.credit_limit != null) tiles.push({ label: t('balance.creditLimit'), value: money(b.credit_limit) });
               if (b.credit_used != null) tiles.push({ label: t('balance.creditUsed'), value: money(b.credit_used) });
-              if (b.credit_remaining != null) tiles.push({ label: t('balance.available'), value: money(b.credit_remaining), accent: true });
+              if (b.credit_remaining != null) tiles.push({ label: t('balance.weeklyLeft'), value: money(b.credit_remaining), accent: true });
               return (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -2791,6 +2890,7 @@ function ActionSheet({
               // Owner + manager see the whole card number; a driver keeps their own card masked.
               const showFullPan = !session.isDriver;
               const showStatusFilter = !session.isDriver && statusOptions.length > 1;
+              const statusFiltersDirty = cardQuery.length > 0 || cardStatusFilter !== 'all';
               /**
                * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
                * not the carrier account. `overview.is_active` is the company's status; a driver's card
@@ -2848,7 +2948,7 @@ function ActionSheet({
                       {[
                         { label: t('status.availableBalance'), value: money(data.v.billing.availableBalance ?? 0) },
                         { label: t('status.weeklyLimit'), value: money(data.v.billing.weeklyLimit ?? 0) },
-                        ...(data.v.billing.dueDate ? [{ label: t('status.dueBy'), value: fmt(data.v.billing.dueDate) }] : []),
+                        ...(data.v.billing.dueDate ? [{ label: t('status.dueBy'), value: prettyDate(data.v.billing.dueDate, lang) }] : []),
                         { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
                       ].map((tile) => (
                         <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
@@ -2889,15 +2989,19 @@ function ActionSheet({
                       </span>
                       <input
                         inputMode="numeric"
+                        name="account-status-card-search"
                         value={cardQuery}
                         onChange={(e) => setCardQuery(e.target.value.replace(/\D/g, '').slice(0, 19))}
                         placeholder={t('status.searchCards')}
-                        style={{ width: '100%', height: 42, padding: '0 38px 0 34px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, fontVariantNumeric: 'tabular-nums', outline: 'none' }}
+                        aria-label={t('status.searchCards')}
+                        autoComplete="off"
+                        spellCheck={false}
+                        style={{ width: '100%', height: 44, padding: '0 44px 0 34px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, fontVariantNumeric: 'tabular-nums' }}
                       />
                       {cardQuery && (
-                        <button type="button" onClick={() => setCardQuery('')} aria-label={t('common.clear')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'var(--border)', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                          <Icon name="x" size={12} strokeWidth={2} className="" />
-                        </button>
+                        <span style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', display: 'flex' }}>
+                          <SearchClearButton onClick={() => setCardQuery('')} label={t('common.clearSearch')} />
+                        </span>
                       )}
                     </div>
                   )}
@@ -2906,13 +3010,14 @@ function ActionSheet({
                       {['all', ...statusOptions].map((opt) => {
                         const active = cardStatusFilter === opt;
                         return (
-                          <button key={opt} type="button" onClick={() => { haptic('tap'); setCardStatusFilter(opt); }} style={{ flex: 'none', height: 34, padding: '0 13px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                          <button key={opt} type="button" aria-pressed={active} onClick={() => { haptic('tap'); setCardStatusFilter(opt); }} style={{ flex: 'none', height: 44, padding: '0 13px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
                             {opt === 'all' ? t('status.filterAll') : opt}
                           </button>
                         );
                       })}
                     </div>
                   )}
+                  {statusFiltersDirty && <FilterResetButton onClick={() => { setCardQuery(''); setCardStatusFilter('all'); }} />}
                   {rows.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
                   ) : filtered.length === 0 ? (
@@ -2957,7 +3062,6 @@ function ActionSheet({
               // actually off-default, so the default sheet keeps its clean filter row.
               const filtersDirty = range !== 'month' || exportRetail || txnCardSel !== null;
               const clearFilters = () => {
-                haptic('tap');
                 setRange('month');
                 setExportRetail(false);
                 setTxnCardSel(null);
@@ -2979,7 +3083,7 @@ function ActionSheet({
                       <select
                         value={range}
                         onChange={(e) => { haptic('tap'); setRange(e.target.value as TxnRange); }}
-                        style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
+                        style={{ width: '100%', height: 44, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
                       >
                         {TXN_RANGES.map((r) => (
                           <option key={r.value} value={r.value}>{t(r.key)}</option>
@@ -2995,7 +3099,7 @@ function ActionSheet({
                         <select
                           value={exportRetail ? 'retail' : 'discount'}
                           onChange={(e) => { haptic('tap'); setExportRetail(e.target.value === 'retail'); }}
-                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
+                          style={{ width: '100%', height: 44, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
                         >
                           <option value="discount">{t('txns.priceDiscount')}</option>
                           <option value="retail">{t('txns.priceRetail')}</option>
@@ -3016,19 +3120,7 @@ function ActionSheet({
                       </div>
                     )}
                   </div>
-                  {filtersDirty && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, marginBottom: 10 }}>
-                      <button
-                        type="button"
-                        className="press"
-                        onClick={clearFilters}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--secondary)', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
-                      >
-                        <Icon name="x" size={13} strokeWidth={2.2} className="" />
-                        {t('txns.clearFilters')}
-                      </button>
-                    </div>
-                  )}
+                  {filtersDirty && <FilterResetButton onClick={clearFilters} />}
                   {range === 'custom' && (
                     /* Stack From/To vertically — side-by-side native date inputs overflow/merge on narrow mobile. */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
@@ -3109,6 +3201,7 @@ function ActionSheet({
               // both wrong: it showed -$16.60 for a carrier that had OVERPAID, and it counted PAID and
               // CANCELLED invoices as if they were open.
               const openBalance = Number(sum['sum_open_balance'] ?? 0);
+              const invoiceFiltersDirty = invRange !== 'last_30' || invFrom.length > 0 || invTo.length > 0;
               return (
                 <>
                   <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
@@ -3116,13 +3209,15 @@ function ActionSheet({
                       <button
                         key={r.value}
                         type="button"
+                        aria-pressed={invRange === r.value}
                         onClick={() => setInvRange(r.value)}
-                        style={{ flex: 'none', height: 36, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: invRange === r.value ? 'var(--primary)' : 'var(--secondary)', color: invRange === r.value ? '#FFFFFF' : 'var(--muted-fg)' }}
+                        style={{ flex: 'none', height: 44, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: invRange === r.value ? 'var(--primary)' : 'var(--secondary)', color: invRange === r.value ? '#FFFFFF' : 'var(--muted-fg)' }}
                       >
                         {t(r.key)}
                       </button>
                     ))}
                   </div>
+                  {invoiceFiltersDirty && <FilterResetButton onClick={() => { setInvRange('last_30'); setInvFrom(''); setInvTo(''); }} />}
                   {invRange === 'custom' && (
                     /* Same stacked From/To as the txns sheet — side-by-side date inputs overflow on mobile. */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
@@ -3163,7 +3258,7 @@ function ActionSheet({
                       {/* CSV removed 2026-07-22: servercrm has no CSV invoice document — the button
                           400'd. Excel now really works (xlsx→excel mapped in the wrapper). */}
                       {(['pdf', 'xlsx'] as const).map((f) => (
-                        <button key={f} type="button" onClick={() => { haptic('tap'); setInvFormat(f); }} style={{ flex: 1, height: 32, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', background: invFormat === f ? 'var(--primary)' : 'var(--secondary)', color: invFormat === f ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                        <button key={f} type="button" aria-pressed={invFormat === f} onClick={() => { haptic('tap'); setInvFormat(f); }} style={{ flex: 1, height: 44, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', background: invFormat === f ? 'var(--primary)' : 'var(--secondary)', color: invFormat === f ? '#FFFFFF' : 'var(--muted-fg)' }}>
                           {f === 'pdf' ? 'PDF' : 'Excel'}
                         </button>
                       ))}
@@ -3178,8 +3273,8 @@ function ActionSheet({
                   const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
                   const busy = invoiceBusyId === id;
                   const st = invoiceStatus(inv['status'], t);
-                  return (
-                    <div key={id || i} onClick={() => !session.isSalesAgent && !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: session.isSalesAgent || busy ? 'default' : 'pointer' }}>
+                  const row = (
+                    <>
                       <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: label })}</div>
@@ -3194,7 +3289,15 @@ function ActionSheet({
                       {session.isSalesAgent ? null : busy ? <Spinner size={16} /> : (
                         <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.download')}</span>
                       )}
-                    </div>
+                    </>
+                  );
+                  const rowStyle = { width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", textAlign: 'left' as const };
+                  return session.isSalesAgent ? (
+                    <div key={id || i} style={rowStyle}>{row}</div>
+                  ) : (
+                    <button key={id || i} type="button" className="row-press" disabled={busy} onClick={() => void openInvoice(id)} style={{ ...rowStyle, cursor: busy ? 'default' : 'pointer' }}>
+                      {row}
+                    </button>
                   );
                 })}
                     </div>
@@ -3565,23 +3668,26 @@ function ActionSheet({
                     if (v === 'inactive') return st.includes('inactive');
                     return st.includes('hold');
                   }).length;
+                const coFiltersDirty = coSearch.trim().length > 0 || coStatus !== 'all';
                 return (
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 12px', marginBottom: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 46, padding: '1px 1px 1px 12px', marginBottom: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
                       <SearchGlyph />
-                      <input className="selectable" value={coSearch} onChange={(e) => setCoSearch(e.target.value)} placeholder={t('co.searchCard')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
+                      <input className="selectable" name="card-management-search" value={coSearch} onChange={(e) => setCoSearch(e.target.value)} placeholder={t('co.searchCard')} aria-label={t('co.searchCard')} autoComplete="off" spellCheck={false} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
+                      {coSearch && <SearchClearButton onClick={() => setCoSearch('')} label={t('common.clearSearch')} />}
                     </div>
                     <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
                       {STATUS_FILTERS.map((f) => {
                         const active = coStatus === f.v;
                         return (
-                          <button key={f.v} type="button" onClick={() => { haptic('tap'); setCoStatus(f.v); }} style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                          <button key={f.v} type="button" aria-pressed={active} onClick={() => { haptic('tap'); setCoStatus(f.v); }} style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 6, height: 44, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
                             {t(f.k)}
                             <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: active ? 'rgba(255,255,255,.72)' : 'var(--fg)' }}>{countFor(f.v)}</span>
                           </button>
                         );
                       })}
                     </div>
+                    {coFiltersDirty && <FilterResetButton onClick={() => { setCoSearch(''); setCoStatus('all'); }} />}
                     {cards.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '28px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noMatch')}</div>
                     ) : (
@@ -3908,7 +4014,7 @@ function ActionSheet({
                 {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
               </span>
               {!session.isDriver && (
-                <button type="button" className="press" aria-pressed={exportDetailed} onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 'none', height: 28, padding: '0 12px', borderRadius: 999, fontFamily: "'Geist'", fontWeight: 600, fontSize: 11.5, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none', whiteSpace: 'nowrap' }}>
+                <button type="button" className="press" aria-pressed={exportDetailed} onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 'none', height: 44, padding: '0 12px', borderRadius: 999, fontFamily: "'Geist'", fontWeight: 600, fontSize: 11.5, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none', whiteSpace: 'nowrap' }}>
                   {exportDetailed ? '✓ ' : ''}{t('txns.detailedCols')}
                 </button>
               )}
@@ -3925,7 +4031,7 @@ function ActionSheet({
                     className="press"
                     disabled={exportBusy !== null}
                     onClick={() => { haptic('tap'); toggleFormat(f); }}
-                    style={{ flex: 1, height: 36, border: 'none', borderRadius: 10, background: on ? 'var(--primary)' : 'var(--secondary)', color: on ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12.5, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                    style={{ flex: 1, height: 44, border: 'none', borderRadius: 10, background: on ? 'var(--primary)' : 'var(--secondary)', color: on ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12.5, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
                   >
                     {on ? '✓ ' : ''}{f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
                   </button>
@@ -3937,7 +4043,7 @@ function ActionSheet({
               className="press"
               disabled={exportBusy !== null || selectedFormats.size === 0}
               onClick={() => void doExport(data.v.data ?? [], (['xlsx', 'pdf', 'csv'] as const).filter((f) => selectedFormats.has(f)))}
-              style={{ width: '100%', height: 40, marginTop: 8, border: 'none', borderRadius: 10, background: selectedFormats.size === 0 ? 'var(--secondary)' : 'var(--primary)', color: selectedFormats.size === 0 ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13.5, cursor: exportBusy !== null || selectedFormats.size === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              style={{ width: '100%', height: 44, marginTop: 8, border: 'none', borderRadius: 10, background: selectedFormats.size === 0 ? 'var(--secondary)' : 'var(--primary)', color: selectedFormats.size === 0 ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13.5, cursor: exportBusy !== null || selectedFormats.size === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
               {exportBusy !== null ? <><Spinner size={16} color="#FFFFFF" /> {t('txns.sendingReport')}</> : t('txns.sendReport')}
             </button>

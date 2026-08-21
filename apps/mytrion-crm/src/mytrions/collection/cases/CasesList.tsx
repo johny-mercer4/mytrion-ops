@@ -67,7 +67,7 @@ export function CasesList({
         id: 'name',
         header: 'Carrier',
         rowHeader: true,
-        width: '22%',
+        width: '20%',
         mobile: 'primary',
         cell: (row) => (
           <span className="cc-ident">
@@ -89,7 +89,7 @@ export function CasesList({
       {
         id: 'stage',
         header: 'Stage',
-        width: '13%',
+        width: '12%',
         mobile: 'secondary',
         cell: (row) => {
           const chip = stageChip(row.collectionStage);
@@ -112,7 +112,7 @@ export function CasesList({
       {
         id: 'recovered',
         header: 'Recovered',
-        width: '13%',
+        width: '12%',
         align: 'end',
         cell: (row) => {
           const share = recoveredShare(row);
@@ -132,7 +132,7 @@ export function CasesList({
       {
         id: 'age',
         header: 'Age',
-        width: '10%',
+        width: '9%',
         cell: (row) => <AgeCell days={row.daysPastDue} />,
       },
       {
@@ -150,9 +150,29 @@ export function CasesList({
         },
       },
       {
+        id: 'owner',
+        header: 'Owner',
+        width: '11%',
+        /**
+         * The full name, not the id. `assignee_name` is only written when the desk assigns a case;
+         * the rows seeded from Zoho carry a bare user id, which the API resolves against the worker
+         * directory before it gets here.
+         */
+        cell: (row) =>
+          row.assigneeName ? (
+            <span className="cc-owner">{row.assigneeName}</span>
+          ) : row.assigneeUserId ? (
+            // A name we could not resolve. Show the id rather than "Unassigned" — the case IS
+            // owned, and claiming otherwise would put it in the wrong pile.
+            <span className="cc-muted num">{row.assigneeUserId}</span>
+          ) : (
+            <span className="cc-muted">Unassigned</span>
+          ),
+      },
+      {
         id: 'next',
         header: 'Next action',
-        width: '21%',
+        width: '15%',
         cell: (row) => {
           const promise = desk[row.id]?.promise;
           if (promise) {
@@ -201,7 +221,7 @@ export function CasesList({
         description={
           filtered
             ? 'Nothing matches these filters. Clear them to see the book.'
-            : 'Cases appear when remaining debt stays above $100. The finder writes them here, not Zoho.'
+            : 'Cases appear here when the finder opens one for a carrier that owes.'
         }
       />
     );

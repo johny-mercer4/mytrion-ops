@@ -196,6 +196,7 @@ const mcReportSchema = rangeSchema.extend({
 const txnExportSchema = rangeSchema.extend({
   ...txnCardFilter,
   format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
+  formats: z.array(z.enum(['csv', 'xlsx', 'pdf'])).min(1).max(3).optional(),
   priceMode: z.enum(['discount', 'retail']).default('discount'),
   /** Full card number + Driver/Unit/Driver ID columns (client feedback; EFS "Show Entire Card
    *  Number" + Match-By fields). The fields are already on every mart row. */
@@ -485,8 +486,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /**
-   * The DWH client directory (octane.intm_zoho_deals) — what the admin provisions an invite FROM.
-   * Searchable by company name, carrier id, or application id. (Lives here, not in the legacy
+   * The DWH client directory (octane.stg_zoho_deals) — what the admin provisions an invite FROM.
+   * Searchable by company name (punctuation-insensitive), phone, carrier id, or application id. (Lives here, not in the legacy
    * carrierUsers.routes.ts, since that file's login/password CRUD was retired — this is the one
    * route from it still in use, by CarrierUserForm.tsx and the sales CarrierPicker.)
    */
@@ -1402,15 +1403,16 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const rangeLabel = result.range.from ? `${result.range.from} → ${result.range.to}` : String(result.range.preset);
     // Drivers are ALWAYS retail — the owner's discount terms never reach a driver's report.
     const priceMode = isDriver ? ('retail' as const) : body.priceMode;
-    const report = await buildTxnReport(result.data, body.format, {
-      company: registration.companyName ?? 'Octane',
-      range: rangeLabel,
+    const formats = [...new Set(body.formats ?? [body.format])];
+    const reportMeta = {
+      company: registration.companyName ?? 'Octane', range: rangeLabel,
       // Product rule 2026-07-20: last SIX digits identify a fuel card (field name is historical).
       cardLast4: cardNumber ? cardNumber.slice(-6) : String(carrierId),
       scopedToCard: Boolean(cardNumber),
       priceMode,
       detailed: body.detailed,
-    });
+    };
+    const reports = await Promise.all(formats.map((format) => buildTxnReport(result.data, format, reportMeta)));
 
     // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
     // happened to carry the header, so it can't be relied on alone.
@@ -1436,14 +1438,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       summaryLine,
     ].join('\n');
     try {
-      await sendDocument({
-        chatId,
-        fileName: report.fileName,
-        contentType: report.contentType,
-        bytes: report.bytes,
-        caption,
-        parseMode: 'HTML',
-      });
+      for (const report of reports) {
+        await sendDocument({
+          chatId, fileName: report.fileName, contentType: report.contentType, bytes: report.bytes, caption,
+          parseMode: 'HTML',
+        });
+      }
     } catch (err) {
       if (err instanceof TelegramChatUnreachableError) {
         throw new AppError('Open a chat with the Octane bot first, then try the export again.', {
@@ -1467,7 +1467,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       resourceType: 'carrier_transactions_report',
       resourceId: String(carrierId),
       detail: {
-        format: body.format,
+        format: formats[0], formats,
         range: rangeLabel,
         rows: result.data.length,
         scopedToCard: Boolean(cardNumber),
@@ -1476,7 +1476,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       },
     });
 
-    return { sent: true, fileName: report.fileName, rows: result.data.length };
+    return { sent: true, fileName: reports[0]?.fileName, fileNames: reports.map((report) => report.fileName), rows: result.data.length };
   });
 
   app.post('/carrier/mini-app/last-used', async (request) => {

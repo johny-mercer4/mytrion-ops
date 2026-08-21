@@ -208,6 +208,31 @@
   min-width: 0;
 }
 
+/*
+ * The rail follows you down the record.
+ *
+ * The main column carries the timeline, the invoices, the field blocks and the documents; the rail
+ * carries what you act on — Do next, the owner, the debt figures. Left static, the rail ran out
+ * several hundred pixels before the main column did, so the half of the screen holding every
+ * button went blank exactly when you had read far enough to want one.
+ *
+ * Only from 900px: below that the two columns are stacked and there is no second column to pin.
+ * The rail scrolls inside itself when it is taller than the viewport, so a long plan or tradeline
+ * block can still be read.
+ */
+@media (width >= 900px) {
+  [data-mytrion='collection'] .cc-rail {
+    position: sticky;
+    top: var(--space-4);
+    align-self: flex-start;
+    max-height: calc(100svh - var(--space-8));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    /* Its own scrollbar must not eat the panel edge. */
+    scrollbar-gutter: stable;
+  }
+}
+
 [data-mytrion='collection'] .cc-pane {
   display: flex;
   flex-direction: column;
@@ -530,4 +555,168 @@
   font-size: var(--text-sm);
   line-height: var(--lh-sm);
   color: var(--text-muted);
+}
+
+/* ── Case detail: the hand-maintained field blocks ───────────────────────── */
+[data-mytrion='collection'] .cf-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+[data-mytrion='collection'] .cf-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+/* flex-basis, not a px grid track: the blocks wrap from four across to one as the pane narrows,
+   and a fixed track would pin a column the phone viewport cannot fit. */
+/* 20rem, not 15: at 15 the four blocks wrapped 3 + 1 and Disposition sat alone beside a column of
+   nothing. At 20 they pair up two-by-two on a desk pane and go four across on a wide one. */
+[data-mytrion='collection'] .cf-block {
+  flex: 1 1 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+[data-mytrion='collection'] .cf-block-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cf-block-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .cf-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+[data-mytrion='collection'] .cf-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-1_5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+[data-mytrion='collection'] .cf-fact:last-child {
+  border-bottom: 0;
+}
+[data-mytrion='collection'] .cf-fact-k {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+[data-mytrion='collection'] .cf-fact-v {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-align: end;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-mytrion='collection'] .cf-fact[data-strong='true'] .cf-fact-v {
+  font-weight: var(--fw-semibold);
+}
+[data-mytrion='collection'] .cf-fact-v[data-empty='true'] {
+  color: var(--text-muted);
+}
+
+/* ── Follow-ups ──────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .ct-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-data-alt);
+}
+[data-mytrion='collection'] .ct-add > :first-child {
+  flex: 1 1 12rem;
+}
+/* The Documents strip is a picker plus a button, not a form — the picker sizes to its content and
+   the button sits at the end, rather than the picker stretching across the panel. */
+[data-mytrion='collection'] .ct-pane .ct-add:has(> :last-child:nth-child(2)) > :first-child {
+  flex: 0 1 14rem;
+}
+[data-mytrion='collection'] .ct-add-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+[data-mytrion='collection'] .ct-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .ct-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-mytrion='collection'] .ct-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  padding: var(--space-2_5) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+[data-mytrion='collection'] .ct-row:last-child {
+  border-bottom: 0;
+}
+/* A resolved follow-up stays readable but stops competing with the open ones. */
+[data-mytrion='collection'] .ct-row:not([data-status='open']) .ct-row-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+[data-mytrion='collection'] .ct-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+[data-mytrion='collection'] .ct-row-title {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+[data-mytrion='collection'] .ct-row-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .ct-row-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
+/* ── Owner ───────────────────────────────────────────────────────────────── */
+[data-mytrion='collection'] .cr-owner-name {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--text-md);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .cr-owner-name[data-empty='true'] {
+  color: var(--text-muted);
+  font-weight: var(--fw-body);
+}
+
+/* A detail a person confirmed on a call, not one copied off the Deal. */
+[data-mytrion="collection"] .cc-verified {
+  margin-inline-start: var(--space-1);
+  color: var(--success);
+  vertical-align: text-bottom;
 }

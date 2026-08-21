@@ -1490,6 +1490,42 @@ describe('driver row scoping (own card only)', () => {
       expect(String(sent.bytes)).not.toContain(OWN_CARD);
     });
 
+    it('builds selected PDF and Excel reports from one transaction snapshot with matching totals', async () => {
+      withResolvableCard();
+      dwhTxns.mockResolvedValueOnce(dwhResult(reportRows));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/transactions/export',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', range: 'month', formats: ['pdf', 'xlsx'] },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ sent: true, rows: 1 });
+      expect(res.json().fileNames).toHaveLength(2);
+      expect(dwhTxns).toHaveBeenCalledTimes(1);
+      expect(botSendDocument).toHaveBeenCalledTimes(2);
+
+      const pdfBytes = botSendDocument.mock.calls[0]![0].bytes as Buffer;
+      const xlsxBytes = botSendDocument.mock.calls[1]![0].bytes as Buffer;
+      const { getDocumentProxy, extractText } = await import('unpdf');
+      const pdf = await getDocumentProxy(new Uint8Array(pdfBytes));
+      const { text } = await extractText(pdf, { mergePages: true });
+      // Driver reports are forced to retail, so funded $100 + $5 discount is $105 in both files.
+      expect(String(text).replace(/\s+/g, ' ')).toContain('105.00');
+
+      const { default: ExcelJS } = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(xlsxBytes as never);
+      const totalAmount = workbook.worksheets[0]!.getCell('H6').value;
+      expect(totalAmount).toMatchObject({ result: 105 });
+      expect(auditLog).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ detail: expect.objectContaining({ format: 'pdf', formats: ['pdf', 'xlsx'] }) }),
+      );
+    });
+
     it('prefers a stored telegramChatId when the registration captured one', async () => {
       registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverRow({ telegramChatId: '999888' }));
       vi.mocked(findDwhCardById).mockResolvedValueOnce({ cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' });

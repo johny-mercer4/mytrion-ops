@@ -1,9 +1,10 @@
 /**
- * Collection cases — the stage board, in FIVE lanes.
+ * Collection cases — the stage board, in MILESTONE lanes rather than one column per stage.
  *
- * See `BOARD_LANES` for why five and not eight. Two things the old board did not carry and this
- * one does: the MONEY in each lane (a count of cases says nothing about where recovery is stuck)
- * and each card's last touch (a card nobody has touched is the whole point of looking at a board).
+ * See `BOARD_LANES`: sixteen stages is sixteen columns, four times what fits on a desk monitor.
+ * Two things the old board did not carry and this one does: the MONEY in each lane (a count of
+ * cases says nothing about where recovery is stuck) and each card's last touch (a card nobody has
+ * touched is the whole point of looking at a board).
  */
 import { Badge, EmptyState } from '@/ds';
 import type { CollectionCaseRow } from '@/api/collection';
@@ -42,7 +43,7 @@ export function CasesKanban({
   filtered: boolean;
   /**
    * True under the Open scope. The Closed lane can never hold a row there, and an always-empty
-   * fifth of the board is dead width — the other four lanes get it back instead.
+   * lane is dead width — the remaining lanes get it back instead.
    */
   hideClosedLane: boolean;
   onOpen: (id: string) => void;
@@ -59,7 +60,7 @@ export function CasesKanban({
         description={
           filtered
             ? 'Nothing matches these filters. Clear them to see the board.'
-            : 'Cases appear when remaining debt stays above $100.'
+            : 'Cases appear here when the finder opens one for a carrier that owes.'
         }
       />
     );

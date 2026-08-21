@@ -8,10 +8,16 @@
  * is enforced in the repo layer — a non-`octane` tenant is served an empty page rather than the
  * Octane debtor book.
  *
- * `collection_cases` is one row per carrier (UNIQUE carrier_id). The finder keeps the row only
- * while remaining debt is above $100; it does not write Zoho. Invoices hang off the case and
- * cascade. `array_reports` is a Metro 2 snapshot per (carrier_id, report_period) — the live 6h
- * cron still writes Zoho; this table is what the desk reads.
+ * `collection_cases` is one row per carrier (UNIQUE carrier_id). It NEVER loses a row. The finder
+ * live on prod today writes Zoho, opens at `remaining >= 0.01`, and zeroes the money fields
+ * rather than deleting when a carrier settles. servercrm PR #187 moves the finder onto this table
+ * and raises the bar to `remaining > 100` with close/reopen semantics — closing, still never
+ * deleting. Invoices hang off the case and cascade.
+ *
+ * `array_reports` is a Metro 2 snapshot per (carrier_id, report_period) — the live 6h cron writes
+ * Zoho; this table is what the desk reads. `report_period` is a HUMAN-FORMATTED string
+ * (`'Aug 2026'`), so it does not sort: order by `reportPeriodSortKey` from repos/arrayPeriod.ts,
+ * never by the column itself.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -31,13 +37,37 @@ import {
 export const COLLECTION_CASE_STATUSES = ['open', 'closed'] as const;
 export type CollectionCaseStatus = (typeof COLLECTION_CASE_STATUSES)[number];
 
+/**
+ * The stage vocabulary, one slug per stage of the Zoho Blueprint on `Collection_Cases`.
+ *
+ * This list used to hold eight of the sixteen. The eight it dropped were the whole no-contact
+ * ladder (`nc_attempt_1..3` → `usps_letter`), the two recovery-from-failure stages
+ * (`reconnect_attempt`, `failed_promise`) and the two legal stages above small claims
+ * (`legal_action`, `civil_court`) — which is to say, most of the early-funnel work the Today
+ * worklist exists to drive. Read `GET Collection_Cases/{id}/actions/blueprint` against Zoho to
+ * see the transitions; the graph is documented in the collections atlas.
+ *
+ * The original eight keep their slugs, so no stored value changes.
+ *
+ * NOT here: Zoho also has seven records stranded on a `Debt Closed` value that is not in its own
+ * picklist and has no blueprint transitions. Representing a broken state as a valid one would
+ * just move the problem; those records need fixing at the source.
+ */
 export const COLLECTION_STAGES = [
   'intake',
+  'nc_attempt_1',
+  'nc_attempt_2',
+  'nc_attempt_3',
+  'usps_letter',
   'connected',
-  'with_agency',
   'payment_plan',
+  'reconnect_attempt',
+  'failed_promise',
+  'with_agency',
   'skip_tracing',
+  'legal_action',
   'small_claims',
+  'civil_court',
   'closed_successfully',
   'case_lost',
 ] as const;
@@ -51,6 +81,55 @@ export const COLLECTION_CLOSED_REASONS = [
   'case_lost',
 ] as const;
 export type CollectionClosedReason = (typeof COLLECTION_CLOSED_REASONS)[number];
+
+/**
+ * The picklist vocabularies Zoho carries on `Collection_Cases`, as the literal strings that are
+ * already stored in the data.
+ *
+ * ⚠ NOT the picklist's configured `actual_value`. Several of these entries have a display text
+ * that differs from their actual value — `Current_Agency` shows "Trust Altus" but is configured
+ * as `Trust`; `Collection_Stage` shows Intake / Connected but is configured as `Option 1` /
+ * `Option 2`. Every record holds the DISPLAY text: searching Zoho for `Trust` returns nothing
+ * while `Trust Altus` matches 158 cases. Write what the data holds, or the two systems stop
+ * agreeing on the same case.
+ */
+export const COLLECTION_AGENCIES = [
+  'Trust Altus',
+  'Dustin',
+  'Caine & Weiner',
+  'IC system',
+  'Freight Recovery',
+  'GG&R',
+] as const;
+export type CollectionAgency = (typeof COLLECTION_AGENCIES)[number];
+
+/** Caine & Weiner grade the work; it is the only agency with tiers. */
+export const CAINE_WEINER_TIERS = ['Standard', 'Forwarded', 'Legal'] as const;
+
+export const AGENCY_RESPONSE_STATUSES = ['Pending', 'Paid', 'No Response', 'Continue'] as const;
+
+export const COURT_TYPES = ['Small Claims', 'Civil Court'] as const;
+export const COURT_STATUSES = ['Filed', 'Pending', 'Closed'] as const;
+
+/**
+ * Zoho configures these two as `Option 1` / `Option 2` and marks both entries unused; no record
+ * has ever carried one. With no established literal to match, the display text is what goes in —
+ * consistent with every other picklist in this module.
+ */
+export const COOPERATION_STATUSES = ['Cooperated', 'Not Cooperated'] as const;
+
+/** Why a debt was written off. Distinct from `closed_reason`, which is how the machine closed it. */
+export const COLLECTION_LOSS_REASONS = [
+  'Bankruptcy',
+  'Deceased',
+  'Statute of Limitations Expired',
+  'Cannot Locate',
+  'Court Loss (Small Claims)',
+  'Court Loss (Civil)',
+  'Settled (Lost Outright)',
+  'Wrong Debtor',
+] as const;
+export type CollectionLossReason = (typeof COLLECTION_LOSS_REASONS)[number];
 
 export const collectionCases = pgTable(
   'collection_cases',
@@ -90,7 +169,47 @@ export const collectionCases = pgTable(
     zohoDealId: text('zoho_deal_id'),
     agencyTransferDate: date('agency_transfer_date'),
     firstCollectionAgency: text('first_collection_agency'),
+
+    // ── Desk-owned from here down. The finder writes none of it. ──────────────────────────────
+    /** Which agency holds the debt NOW. A case can be re-placed; `first_` keeps the original. */
+    currentAgency: text('current_agency'),
+    secondCollectionAgency: text('second_collection_agency'),
+    caineWeinerTier: text('caine_weiner_tier'),
+    agencyResponseStatus: text('agency_response_status'),
+
+    legalActionRequired: boolean('legal_action_required').notNull(),
+    courtType: text('court_type'),
+    legalFilingDate: date('legal_filing_date'),
+    legalDocumentsAttached: boolean('legal_documents_attached').notNull(),
+    courtStatus: text('court_status'),
+
+    skipTraceRequired: boolean('skip_trace_required').notNull(),
+    /**
+     * What a human CONFIRMED on a call, kept apart from the `debtor_*` block above — that block
+     * is finder-owned and overwritten from the Deal every 30 minutes, so a correction written
+     * there would not survive the hour.
+     */
+    verifiedEmail: text('verified_email'),
+    verifiedPhone: text('verified_phone'),
+    verifiedAddress: text('verified_address'),
+
+    escalationRequired: boolean('escalation_required').notNull(),
+    escalationDate: date('escalation_date'),
+
+    cooperationStatus: text('cooperation_status'),
+    lossReason: text('loss_reason').$type<CollectionLossReason>(),
+    paymentReceived: boolean('payment_received').notNull(),
+    paymentReceivedDate: date('payment_received_date'),
+
+    reminderCycleActive: boolean('reminder_cycle_active').notNull(),
+    earlyBadDebtorFlag: boolean('early_bad_debtor_flag').notNull(),
+    totalCostIncurred: numeric('total_cost_incurred').notNull(),
+    totalMerchantFee: numeric('total_merchant_fee').notNull(),
+
     assigneeUserId: text('assignee_user_id'),
+    /** Denormalised so a list row renders without a join. */
+    assigneeName: text('assignee_name'),
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
     raw: jsonb('raw').$type<Record<string, unknown>>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),

@@ -9,6 +9,7 @@ import { env, isTest } from '../../config/env.js';
 import { listGongCallsForAgent } from '../../integrations/gong.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
+import type { MytrionCallSourceType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { AsyncSWRCache } from '../../lib/asyncSWRCache.js';
 
@@ -16,7 +17,8 @@ export type CallHubSource = 'mytrion' | 'zoho' | 'gong';
 export type CallHubStatus = 'answered' | 'missed' | 'unknown';
 
 export interface CallHubLinked {
-  type: 'lead' | 'deal' | 'retention_case';
+  /** Mirrors `MytrionCallSourceType` — Call Hub shows every call, whichever desk placed it. */
+  type: MytrionCallSourceType;
   id: string;
   label?: string;
 }

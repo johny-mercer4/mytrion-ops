@@ -19,7 +19,7 @@ export interface DwhClient {
   ownerName: string | null;
 }
 
-/** Search the DWH client directory by company name, carrier id, or application id. */
+/** Search the DWH client directory by company name (punctuation-insensitive), carrier id, application id, or phone. */
 export async function searchClients(q: string, limit = 15, signal?: AbortSignal): Promise<DwhClient[]> {
   const data = (await request('GET', '/carrier-clients', {
     query: { q: q || undefined, limit },

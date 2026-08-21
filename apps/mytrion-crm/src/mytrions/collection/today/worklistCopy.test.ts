@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { CollectionCaseRow } from '@/api/collection';
 import type { DeskPolicy, WorklistItem, WorklistLane } from '@/api/collectionDesk';
 import { LANES, itemName, laneAction, laneMeta, laneSentence } from './worklistCopy';
+import { caseRowFixture } from '../caseRow.fixture';
 
 const POLICY: DeskPolicy = {
   agencyMinDaysPastDue: 180,
@@ -22,46 +23,20 @@ const POLICY: DeskPolicy = {
 };
 
 function caseRow(over: Partial<CollectionCaseRow> = {}): CollectionCaseRow {
-  return {
-    id: 'cc_1',
+  return caseRowFixture({
     carrierId: '5104821',
     status: 'open',
     collectionStage: 'connected',
     displayName: null,
     debtorCompanyName: 'Redline Freight LLC',
-    debtorFullName: null,
-    debtorEmail: null,
-    debtorSecondaryEmail: null,
-    debtorPhone: null,
-    debtorCellPhone: null,
-    debtorAddress: null,
-    debtorCity: null,
-    debtorState: null,
-    debtorZipCode: null,
-    debtorMcDot: 'MC-847213',
-    debtorDateOfBirth: null,
     totalDebtAmount: '26120',
     totalInvoiceAmount: '38420',
     totalAmountPaid: '12300',
     issueInvoiceCount: 11,
     daysPastDue: 214,
-    firstDelinquentDate: null,
-    placementDate: null,
     caseCreatedDate: '2026-01-12',
-    closedAt: null,
-    closedReason: null,
-    zohoDealId: null,
-    zohoRecordId: null,
-    agencyTransferDate: null,
-    firstCollectionAgency: null,
-    assigneeUserId: null,
-    currency: 'USD',
-    reopenCount: 0,
-    lastSyncedAt: null,
-    createdAt: '2026-01-12T00:00:00.000Z',
-    updatedAt: '2026-08-19T00:00:00.000Z',
     ...over,
-  };
+  });
 }
 
 function item(lane: WorklistLane, over: Partial<WorklistItem> = {}): WorklistItem {

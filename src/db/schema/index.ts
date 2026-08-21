@@ -60,6 +60,8 @@ export * from './verification_vendor_spend.js';
 export * from './mytrion_watch.js';
 export * from './collection.js';
 export * from './collection_desk.js';
+export * from './collection_tasks.js';
+export * from './collection_case_attachments.js';
 export * from './carrier_attachments.js';
 export * from './mytrion_rejection_reports.js';
 export * from './sales_kpi.js';

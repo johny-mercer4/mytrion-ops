@@ -2,14 +2,17 @@
  * Array tradeline snapshots — one row per (carrier_id, report_period).
  *
  * 9k+ rows. Every list is limit+offset with a hard cap; there is no path that dumps the table.
- * Sort is report_period DESC, updated_at DESC, id DESC so an offset page cannot skip or
- * duplicate when many filings share a period. Facets are distinct values for the filter bar
+ * Sort is newest period first, then updated_at DESC, id DESC so an offset page cannot skip or
+ * duplicate when many filings share a period. `report_period` is a human string that does not
+ * sort — see repos/arrayPeriod.ts — so the ordering runs on the derived key, never the column. Facets are distinct values for the filter bar
  * (a handful of periods / Metro 2 codes / agencies), not another page of rows.
  */
 import { and, desc, eq, ilike, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arrayReports, type ArrayReport } from '../db/schema/collection.js';
 import type { TenantContext } from '../types/tenantContext.js';
+import { reportPeriodSortKey } from './arrayPeriod.js';
+import { hasPlausibleDob, needsDobLookupSql } from './dobPlausibility.js';
 import { canReadCollectionSnapshot } from './collectionAccess.js';
 import { firstOrUndefined, normalizePagination } from './util.js';
 
@@ -102,7 +105,9 @@ export function toArrayReportDto(row: ArrayReport): ArrayReportDto {
     zipCode: row.zipCode,
     telephoneNumber: row.telephoneNumber,
     email: row.email,
-    dateOfBirth: day(row.dateOfBirth),
+    // An unusable birthday reads as ABSENT, not as itself: the desk must never print
+    // "Jul 26, 1191" as though somebody's age were known. See repos/dobPlausibility.ts.
+    dateOfBirth: hasPlausibleDob(row.dateOfBirth) ? day(row.dateOfBirth) : null,
     dateOpen: day(row.dateOpen),
     carrierType: row.carrierType,
     accountStatus: row.accountStatus,
@@ -120,7 +125,7 @@ export function toArrayReportDto(row: ArrayReport): ArrayReportDto {
     hasAgency: row.hasAgency,
     agencyName: row.agencyName,
     monthsDelinquent: row.monthsDelinquent,
-    needsDobLookup: row.needsDobLookup,
+    needsDobLookup: row.needsDobLookup === true || !hasPlausibleDob(row.dateOfBirth),
     excludedReason: row.excludedReason,
     validationErrors: row.validationErrors,
     currency: row.currency,
@@ -142,8 +147,8 @@ export function buildArrayWhere(filter: ArrayReportListFilter): SQL | undefined 
   } else if (filter.agency) {
     clauses.push(eq(arrayReports.agencyName, filter.agency));
   }
-  if (filter.needsDobLookup === true) clauses.push(eq(arrayReports.needsDobLookup, true));
-  if (filter.needsDobLookup === false) clauses.push(eq(arrayReports.needsDobLookup, false));
+  if (filter.needsDobLookup === true) clauses.push(needsDobLookupSql);
+  if (filter.needsDobLookup === false) clauses.push(sql`NOT ${needsDobLookupSql}`);
   const q = filter.search?.trim();
   if (q) {
     const like = `%${q}%`;
@@ -167,7 +172,7 @@ export function buildArrayListQuery(filter: ArrayReportListFilter) {
     .select()
     .from(arrayReports)
     .where(where)
-    .orderBy(desc(arrayReports.reportPeriod), desc(arrayReports.updatedAt), desc(arrayReports.id))
+    .orderBy(desc(reportPeriodSortKey), desc(arrayReports.updatedAt), desc(arrayReports.id))
     .limit(limit)
     .offset(offset);
 }
@@ -186,7 +191,7 @@ export const arrayReportRepo = {
       db
         .select({
           total: sql<number>`count(*)::int`,
-          needsDob: sql<number>`count(*) FILTER (WHERE ${arrayReports.needsDobLookup} IS TRUE)::int`,
+          needsDob: sql<number>`count(*) FILTER (WHERE ${needsDobLookupSql})::int`,
           withAgency: sql<number>`count(*) FILTER (WHERE ${arrayReports.agencyName} IS NOT NULL)::int`,
         })
         .from(arrayReports),
@@ -214,10 +219,12 @@ export const arrayReportRepo = {
   async facets(ctx: TenantContext): Promise<ArrayReportFacets> {
     if (!canReadCollectionSnapshot(ctx)) return { periods: [], accountStatuses: [], agencies: [] };
     const [periods, statuses, agencies] = await Promise.all([
+      // The sort key has to be SELECTed as well as ordered on: SELECT DISTINCT can only order by
+      // expressions that appear in the select list.
       db
-        .selectDistinct({ v: arrayReports.reportPeriod })
+        .selectDistinct({ v: arrayReports.reportPeriod, k: reportPeriodSortKey })
         .from(arrayReports)
-        .orderBy(desc(arrayReports.reportPeriod)),
+        .orderBy(desc(reportPeriodSortKey)),
       db
         .selectDistinct({ v: arrayReports.accountStatus })
         .from(arrayReports)

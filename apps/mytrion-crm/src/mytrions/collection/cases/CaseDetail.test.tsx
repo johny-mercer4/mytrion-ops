@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CollectionCaseRow, CollectionInvoiceRow } from '@/api/collection';
 import { CASE_INVOICES_PAGE_SIZE } from './casesModel';
+import { caseRowFixture } from '../caseRow.fixture';
 
 const getCollectionCase = vi.fn();
 const listCollectionInvoices = vi.fn();
@@ -37,47 +38,10 @@ vi.mock('@/api/collectionDesk', async () => {
 
 const { CaseDetail } = await import('./CaseDetail');
 const { invalidateSwrCache } = await import('../../_shared/swrCache');
+import { ToastProvider } from '@/ds';
 
 function caseRow(): CollectionCaseRow {
-  return {
-    id: 'cc_1',
-    carrierId: '5776662',
-    status: 'open',
-    collectionStage: 'intake',
-    displayName: 'Display',
-    debtorCompanyName: 'SANGHA TRANS',
-    debtorFullName: null,
-    debtorEmail: null,
-    debtorSecondaryEmail: null,
-    debtorPhone: null,
-    debtorCellPhone: null,
-    debtorAddress: null,
-    debtorCity: null,
-    debtorState: null,
-    debtorZipCode: null,
-    debtorMcDot: null,
-    debtorDateOfBirth: null,
-    totalDebtAmount: '90878.84',
-    totalInvoiceAmount: '90878.84',
-    totalAmountPaid: '0.00',
-    issueInvoiceCount: 120,
-    daysPastDue: 90,
-    firstDelinquentDate: null,
-    placementDate: null,
-    caseCreatedDate: '2026-01-01',
-    closedAt: null,
-    closedReason: null,
-    zohoDealId: null,
-    zohoRecordId: null,
-    agencyTransferDate: null,
-    firstCollectionAgency: null,
-    assigneeUserId: null,
-    currency: 'USD',
-    reopenCount: 0,
-    lastSyncedAt: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  };
+  return caseRowFixture();
 }
 
 function invoice(n: number): CollectionInvoiceRow {
@@ -136,22 +100,38 @@ beforeEach(() => {
   listActivity.mockResolvedValue({ items: [], total: 0 });
 });
 
+/**
+ * The panels on this record raise toasts, so they need the provider the Collection module mounts
+ * at its root. Rendering the component bare threw "useToast() must be called inside a
+ * <ToastProvider>" — a real crash in the app if that provider ever goes missing, which is exactly
+ * why the test should render it the way the app does.
+ */
+function renderDetail() {
+  return render(
+    <ToastProvider>
+      <CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />
+    </ToastProvider>,
+  );
+}
+
 describe('case invoice load states', () => {
   it('shows an error and Retry when invoices fail and there is no cache', async () => {
     listCollectionInvoices.mockRejectedValue(new Error('Backend issue'));
-    render(<CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />);
+    renderDetail();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load invoices');
+    // By text, not by role: ToastProvider's own region is also role="alert", so a bare
+    // findByRole('alert') now matches the empty toast outlet instead of the error state.
+    expect(await screen.findByText('Could not load invoices')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     expect(screen.queryByText('No invoices on this case')).not.toBeInTheDocument();
   });
 
   it('shows the empty state only after a successful zero-item load', async () => {
     listCollectionInvoices.mockResolvedValue({ items: [], total: 0 });
-    render(<CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />);
+    renderDetail();
 
     expect(await screen.findByText('No invoices on this case')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could not load invoices')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 });
@@ -162,7 +142,7 @@ describe('case invoice pagination', () => {
       Promise.resolve(pageOf(page?.offset ?? 0, 120)),
     );
     const user = userEvent.setup();
-    render(<CaseDetail caseId="cc_1" onBack={() => undefined} onChanged={() => undefined} />);
+    renderDetail();
 
     expect(await screen.findByText('INV-1')).toBeInTheDocument();
     expect(screen.getByText('INV-50')).toBeInTheDocument();
