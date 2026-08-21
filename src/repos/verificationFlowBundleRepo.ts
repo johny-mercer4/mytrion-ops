@@ -133,7 +133,9 @@ export const verificationFlowBundleRepo = {
         select ${VERIFICATION_FLOW_LIST_COLUMN_SQL}
         from verification_cases
         where ${where}
-        order by updated_at desc
+        -- Opened newest first. jsonb_agg below repeats the order — a CTE ORDER BY alone
+        -- only picks the page; aggregation would otherwise scramble it.
+        order by created_at desc
         limit ${limit} offset ${offset}
       ),
       counted as (
@@ -150,7 +152,7 @@ export const verificationFlowBundleRepo = {
         from verification_cases where tenant_id = ${ctx.tenantId}
       )
       select jsonb_build_object(
-        'items',      coalesce((select jsonb_agg(to_jsonb(f)) from filtered f), '[]'::jsonb),
+        'items',      coalesce((select jsonb_agg(to_jsonb(f) order by f.created_at desc) from filtered f), '[]'::jsonb),
         'total',      (select n from counted),
         'aggregates', (select to_jsonb(a) from agg a)
       ) as bundle
