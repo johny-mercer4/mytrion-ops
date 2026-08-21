@@ -97,7 +97,7 @@ CRM never calls these vendors. Octane API does.
 
 | Vendor / store | Owner | Used by live rail? |
 | --- | --- | --- |
-| FMCSA QCMobile (`fmcsaQcMobile.ts`) | **Octane** | Phase 4. US Render only — `fmcsa.dot.gov` denies non-US egress. |
+| FMCSA QCMobile (`fmcsaQcMobile.ts`) | **Octane** | Phase 4 + Data Center search. US Render only — `fmcsa.dot.gov` denies non-US egress. |
 | Socrata census + filings | **Octane** | Phase 4 fallback. Insurance filings feed is **frozen**. |
 | DWH broker snapshot | **Octane** | Phase 4 third opinion + Sales prefill. Not a dependency. |
 | Local `verification_blacklist_entries` | **Octane** | Phase 3 Check A (this desk’s own declines). |
@@ -119,10 +119,12 @@ Declared in `verificationTabs.ts` (undeclared = invisible to non-admins):
 | --- | --- |
 | **Main** | Desk overview (`VerificationMain`) — queue state, not a launcher grid |
 | **Inbox** | `mytrion_inbox_messages` tagged `verification`, live `/v1/realtime` |
-| **Verification Case** | 10-phase queue + case (`ApplicantsList` / `CaseView` / `PhaseSpine`) |
+| **Verification Case** | 10-phase queue + case (`ApplicantsList` / `CaseView` / `PhaseSpine`). The open record has **Case** / **Data Center** tabs. |
 | **Mytrion Watch** | Weekly behavioural re-score of **existing** carriers (`src/modules/mytrionWatch/`). Not the new-applicant SOP. |
 | **Existing clients** | Read-only `octane.dim_company` roster (`/v1/verification/roster*`) |
 | **Tickets** | `soon: true` — not mounted |
+
+**Record — Data Center.** On `/verification/applicants/{id}` (`CaseView`), not a workspace tab. Live `GET /v1/verification/flow/fmcsa/search?by=dot|mc|name&q=` wraps `lookupFmcsaCarrier` with one QCMobile key. Prefills USDOT → MC → name from the case; does not auto-run; does not write findings (Phase 4 `authority/run` still does that). Motus / Broker snapshot / Blacklist / CITI Fuel are listed Soon.
 
 Legacy “Verification cases” / “Decision rules” stay on disk and **undeclared** while `legacyDesk.ts` is off.
 
@@ -186,8 +188,8 @@ Code `FINAL_DECISIONS`: `approve` (limit required; note required if **above** re
 | Phases / machine | `src/modules/verificationFlow/phases.ts` · `stateMachine.ts` |
 | Sales intake | `applicationService.ts` · `intake.ts` · `src/routes/v1/verificationApplications.routes.ts` |
 | Ingest | `dealIntake.ts` · `automation.verification.case-ingest` |
-| Desk | `deskService.ts` · `deskDecision.ts` · `deskScreening.ts` · `deskAuthority.ts` · `deskHighway.ts` · `deskReviews.ts` · `hardStops.ts` · `capacity.ts` · `src/routes/v1/verificationFlow.routes.ts` (incl. `DELETE .../documents/:documentId`) · `verificationAuthority.routes.ts` · `verificationPolicy.routes.ts` |
-| CRM API | `apps/mytrion-crm/src/api/verificationFlow.ts` · `verificationDeskWrites.ts` |
+| Desk | `deskService.ts` · `deskDecision.ts` · `deskScreening.ts` · `deskAuthority.ts` · `deskHighway.ts` · `deskReviews.ts` · `hardStops.ts` · `capacity.ts` · `src/routes/v1/verificationFlow.routes.ts` (incl. `DELETE .../documents/:documentId`) · `verificationAuthority.routes.ts` (Phase 4/8 writes + `GET .../fmcsa/search`) · `verificationPolicy.routes.ts` |
+| CRM API | `apps/mytrion-crm/src/api/verificationFlow.ts` · `verificationDeskWrites.ts` · `verificationFmcsa.ts` |
 | Desk UI | `apps/mytrion-crm/src/mytrions/verification/**` |
 | Sales tab (not this desk) | `.../sales/redesign/tabs/VerificationTab.tsx` · `salesVerificationQueue.ts` · `applicationIntake.tsx` |
 | Kill switches | `src/modules/verification/killSwitches.ts` ↔ `legacyDesk.ts` |
@@ -203,6 +205,7 @@ Code `FINAL_DECISIONS`: `approve` (limit required; note required if **above** re
 - Treat a skip as a pass. Treat a failed ban-list probe as a clear.
 - Silently “fix” SOP vs code in product code unless the skill itself was simply wrong.
 - Add a Salesforce TARGET.md / pack from this skill.
+- Write Data Center FMCSA hits onto the case. Search is view-only; Phase 4 Run still stores the register.
 
 ## Keep in sync
 

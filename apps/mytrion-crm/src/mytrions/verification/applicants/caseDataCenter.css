@@ -1,0 +1,162 @@
+/* Data Center on the verification record — chrome tabs, flat results. */
+
+[data-mytrion='verification'] .va-record-tabs {
+  border-radius: var(--va-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--hz-glass-inset);
+  padding: 0 var(--space-3);
+}
+
+[data-mytrion='verification'] .va-dc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .va-dc-sources {
+  padding-inline: var(--space-1);
+}
+
+[data-mytrion='verification'] .va-dc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--va-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+
+[data-mytrion='verification'] .va-dc-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .va-dc-keys {
+  flex: 0 1 auto;
+}
+
+[data-mytrion='verification'] .va-dc-q {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .va-dc-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .va-dc-status[data-tone='danger'] {
+  color: var(--intent-danger-fg);
+}
+
+[data-mytrion='verification'] .va-dc-meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .va-dc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .va-dc-row {
+  border: 1px solid var(--border);
+  border-radius: var(--va-r-sm);
+  background: var(--surface-alt);
+}
+
+[data-mytrion='verification'] .va-dc-row-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  width: 100%;
+  padding: var(--space-3);
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+[data-mytrion='verification'] .va-dc-row-head:hover {
+  background: var(--surface-raised);
+}
+
+[data-mytrion='verification'] .va-dc-row-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .va-dc-row-name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+
+[data-mytrion='verification'] .va-dc-row-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .va-dc-row-facts .num {
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .va-dc-row-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .va-dc-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+[data-mytrion='verification'] .va-dc-detail div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  padding-top: var(--space-2);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .va-dc-detail dt {
+  margin: 0;
+}
+
+[data-mytrion='verification'] .va-dc-detail dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .va-dc-q,
+  [data-mytrion='verification'] .va-dc-keys {
+    flex: 1 1 100%;
+  }
+
+  [data-mytrion='verification'] .va-dc-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

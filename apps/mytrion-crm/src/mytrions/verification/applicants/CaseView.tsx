@@ -73,8 +73,10 @@ import {
 import { hardStopsCanPass, type HardStopAck } from './caseHardStops';
 import { EMPTY_HIGHWAY_MARKS, highwayCanPass, type HighwayMarks } from './caseHighway';
 import { EMPTY_RISK_MARKS, riskCanPass, type RiskMarks } from './caseRisk';
+import { CaseDataCenter } from './CaseDataCenter';
 import { CaseDecideBar } from './CaseDecideBar';
 import { CaseFullDetailsControl } from './CaseFullDetailsModal';
+import { CaseRecordTabs, type CaseRecordTab } from './CaseRecordTabs';
 import { CaseReopenButton } from './CaseReopen';
 import { deskReviewOrder } from './caseRouting';
 import { PhaseBody } from './PhaseBody';
@@ -157,6 +159,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
    */
   const [error, setError] = useState<{ scope: CaseActionKey; message: string } | null>(null);
   const [activeCode, setActiveCode] = useState<string | null>(null);
+  const [recordTab, setRecordTab] = useState<CaseRecordTab>('case');
   const [identityMarks, setIdentityMarks] = useState<Record<string, IdentityMark>>({});
   const [screeningMarks, setScreeningMarks] = useState<ScreeningMarks>(EMPTY_SCREENING_MARKS);
   const [authorityMarks, setAuthorityMarks] = useState<AuthorityMarks>(EMPTY_AUTHORITY_MARKS);
@@ -207,6 +210,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
     setHardStopAck(null);
     setHighwayMarks(EMPTY_HIGHWAY_MARKS);
     setRiskMarks(EMPTY_RISK_MARKS);
+    setRecordTab('case');
   }, [caseId]);
 
   const refetchLive = useCallback(() => {
@@ -492,6 +496,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
         </div>
       </section>
 
+      <CaseRecordTabs value={recordTab} onChange={setRecordTab} />
+
       {locked ? (
         <div className="va-banner" data-tone="danger" role="status">
           <span className="va-banner-glyph" aria-hidden="true">
@@ -524,10 +530,10 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
         </div>
       ) : null}
 
-      {/* Errors from the aside render INSIDE the aside, beside the control that failed — a 415 on
-          an attach belongs at the attach button, not in a banner three sections above it. Everything
-          else has no region of its own and reports here. */}
-      {error && error.scope !== 'attach' && error.scope !== 'request' ? (
+      {recordTab === 'data-center' ? <CaseDataCenter caseRow={c} /> : null}
+
+      {/* Aside failures stay in the aside. Other case-tab errors have no region of their own. */}
+      {recordTab === 'case' && error && error.scope !== 'attach' && error.scope !== 'request' ? (
         <div className="va-banner" data-tone="danger" role="alert">
           <span className="va-banner-glyph" aria-hidden="true">
             <Icon name="error" size="sm" />
@@ -539,6 +545,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
         </div>
       ) : null}
 
+      {recordTab === 'case' ? (
+      <>
       <PhaseSpine
         rail={detail.rail}
         activeCode={active.code}
@@ -686,6 +694,8 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           declineOutcome={screeningPhase ? screeningDeclineOutcome(screeningMarks) : 'decline'}
         />
       </section>
+      </>
+      ) : null}
     </div>
   );
 }

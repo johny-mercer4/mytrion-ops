@@ -152,6 +152,20 @@ beforeEach(() => {
   });
 });
 
+describe('CaseView Data Center', () => {
+  it('opens Data Center with the case USDOT prefilled and hides the phase rail', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.getByRole('tablist', { name: 'Case record' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Data Center' }));
+    expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('987654');
+    expect(screen.queryByRole('button', { name: 'Pass phase' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Case' }));
+    expect(await screen.findByRole('button', { name: 'Pass phase' })).toBeInTheDocument();
+  });
+});
+
 describe('CaseView Full Details', () => {
   it('opens the full-details modal from the record header', async () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
@@ -1062,11 +1076,12 @@ describe('CaseView Phase 6 credit and banking', () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     expect(await screen.findByText(/Banking → Credit/)).toBeInTheDocument();
     expect(screen.getByText(/confirmed in Routing/)).toBeInTheDocument();
-    const tabs = screen.getAllByRole('tab').map((n) => n.textContent ?? '');
+    const reviews = screen.getByRole('tablist', { name: 'Phase 6 reviews' });
+    const tabs = within(reviews).getAllByRole('tab').map((n) => n.textContent ?? '');
     expect(tabs[0]).toContain('Banking');
     expect(tabs[1]).toContain('Credit report review');
     // And the one actually open is step one, not merely the one drawn leftmost.
-    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+    expect(within(reviews).getByRole('tab', { selected: true }).textContent).toContain('Banking');
     expect(screen.getByRole('heading', { level: 4 }).textContent).toContain('Banking review');
   });
 
@@ -1074,8 +1089,10 @@ describe('CaseView Phase 6 credit and banking', () => {
   it('starts on credit when the order is credit-first', async () => {
     getDeskCase.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    await screen.findByRole('tab', { selected: true });
-    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Credit report review');
+    const reviews = await screen.findByRole('tablist', { name: 'Phase 6 reviews' });
+    expect(within(reviews).getByRole('tab', { selected: true }).textContent).toContain(
+      'Credit report review',
+    );
   });
 
   /**
@@ -1085,9 +1102,10 @@ describe('CaseView Phase 6 credit and banking', () => {
   it('lets the reviewer switch to the other step', async () => {
     getDeskCase.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    const bankingTab = await screen.findByRole('tab', { name: /Banking/ });
+    const reviews = await screen.findByRole('tablist', { name: 'Phase 6 reviews' });
+    const bankingTab = within(reviews).getByRole('tab', { name: /Banking/ });
     fireEvent.click(bankingTab);
-    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+    expect(within(reviews).getByRole('tab', { selected: true }).textContent).toContain('Banking');
   });
 
   it('keeps Pass off until credit is strong/acceptable and banking has no missing rows', async () => {
