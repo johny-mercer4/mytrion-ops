@@ -22,10 +22,11 @@ function accountsBase(): string {
  *
  * `access_type=offline` requests a refresh token so we can make CRM API calls on behalf of the
  * real agent (proper "Created By" attribution) without re-prompting on each request. Zoho only
- * issues a new refresh token on the first authorization for an app + user pair; subsequent logins
- * reuse the existing grant silently. `prompt=consent` is omitted: Zoho shows its consent screen
- * only on first authorization and then reuses the worker's choice, so returning workers go straight
- * through.
+ * normally issues a refresh token only for a new grant. `prompt=consent` is intentionally present
+ * during the attribution rollout: every existing worker must replace the old read-only grant with
+ * one carrying the CRM write scopes and an encrypted refresh token. Removing it before every active
+ * worker has re-consented would leave a silent split between correctly and incorrectly attributed
+ * agents.
  */
 export function buildAuthorizeUrl(state: string): string {
   const params = new URLSearchParams({
@@ -181,7 +182,9 @@ async function fetchWorkerViaAccountsIdentity(accessToken: string): Promise<Zoho
   const info = (await res.json().catch(() => ({}))) as ZohoAccountsUserInfo;
   const email = (info.Email ?? '').trim().toLowerCase();
   if (!email) {
-    throw new AuthError('Zoho returned no email for the signed-in user, so their CRM record cannot be matched');
+    throw new AuthError(
+      'Zoho returned no email for the signed-in user, so their CRM record cannot be matched',
+    );
   }
 
   // Imported lazily: the service-token client pulls in the whole Zoho wrapper, and the sign-in path
@@ -202,9 +205,12 @@ async function fetchWorkerViaAccountsIdentity(accessToken: string): Promise<Zoho
      * portal shows its "no Mytrion is assigned" screen — signed in, but granted nothing yet.
      */
     if (info.ZUID == null) {
-      throw new AuthError('Zoho returned neither a CRM user nor a ZUID, so this sign-in cannot be identified');
+      throw new AuthError(
+        'Zoho returned neither a CRM user nor a ZUID, so this sign-in cannot be identified',
+      );
     }
-    const displayName = info.Display_Name ?? [info.First_Name, info.Last_Name].filter(Boolean).join(' ');
+    const displayName =
+      info.Display_Name ?? [info.First_Name, info.Last_Name].filter(Boolean).join(' ');
     logger.warn(
       { email, zuid: info.ZUID },
       'zoho oauth: signed-in Zoho account is not an active CRM user — session granted with no profile/role; grant access in Mytrion Admin',

@@ -73,8 +73,12 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     }),
     // A DUPLICATE_DATA failure returns { success:false, response } carrying the EXISTING lead id — the
     // UI (resolveCreateLeadOutcome) pulls it from `response` to link the existing lead.
-    handler: (_ctx, params) =>
-      createLead(String(params.userId ?? ''), (params.createPayload as Record<string, unknown>) ?? {}),
+    handler: (ctx, params) =>
+      createLead(
+        ctx,
+        String(params.userId ?? ''),
+        (params.createPayload as Record<string, unknown>) ?? {},
+      ),
   },
   // Dashboards — migrated off Zoho Deluge to native TypeScript (kind: 'local'). Each handler does the
   // same orchestration the Deluge function did (servercrm DWH endpoints + Zoho COQL) but skips the Zoho
@@ -126,7 +130,8 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     departments: SALES,
     identityParam: 'userId',
     paramsSchema: userKeyed,
-    handler: async (ctx, params) => fetchHomeSnapshot(String(params.userId ?? ''), ctx.userName?.trim() ?? ''),
+    handler: async (ctx, params) =>
+      fetchHomeSnapshot(String(params.userId ?? ''), ctx.userName?.trim() ?? ''),
   },
   // Announcements + inbox migrated off Zoho Deluge to native Zoho-CRM calls (kind: 'local',
   // src/integrations/salesCrmActions.ts). Return shapes are byte-compatible with the old Deluge output.

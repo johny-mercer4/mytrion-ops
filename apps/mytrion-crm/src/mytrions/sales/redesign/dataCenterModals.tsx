@@ -13,6 +13,7 @@ import { Icon } from './icons';
 import { badge } from './salesData';
 import { useSales } from './ctx';
 import { getImpersonation } from '@/api/impersonation';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import {
   executeLeadBlueprintTransition,
   updateDeal,
@@ -171,6 +172,7 @@ function EditContactRow({
 
 export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: () => void; onCall?: (phone: string) => void }) {
   const { pushToast } = useSales();
+  const phone = useIsPhone();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [applied, setApplied] = useState<LeadEdit>(lead.edit);
@@ -281,7 +283,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
         />
       }
     >
-      <div style={s(BODY_GRID)}>
+      <div style={s(phone ? 'display:flex;flex-direction:column;gap:16px' : BODY_GRID)}>
           <div style={s('min-width:0')}>
             {editing && (
               <div style={s(`margin-bottom:14px;${CARD};border-color:color-mix(in srgb,var(--accent) 28%,var(--border2))`)}>
@@ -367,6 +369,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
 
 export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: () => void; onCall?: (phone: string) => void }) {
   const { pushToast } = useSales();
+  const phone = useIsPhone();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [applied, setApplied] = useState<DealEdit>(deal.edit);
@@ -466,7 +469,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
         />
       }
     >
-      <div style={s(BODY_GRID)}>
+      <div style={s(phone ? 'display:flex;flex-direction:column;gap:16px' : BODY_GRID)}>
           <div style={s('min-width:0')}>
             <div style={s(`margin-bottom:14px;${CARD}`)}>
               <div style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px')}>

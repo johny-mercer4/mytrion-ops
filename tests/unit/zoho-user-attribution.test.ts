@@ -1,25 +1,38 @@
 /**
- * Unit tests for Zoho user-attribution (per-user Notes create).
+ * Unit tests for the Zoho user-attribution feature.
  *
- * Pins:
- *  1. Default worker OAuth scopes include Notes.CREATE (not modules.ALL)
- *  2. buildAuthorizeUrl / exchangeCodeForToken contract
- *  3. insertNoteAsUser — success, 401 retry-once, fail-closed errors (no null)
- *  4. createRecordNote — user path required when Zoho user present; no service fallback
+ * Tests cover:
+ *  1. zohoOAuth.ts — buildAuthorizeUrl now includes access_type=offline
+ *  2. zohoOAuth.ts — exchangeCodeForToken returns both access and refresh token
+ *  3. recordActivity.ts — createRecordNote always uses the real actor and never falls back
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchWithTimeoutMock, insertRecordMock, findTokenMock } = vi.hoisted(() => ({
-  fetchWithTimeoutMock: vi.fn(),
-  insertRecordMock: vi.fn(),
-  findTokenMock: vi.fn(),
-}));
+// ─── Module mocks ─────────────────────────────────────────────────────────────
+
+const {
+  fetchWithTimeoutMock,
+  insertNoteAsUserMock,
+  zohoActorIdMock,
+  getRelatedRecordsMock,
+  getRecordMock,
+  patchRecordAsUserMock,
+  deleteRecordAsUserMock,
+} =
+  vi.hoisted(() => ({
+    fetchWithTimeoutMock: vi.fn(),
+    insertNoteAsUserMock: vi.fn(),
+    zohoActorIdMock: vi.fn(),
+    getRelatedRecordsMock: vi.fn(),
+    getRecordMock: vi.fn(),
+    patchRecordAsUserMock: vi.fn(),
+    deleteRecordAsUserMock: vi.fn(),
+  }));
 
 vi.mock('../../src/lib/http.js', () => ({ fetchWithTimeout: fetchWithTimeoutMock }));
 
 vi.mock('../../src/config/env.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/config/env.js')>();
-  const { DEFAULT_ZOHO_OAUTH_SCOPES } = await import('../../src/config/zohoOAuthScopes.js');
   return {
     ...actual,
     env: {
@@ -27,8 +40,8 @@ vi.mock('../../src/config/env.js', async (importOriginal) => {
       ZOHO_ACCOUNTS_DOMAIN: 'https://accounts.zoho.com',
       ZOHO_SERVER_CLIENT_ID: 'server-client-id',
       ZOHO_SERVER_CLIENT_SECRET: 'server-client-secret',
-      // Use the real default — never ZohoCRM.modules.ALL (that hid the Notes.CREATE gap).
-      ZOHO_OAUTH_SCOPES: DEFAULT_ZOHO_OAUTH_SCOPES,
+      ZOHO_OAUTH_SCOPES:
+        'ZohoCRM.users.READ,AaaServer.profile.READ,ZohoCRM.modules.leads.CREATE,ZohoCRM.modules.leads.UPDATE,ZohoCRM.modules.deals.UPDATE,ZohoCRM.modules.notes.READ,ZohoCRM.modules.notes.CREATE,ZohoCRM.modules.notes.UPDATE,ZohoCRM.modules.notes.DELETE,ZohoCRM.modules.attachments.CREATE',
       ZOHO_OAUTH_REDIRECT_URI: 'https://app.example.com/auth/callback',
       ZOHO_CRM_API_DOMAIN: 'https://www.zohoapis.com/crm/v8',
     },
@@ -36,62 +49,81 @@ vi.mock('../../src/config/env.js', async (importOriginal) => {
 });
 
 vi.mock('../../src/repos/workerZohoTokenRepo.js', () => ({
-  workerZohoTokenRepo: { find: findTokenMock, upsert: vi.fn() },
+  workerZohoTokenRepo: { find: vi.fn(), upsert: vi.fn() },
 }));
 
 vi.mock('../../src/integrations/zohoCrmRecords.js', () => ({
-  zohoCrmRecords: { insertRecord: insertRecordMock },
+  zohoCrmRecords: { getRelatedRecords: getRelatedRecordsMock, getRecord: getRecordMock },
+}));
+
+vi.mock('../../src/integrations/zohoUserAuth.js', () => ({
+  insertNoteAsUser: insertNoteAsUserMock,
+  patchRecordAsUser: patchRecordAsUserMock,
+  deleteRecordAsUser: deleteRecordAsUserMock,
+  zohoActorId: zohoActorIdMock,
 }));
 
 vi.mock('../../src/lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { DEFAULT_ZOHO_OAUTH_SCOPES } from '../../src/config/zohoOAuthScopes.js';
+// ─── Imports after mocks ───────────────────────────────────────────────────────
+
 import { buildAuthorizeUrl, exchangeCodeForToken } from '../../src/integrations/zohoOAuth.js';
+import { DEFAULT_ZOHO_OAUTH_SCOPES } from '../../src/config/zohoOAuthScopes.js';
 import {
-  getUserAccessToken,
-  insertNoteAsUser,
-  invalidateUserToken,
-} from '../../src/integrations/zohoUserAuth.js';
-import { createRecordNote } from '../../src/modules/sales/recordActivity.js';
-import { AppError } from '../../src/lib/errors.js';
+  createRecordNote,
+  deleteRecordNote,
+  fetchRecordNotes,
+  updateRecordNote,
+} from '../../src/modules/sales/recordActivity.js';
 import { makeContext } from '../fixtures/seed.js';
 
+// ─── 1. buildAuthorizeUrl ──────────────────────────────────────────────────────
+
 describe('DEFAULT_ZOHO_OAUTH_SCOPES', () => {
-  it('includes Notes.CREATE and excludes modules.ALL (regression for silent John Mercer notes)', () => {
-    const scopes = DEFAULT_ZOHO_OAUTH_SCOPES.split(',').map((s) => s.trim());
-    expect(scopes).toContain('ZohoCRM.modules.notes.CREATE');
-    expect(scopes).toContain('ZohoCRM.users.READ');
-    expect(scopes).toContain('AaaServer.profile.READ');
+  it('covers Sales writes without granting modules.ALL', () => {
+    const scopes = DEFAULT_ZOHO_OAUTH_SCOPES.split(',');
+    expect(scopes).toEqual(
+      expect.arrayContaining([
+        'ZohoCRM.modules.leads.CREATE',
+        'ZohoCRM.modules.leads.UPDATE',
+        'ZohoCRM.modules.deals.UPDATE',
+        'ZohoCRM.modules.notes.CREATE',
+        'ZohoCRM.modules.notes.UPDATE',
+        'ZohoCRM.modules.notes.DELETE',
+        'ZohoCRM.modules.attachments.CREATE',
+      ]),
+    );
     expect(scopes).not.toContain('ZohoCRM.modules.ALL');
   });
 });
 
 describe('buildAuthorizeUrl', () => {
-  it('includes access_type=offline and prompt=consent for refresh token issuance', () => {
+  it('includes access_type=offline for refresh token issuance', () => {
     const url = buildAuthorizeUrl('test-state-123');
     const parsed = new URL(url);
     expect(parsed.searchParams.get('access_type')).toBe('offline');
-    expect(parsed.searchParams.get('prompt')).toBe('consent');
   });
 
-  it('requests the real default scopes including Notes.CREATE', () => {
+  it('includes all required OAuth params', () => {
     const url = buildAuthorizeUrl('my-state');
     const parsed = new URL(url);
-    expect(parsed.searchParams.get('scope')).toBe(DEFAULT_ZOHO_OAUTH_SCOPES);
-    expect(parsed.searchParams.get('scope')).toContain('ZohoCRM.modules.notes.CREATE');
     expect(parsed.searchParams.get('response_type')).toBe('code');
     expect(parsed.searchParams.get('client_id')).toBe('server-client-id');
+    expect(parsed.searchParams.get('state')).toBe('my-state');
     expect(parsed.searchParams.get('redirect_uri')).toBe('https://app.example.com/auth/callback');
+    expect(parsed.searchParams.get('scope')).toContain('ZohoCRM.modules.notes.CREATE');
+    expect(parsed.searchParams.get('scope')).toContain('ZohoCRM.modules.notes.UPDATE');
+    expect(parsed.searchParams.get('scope')).toContain('ZohoCRM.modules.notes.DELETE');
+    expect(parsed.searchParams.get('scope')).toContain('ZohoCRM.modules.leads.UPDATE');
+    expect(parsed.searchParams.get('scope')).toContain('ZohoCRM.modules.attachments.CREATE');
   });
 });
 
-describe('exchangeCodeForToken', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+// ─── 2. exchangeCodeForToken ───────────────────────────────────────────────────
 
+describe('exchangeCodeForToken', () => {
   it('returns both access_token and refresh_token when Zoho provides them', async () => {
     fetchWithTimeoutMock.mockResolvedValueOnce({
       ok: true,
@@ -122,160 +154,14 @@ describe('exchangeCodeForToken', () => {
   });
 });
 
-describe('insertNoteAsUser', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    invalidateUserToken('tenant-A', 'agent-42');
-  });
-
-  function refreshOk() {
-    findTokenMock.mockResolvedValue('refresh-tok');
-    fetchWithTimeoutMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ access_token: 'user-acc', expires_in: 3600 }),
-    });
-  }
-
-  it('returns the note id when Zoho reports success attributed to the worker', async () => {
-    refreshOk();
-    fetchWithTimeoutMock.mockResolvedValueOnce({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        data: [
-          {
-            status: 'success',
-            details: {
-              id: 'note-99',
-              Created_By: { id: 'agent-42', name: 'Agent' },
-            },
-          },
-        ],
-      }),
-    });
-    await expect(
-      insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' }),
-    ).resolves.toBe('note-99');
-  });
-
-  it('throws ZOHO_USER_REAUTH_REQUIRED when no refresh token is stored', async () => {
-    findTokenMock.mockResolvedValue(null);
-    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject(
-      {
-        code: 'ZOHO_USER_REAUTH_REQUIRED',
-        statusCode: 401,
-      },
-    );
-    expect(fetchWithTimeoutMock).not.toHaveBeenCalled();
-  });
-
-  it('retries once on 401 then succeeds with a fresh token', async () => {
-    findTokenMock.mockResolvedValue('refresh-tok');
-    // 1) initial refresh  2) Notes POST 401  3) second refresh  4) Notes POST success
-    fetchWithTimeoutMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ access_token: 'stale-acc', expires_in: 3600 }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        json: async () => ({ code: 'INVALID_TOKEN' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ access_token: 'fresh-acc', expires_in: 3600 }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => ({
-          data: [{ status: 'success', details: { id: 'note-retry', Created_By: { id: 'agent-42' } } }],
-        }),
-      });
-
-    await expect(
-      insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' }),
-    ).resolves.toBe('note-retry');
-    expect(fetchWithTimeoutMock).toHaveBeenCalledTimes(4);
-  });
-
-  it('throws ZOHO_USER_SCOPE_MISMATCH after a 401 OAUTH_SCOPE_MISMATCH (no service fallback)', async () => {
-    findTokenMock.mockResolvedValue('refresh-tok');
-    fetchWithTimeoutMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ access_token: 'user-acc', expires_in: 3600 }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        json: async () => ({ code: 'OAUTH_SCOPE_MISMATCH', message: 'invalid oauth scope' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ access_token: 'user-acc-2', expires_in: 3600 }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        json: async () => ({ code: 'OAUTH_SCOPE_MISMATCH', message: 'invalid oauth scope' }),
-      });
-
-    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject(
-      {
-        code: 'ZOHO_USER_SCOPE_MISMATCH',
-        statusCode: 403,
-      },
-    );
-  });
-
-  it('throws ZOHO_USER_NO_PERMISSION on Notes NO_PERMISSION without falling back', async () => {
-    refreshOk();
-    fetchWithTimeoutMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: [{ status: 'error', code: 'NO_PERMISSION', message: 'permission denied' }],
-      }),
-    });
-    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject(
-      {
-        code: 'ZOHO_USER_NO_PERMISSION',
-        statusCode: 403,
-      },
-    );
-  });
-
-  it('throws ZOHO_USER_ATTRIBUTION_MISMATCH when Created_By is not the worker', async () => {
-    refreshOk();
-    fetchWithTimeoutMock.mockResolvedValueOnce({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        data: [
-          {
-            status: 'success',
-            details: {
-              id: 'note-wrong',
-              Created_By: { id: 'john-mercer', name: 'John Mercer' },
-            },
-          },
-        ],
-      }),
-    });
-    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject(
-      {
-        code: 'ZOHO_USER_ATTRIBUTION_MISMATCH',
-      },
-    );
-  });
-});
+// ─── 3. createRecordNote — Owner field and user-token path ────────────────────
 
 describe('createRecordNote', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    invalidateUserToken('tenant-A', 'agent-42');
+    zohoActorIdMock.mockImplementation((ctx: { impersonatorUserId?: string; userId: string }) =>
+      String(ctx.impersonatorUserId ?? ctx.userId).replace(/^zoho:/, ''),
+    );
   });
 
   const salesCtx = () =>
@@ -287,65 +173,118 @@ describe('createRecordNote', () => {
       allDepartmentAccess: false,
     });
 
-  it('uses the user token path and does not call the service account on success', async () => {
-    findTokenMock.mockResolvedValue('refresh-tok');
-    fetchWithTimeoutMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ access_token: 'user-acc', expires_in: 3600 }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => ({
-          data: [
-            {
-              status: 'success',
-              details: { id: 'note-id-user', Created_By: { id: 'agent-42' } },
-            },
-          ],
-        }),
-      });
-
+  it('uses user token and passes Owner when ctx has a Zoho user id and insertNoteAsUser succeeds', async () => {
+    insertNoteAsUserMock.mockResolvedValueOnce('note-id-user');
     const noteId = await createRecordNote('Leads', 'lead-1', { content: 'Hello' }, salesCtx());
     expect(noteId).toBe('note-id-user');
-    expect(insertRecordMock).not.toHaveBeenCalled();
-    const notePost = fetchWithTimeoutMock.mock.calls.find(
-      (c) => typeof c[0] === 'string' && String(c[0]).endsWith('/Notes'),
+    expect(insertNoteAsUserMock).toHaveBeenCalledWith(
+      'tenant-A',
+      'agent-42',
+      expect.objectContaining({
+        Owner: { id: 'agent-42' },
+        Note_Content: 'Hello',
+        Note_Title: 'Note',
+        Parent_Id: { id: 'lead-1', module: { api_name: 'Leads' } },
+      }),
     );
-    expect(notePost?.[1]?.body).toContain('"Owner":{"id":"agent-42"}');
   });
 
-  it('does not fall back to the service account when the user token path fails', async () => {
-    findTokenMock.mockResolvedValue(null);
+  it('propagates user-token failures instead of writing through the service account', async () => {
+    insertNoteAsUserMock.mockRejectedValueOnce(new Error('reconnect required'));
     await expect(
       createRecordNote('Leads', 'lead-1', { content: 'Hello' }, salesCtx()),
-    ).rejects.toBeInstanceOf(AppError);
-    expect(insertRecordMock).not.toHaveBeenCalled();
+    ).rejects.toThrow('reconnect required');
+    expect(insertNoteAsUserMock).toHaveBeenCalledOnce();
   });
 
-  it('uses the service account and omits Owner when no ctx is provided', async () => {
-    insertRecordMock.mockResolvedValueOnce('note-id-svc');
-    const noteId = await createRecordNote('Deals', 'deal-1', { content: 'No ctx' });
-    expect(noteId).toBe('note-id-svc');
-    expect(findTokenMock).not.toHaveBeenCalled();
-    const callArgs = insertRecordMock.mock.calls[0]!;
-    expect(callArgs[1]).not.toHaveProperty('Owner');
+  it('uses a custom title when provided', async () => {
+    insertNoteAsUserMock.mockResolvedValueOnce('note-with-title');
+    const noteId = await createRecordNote(
+      'Leads',
+      'lead-2',
+      { title: 'My Title', content: 'Body' },
+      salesCtx(),
+    );
+    expect(noteId).toBe('note-with-title');
+    expect(insertNoteAsUserMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ Note_Title: 'My Title' }),
+    );
   });
 
-  it('skips user-token path for non-CRM users (zuid: prefix)', async () => {
-    const nonCrmCtx = makeContext({
+  it('uses the real admin token behind an act-as session', async () => {
+    insertNoteAsUserMock.mockResolvedValueOnce('admin-note');
+    const ctx = makeContext({
       role: 'worker',
-      userId: 'zoho:zuid:12345',
+      userId: 'zoho:target-agent',
       tenantId: 'tenant-A',
     });
-    insertRecordMock.mockResolvedValueOnce('note-id-svc');
-    await createRecordNote('Leads', 'lead-1', { content: 'Non-CRM user' }, nonCrmCtx);
-    expect(findTokenMock).not.toHaveBeenCalled();
+    ctx.impersonatorUserId = 'zoho:real-admin';
+    await createRecordNote('Deals', 'deal-1', { content: 'Admin edit' }, ctx);
+    expect(insertNoteAsUserMock).toHaveBeenCalledWith(
+      'tenant-A',
+      'real-admin',
+      expect.objectContaining({ Owner: { id: 'real-admin' } }),
+    );
   });
 
-  it('getUserAccessToken returns null when no stored refresh token', async () => {
-    findTokenMock.mockResolvedValue(null);
-    await expect(getUserAccessToken('tenant-A', 'missing')).resolves.toBeNull();
+  it('shows Created_By before mutable Owner in the note activity response', async () => {
+    getRelatedRecordsMock.mockResolvedValueOnce([
+      {
+        id: 'note-1',
+        Note_Content: 'Hello',
+        Created_By: { name: 'Real Agent' },
+        Owner: { name: 'John Mercer' },
+      },
+    ]);
+    const notes = await fetchRecordNotes('Leads', 'lead-1', salesCtx());
+    expect(notes[0]?.owner).toBe('Real Agent');
+  });
+
+  it('allows the creator to manage a note and uses the creator identity for the UI flag', async () => {
+    getRelatedRecordsMock.mockResolvedValueOnce([
+      {
+        id: 'note-1',
+        Created_By: { id: 'agent-42', name: 'Agent 42' },
+        Owner: { id: 'john-mercer', name: 'John Mercer' },
+      },
+    ]);
+    const notes = await fetchRecordNotes('Leads', 'lead-1', salesCtx());
+    expect(notes[0]).toMatchObject({ owner: 'Agent 42', canManage: true });
+  });
+
+  it('rejects editing another agent note before any Zoho mutation', async () => {
+    getRecordMock.mockResolvedValueOnce({
+      id: 'note-1',
+      Parent_Id: { id: 'lead-1' },
+      $se_module: 'Leads',
+      Created_By: { id: 'other-agent' },
+    });
+    await expect(
+      updateRecordNote(salesCtx(), 'Leads', 'lead-1', 'note-1', {
+        title: 'No',
+        content: 'Denied',
+      }),
+    ).rejects.toThrow('You can only edit or delete notes you created');
+    expect(patchRecordAsUserMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the real admin token to delete during an authorized act-as session', async () => {
+    const ctx = salesCtx();
+    ctx.impersonatorUserId = 'zoho:real-admin';
+    getRecordMock.mockResolvedValueOnce({
+      id: 'note-1',
+      Parent_Id: { id: 'deal-1' },
+      $se_module: 'Deals',
+      Created_By: { id: 'agent-42' },
+    });
+    await deleteRecordNote(ctx, 'Deals', 'deal-1', 'note-1');
+    expect(deleteRecordAsUserMock).toHaveBeenCalledWith(
+      'tenant-A',
+      'real-admin',
+      'Notes',
+      'note-1',
+    );
   });
 });

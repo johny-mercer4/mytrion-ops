@@ -11,6 +11,8 @@
  */
 import { zohoCrm } from './zohoCrm.js';
 import { zohoCrmRecords } from './zohoCrmRecords.js';
+import { insertRecordAsUserDetailed, zohoActorId } from './zohoUserAuth.js';
+import type { TenantContext } from '../types/tenantContext.js';
 
 type Row = Record<string, unknown>;
 
@@ -161,7 +163,7 @@ export async function deleteInboxMessage(recordId: string): Promise<'success' | 
 //    message } on success; on failure { success:false, message, response } where `response` is the raw
 //    Zoho row so the UI can pull an existing lead id out of a DUPLICATE_DATA result.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
-export async function createLead(userId: string, payload: Row): Promise<Row> {
+export async function createLead(ctx: TenantContext, userId: string, payload: Row): Promise<Row> {
   const p = (k: string): string => str(payload[k]);
   const phone = p('phone');
   const leadData: Row = {
@@ -198,19 +200,13 @@ export async function createLead(userId: string, payload: Row): Promise<Row> {
   const salutation = p('salutation');
   if (salutation) leadData.Salutation = salutation;
 
-  try {
-    const res = await zohoCrmRecords.insertRecordDetailed('Leads', leadData, ['workflow']);
-    if (res.code === 'SUCCESS' && res.id) {
-      return { success: true, leadId: res.id, message: 'Lead created successfully.' };
-    }
-    return { success: false, message: 'Failed to create lead.', response: res.row };
-  } catch (err) {
-    return {
-      success: false,
-      message: 'Failed to create lead.',
-      response: err instanceof Error ? err.message : String(err),
-    };
+  const res = await insertRecordAsUserDetailed(ctx.tenantId, zohoActorId(ctx), 'Leads', leadData, [
+    'workflow',
+  ]);
+  if (res.code === 'SUCCESS' && res.id) {
+    return { success: true, leadId: res.id, message: 'Lead created successfully.' };
   }
+  return { success: false, message: 'Failed to create lead.', response: res.row };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -220,7 +216,8 @@ export async function createLead(userId: string, payload: Row): Promise<Row> {
 //    createdDate }] }.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function fetchApplicationUpdate(appId: string): Promise<Row> {
-  if (!numericId(appId)) return { status: 'error', message: `No deal found for application id: ${appId}` };
+  if (!numericId(appId))
+    return { status: 'error', message: `No deal found for application id: ${appId}` };
   try {
     const { rows } = await zohoCrmRecords.searchRecords('Deals', {
       criteria: `(Application_ID:equals:${appId})`,
@@ -257,7 +254,8 @@ export async function fetchApplicationUpdate(appId: string): Promise<Row> {
 //    dealName, fedexTracking, trackingInfo: [{ trackingNumber, startDate, cardsOrdered }] }.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function fetchTruckingNumbers(carrierId: string): Promise<Row> {
-  if (!numericId(carrierId)) return { status: 'error', message: `No deal found for carrierId: ${carrierId}` };
+  if (!numericId(carrierId))
+    return { status: 'error', message: `No deal found for carrierId: ${carrierId}` };
   try {
     const { rows } = await zohoCrmRecords.searchRecords('Deals', {
       criteria: `(Carrier_ID:equals:${carrierId})`,
@@ -299,7 +297,9 @@ export async function fetchTruckingNumbers(carrierId: string): Promise<Row> {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
 const COQL_IN_CHUNK = 100; // Zoho v8 COQL: max 100 values in an `in (...)` list.
 
-export async function fetchFedexTrackingBulk(carrierIds: string[]): Promise<Record<string, string>> {
+export async function fetchFedexTrackingBulk(
+  carrierIds: string[],
+): Promise<Record<string, string>> {
   const ids = [...new Set(carrierIds.filter(numericId))];
   const out: Record<string, string> = {};
   const chunks: string[][] = [];

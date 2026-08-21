@@ -6,13 +6,18 @@
  *  - `zoho`    — the Zoho CRM Calls related to the record (the native RingCentral→Zoho call log).
  * Each source is best-effort: if one read fails the other still returns.
  *
- * Notes read/create go straight to the Zoho CRM Notes module (related to the Lead/Deal). Attachments
- * are added by the route after create via `zohoCrm.attachFileToRecord('Notes', noteId, …)`.
+ * Notes read/create go straight to the Zoho CRM Notes module (related to the Lead/Deal).
  */
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
-import { insertNoteAsUser } from '../../integrations/zohoUserAuth.js';
+import {
+  deleteRecordAsUser,
+  insertNoteAsUser,
+  patchRecordAsUser,
+  zohoActorId,
+} from '../../integrations/zohoUserAuth.js';
+import { AppError, RBACError } from '../../lib/errors.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 export type CrmModule = 'Leads' | 'Deals';
@@ -36,6 +41,7 @@ export interface NoteItem {
   content: string;
   createdAt: string;
   owner: string;
+  canManage: boolean;
 }
 
 const sourceTypeFor = (m: CrmModule): 'lead' | 'deal' => (m === 'Leads' ? 'lead' : 'deal');
@@ -66,7 +72,9 @@ export async function fetchRecordCallHistory(
 
   // (1) Our own accurate log.
   try {
-    const rows = await mytrionCallRepo.listForSource(ctx, sourceTypeFor(module), id, { limit: 200 });
+    const rows = await mytrionCallRepo.listForSource(ctx, sourceTypeFor(module), id, {
+      limit: 200,
+    });
     for (const r of rows) {
       const when = r.callTime ?? r.createdAt;
       const whenStr = when instanceof Date ? when.toISOString() : String(when ?? '');
@@ -114,56 +122,128 @@ export async function fetchRecordCallHistory(
   return out.sort((a, b) => b.whenTs - a.whenTs);
 }
 
+function viewedZohoUserId(ctx: TenantContext): string | undefined {
+  const match = /^zoho:(.+)$/.exec(ctx.userId);
+  const zohoUserId = match?.[1]?.trim();
+  return zohoUserId && !zohoUserId.startsWith('zuid:') ? zohoUserId : undefined;
+}
+
+function lookupId(value: unknown): string {
+  return value && typeof value === 'object' ? String((value as { id?: unknown }).id ?? '') : '';
+}
+
+/** Manager/admin authority is derived from the verified server context, never browser claims. */
+export function canManageRecordNote(ctx: TenantContext, creatorId: string): boolean {
+  const managerIdentity = [...(ctx.profiles ?? []), ctx.callerRole ?? '']
+    .map((value) => value.trim().toLowerCase())
+    .some((value) => value === 'manager' || value === 'management' || value === 'sales manager');
+  return (
+    ctx.bypassRbac === true ||
+    ctx.role === 'admin' ||
+    ctx.allDepartmentAccess ||
+    ctx.departments.includes('management') ||
+    managerIdentity ||
+    (Boolean(creatorId) && viewedZohoUserId(ctx) === creatorId)
+  );
+}
+
 /** Existing Zoho Notes on a Lead/Deal (newest returned by Zoho first). */
-export async function fetchRecordNotes(module: CrmModule, id: string): Promise<NoteItem[]> {
+export async function fetchRecordNotes(
+  module: CrmModule,
+  id: string,
+  ctx: TenantContext,
+): Promise<NoteItem[]> {
   const rows = await zohoCrmRecords.getRelatedRecords(module, id, 'Notes', [
     'Note_Title',
     'Note_Content',
     'Created_Time',
+    'Created_By',
     'Owner',
   ]);
-  return rows.map((r) => ({
-    id: String(r.id ?? ''),
-    title: typeof r.Note_Title === 'string' ? r.Note_Title : '',
-    content: typeof r.Note_Content === 'string' ? r.Note_Content : '',
-    createdAt: typeof r.Created_Time === 'string' ? r.Created_Time : '',
-    owner:
-      r.Owner && typeof r.Owner === 'object'
-        ? String((r.Owner as { name?: unknown }).name ?? '')
-        : '',
-  }));
+  return rows.map((r) => {
+    const creator = r.Created_By && typeof r.Created_By === 'object' ? r.Created_By : r.Owner;
+    return {
+      id: String(r.id ?? ''),
+      title: typeof r.Note_Title === 'string' ? r.Note_Title : '',
+      content: typeof r.Note_Content === 'string' ? r.Note_Content : '',
+      createdAt: typeof r.Created_Time === 'string' ? r.Created_Time : '',
+      // Created_By is immutable action attribution. Owner may be reassigned independently.
+      owner:
+        creator && typeof creator === 'object'
+          ? String((creator as { name?: unknown }).name ?? '')
+          : '',
+      canManage: canManageRecordNote(ctx, lookupId(creator)),
+    };
+  });
 }
 
 /**
  * Create a Zoho Note under a Lead/Deal. Returns the new note id (for an optional attachment).
  *
- * When ctx carries a real Zoho CRM user id, the insert MUST use that worker's token so
- * "Created By" is attributed correctly. Failures throw (reauth / scope / permission) — we never
- * silently post as the shared service account. Service-token create remains only for callers
- * without a CRM user id (e.g. non-CRM sessions).
+ * The insert always uses the real actor's token so Zoho's Created_By/timeline identity is the
+ * human agent (or the real admin behind an act-as session). Missing/expired grants fail closed.
  */
 export async function createRecordNote(
   module: CrmModule,
   id: string,
   input: { title?: string; content: string },
-  ctx?: TenantContext,
+  ctx: TenantContext,
 ): Promise<string> {
-  const zohoUserId =
-    ctx?.userId?.startsWith('zoho:') && !ctx.userId.startsWith('zoho:zuid:')
-      ? ctx.userId.slice('zoho:'.length)
-      : undefined;
+  const zohoUserId = zohoActorId(ctx);
 
   const noteData: Record<string, unknown> = {
     Note_Title: input.title?.trim() || 'Note',
     Note_Content: input.content,
     // Parent_Id is a multi-module lookup: Zoho requires `{ id, module: { api_name } }` (verified live).
     Parent_Id: { id, module: { api_name: module } },
-    ...(zohoUserId ? { Owner: { id: zohoUserId } } : {}),
+    Owner: { id: zohoUserId },
   };
+  return insertNoteAsUser(ctx.tenantId, zohoUserId, noteData);
+}
 
-  if (zohoUserId && ctx) {
-    return insertNoteAsUser(ctx.tenantId, zohoUserId, noteData);
+async function assertManageableNote(
+  ctx: TenantContext,
+  module: CrmModule,
+  parentId: string,
+  noteId: string,
+): Promise<void> {
+  const note = await zohoCrmRecords.getRecord('Notes', noteId);
+  const parentModule = typeof note?.$se_module === 'string' ? note.$se_module : '';
+  if (!note || lookupId(note.Parent_Id) !== parentId || (parentModule && parentModule !== module)) {
+    throw new AppError('Note not found', {
+      statusCode: 404,
+      code: 'NOT_FOUND',
+      expose: true,
+    });
   }
+  const creatorId = lookupId(note.Created_By) || lookupId(note.Owner);
+  if (!canManageRecordNote(ctx, creatorId)) {
+    throw new RBACError('You can only edit or delete notes you created');
+  }
+}
 
-  return zohoCrmRecords.insertRecord('Notes', noteData);
+/** Update a note through the real actor's OAuth token after server-side ownership checks. */
+export async function updateRecordNote(
+  ctx: TenantContext,
+  module: CrmModule,
+  parentId: string,
+  noteId: string,
+  input: { title: string; content: string },
+): Promise<void> {
+  await assertManageableNote(ctx, module, parentId, noteId);
+  await patchRecordAsUser(ctx.tenantId, zohoActorId(ctx), 'Notes', noteId, {
+    Note_Title: input.title.trim(),
+    Note_Content: input.content,
+  });
+}
+
+/** Delete a note through the real actor's OAuth token after server-side ownership checks. */
+export async function deleteRecordNote(
+  ctx: TenantContext,
+  module: CrmModule,
+  parentId: string,
+  noteId: string,
+): Promise<void> {
+  await assertManageableNote(ctx, module, parentId, noteId);
+  await deleteRecordAsUser(ctx.tenantId, zohoActorId(ctx), 'Notes', noteId);
 }
