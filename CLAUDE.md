@@ -51,7 +51,7 @@ When asked to "run the bot / gateway", the answer is almost always `agent-gatewa
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
 10. **Karpathy guidelines apply to every change** — think before coding, simplicity first, surgical
     changes, goal-driven execution. Stated in full below and in `.claude/skills/karpathy-guidelines/`.
-11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Glass is for chrome only (header, rail, modals, drawers); data surfaces are flat and opaque. Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin (`.claude/skills/<name>-mytrion/`). `.agents/` is gitignored; `git add -f` skill updates like the Zoho mirrors.
+11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Glass is for chrome only (header, rail, modals, drawers); data surfaces are flat and opaque. Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin, Verification (`.claude/skills/<name>-mytrion/`). `.agents/` is gitignored; `git add -f` skill updates like the Zoho mirrors.
 
 ## Karpathy guidelines — apply to every change
 

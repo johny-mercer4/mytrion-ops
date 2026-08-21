@@ -10,7 +10,7 @@ index, not a second copy of those rules.
 | Hard rules, git, migrations, vendored UI builds | `CLAUDE.md` |
 | Repo topology, Mytrion inventory, current state | `ONBOARDING.md` |
 | Design system (glass = chrome only; Space Grotesk / Space Mono) | `docs/design/` |
-| Product facts (Collection, Sales, CS, Billing, HR, Admin) | `.claude/skills/<name>-mytrion/` |
+| Product facts (Collection, Sales, CS, Billing, HR, Admin, Verification) | `.claude/skills/<name>-mytrion/` |
 | CRM `ds/` component conventions | `apps/mytrion-crm/src/ds/CONVENTIONS.md` |
 
 Workspace product skills are mirrored to `.cursor/skills/` and `.agents/skills/`. `.agents/` is
