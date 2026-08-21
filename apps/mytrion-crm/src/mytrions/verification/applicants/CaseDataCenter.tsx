@@ -1,7 +1,9 @@
 /**
- * Data Center on the open case — live vendor search, starting with FMCSA (QCMobile).
+ * Data Center — live vendor search, starting with FMCSA (QCMobile).
  *
- * Other sources are listed so the IA is visible; they are disabled until those chunks land.
+ * Workspace tab and the open-case chrome both render this. `caseRow` is optional: standalone
+ * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
+ * not auto-run. Other sources are listed so the IA is visible; they stay Soon.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
@@ -53,8 +55,8 @@ const STATUS_INTENT: Record<FmcsaStatusVerdict, BadgeIntent> = {
   unknown: 'neutral',
 };
 
-export function CaseDataCenter({ caseRow }: { caseRow: FmcsaPrefillCase }) {
-  const seed = fmcsaPrefill(caseRow);
+export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
+  const seed = fmcsaPrefill(caseRow ?? {});
   const [by, setBy] = useState<FmcsaSearchBy>(seed.by);
   const [q, setQ] = useState(seed.q);
   const [busy, setBusy] = useState(false);

@@ -109,4 +109,14 @@ describe('CaseDataCenter FMCSA search', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
     expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
   });
+
+  it('searches with no case — empty box, typed query', async () => {
+    render(<CaseDataCenter />);
+    const box = screen.getByRole('searchbox', { name: 'USDOT' });
+    expect(box).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled();
+    fireEvent.change(box, { target: { value: '11111' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(searchFmcsa).toHaveBeenCalledWith({ by: 'dot', q: '11111' }));
+  });
 });

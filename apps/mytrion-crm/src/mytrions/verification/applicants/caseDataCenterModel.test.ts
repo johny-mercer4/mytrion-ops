@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { FmcsaCarrierRow, FmcsaSearchResult } from '@/api/verificationFmcsa';
-import { fmcsaAddress, fmcsaCarrierTitle, fmcsaPrefill, fmcsaRows } from './caseDataCenterModel';
+import {
+  fmcsaAddress,
+  fmcsaCarrierTitle,
+  fmcsaPrefill,
+  fmcsaPrefillFromSearch,
+  fmcsaRows,
+} from './caseDataCenterModel';
 
 function row(over: Partial<FmcsaCarrierRow> = {}): FmcsaCarrierRow {
   return {
@@ -57,6 +63,23 @@ describe('fmcsaPrefill', () => {
       q: 'Ada Cole',
     });
     expect(fmcsaPrefill({})).toEqual({ by: 'dot', q: '' });
+  });
+
+  it('reads workspace query params without requiring a case', () => {
+    expect(fmcsaPrefillFromSearch('?tab=data-center&dot=987654&mc=123456')).toEqual({
+      dot: '987654',
+      mc: '123456',
+      companyName: null,
+    });
+    expect(fmcsaPrefill(fmcsaPrefillFromSearch('?name=Ridgevale%20Freight'))).toEqual({
+      by: 'name',
+      q: 'Ridgevale Freight',
+    });
+    expect(fmcsaPrefill(fmcsaPrefillFromSearch('?q=Ridgevale'))).toEqual({
+      by: 'name',
+      q: 'Ridgevale',
+    });
+    expect(fmcsaPrefill(fmcsaPrefillFromSearch(''))).toEqual({ by: 'dot', q: '' });
   });
 });
 

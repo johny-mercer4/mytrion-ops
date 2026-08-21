@@ -24,6 +24,17 @@ export interface FmcsaPrefillCase {
   lastName?: string | null;
 }
 
+/** Workspace landing: `?dot=` / `?mc=` / `?name=` (or `?q=` as a name). Empty params stay empty. */
+export function fmcsaPrefillFromSearch(search: string): FmcsaPrefillCase {
+  const raw = search.startsWith('?') ? search.slice(1) : search;
+  const params = new URLSearchParams(raw);
+  return {
+    dot: params.get('dot'),
+    mc: params.get('mc'),
+    companyName: params.get('name') ?? params.get('q'),
+  };
+}
+
 export function fmcsaPrefill(row: FmcsaPrefillCase): { by: FmcsaSearchBy; q: string } {
   const dot = (row.dot ?? '').trim();
   if (dot) return { by: 'dot', q: dot };

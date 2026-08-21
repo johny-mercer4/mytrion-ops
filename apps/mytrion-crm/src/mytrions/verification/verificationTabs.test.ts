@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VERIFICATION_TABS } from './verificationTabs';
+import { VERIFICATION_TABS, verificationViewFromSearch } from './verificationTabs';
 import { LEGACY_VERIFICATION_DESK_ENABLED } from './legacyDesk';
 
 describe('VERIFICATION_TABS', () => {
@@ -8,6 +8,7 @@ describe('VERIFICATION_TABS', () => {
       'main',
       'inbox',
       'applicants',
+      'data-center',
       'watch',
       'clients',
       'tickets',
@@ -17,11 +18,20 @@ describe('VERIFICATION_TABS', () => {
     // The Inbox is declared, not quarantined: it was rebuilt on `mytrion_inbox_messages` and is
     // rendered by `index.tsx`. Leaving it undeclared hid it from every non-admin with a tab grant.
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'inbox')?.group).toBe('Queue');
+    expect(VERIFICATION_TABS.find((tab) => tab.key === 'data-center')?.group).toBe('Queue');
     // Watch sits under Queue beside New applicants: both answer "who deserves credit", one at
     // intake and one every week after.
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'watch')?.group).toBe('Queue');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'clients')?.group).toBe('Roster');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'tickets')?.group).toBe('Roster');
+  });
+
+  it('opens Data Center from ?tab= and ignores Soon or unknown keys', () => {
+    expect(verificationViewFromSearch('?tab=data-center')).toBe('data-center');
+    expect(verificationViewFromSearch('tab=applicants')).toBe('applicants');
+    expect(verificationViewFromSearch('?tab=tickets')).toBe('main');
+    expect(verificationViewFromSearch('?tab=nope')).toBe('main');
+    expect(verificationViewFromSearch('')).toBe('main');
   });
 
   it('does not declare the quarantined credit-platform tabs', () => {

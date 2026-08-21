@@ -119,12 +119,13 @@ Declared in `verificationTabs.ts` (undeclared = invisible to non-admins):
 | --- | --- |
 | **Main** | Desk overview (`VerificationMain`) — queue state, not a launcher grid |
 | **Inbox** | `mytrion_inbox_messages` tagged `verification`, live `/v1/realtime` |
-| **Verification Case** | 10-phase queue + case (`ApplicantsList` / `CaseView` / `PhaseSpine`). The open record has **Case** / **Data Center** tabs. |
+| **Verification Case** | 10-phase queue + case (`ApplicantsList` / `CaseView` / `PhaseSpine`). The open record still has **Case** / **Data Center** chrome that reuses the same search UI. |
+| **Data Center** | Workspace vendor search (`CaseDataCenter`). No case required. `/main/verificationmytrion?tab=data-center`. Optional `dot` / `mc` / `name` (or `q`) query prefills. |
 | **Mytrion Watch** | Weekly behavioural re-score of **existing** carriers (`src/modules/mytrionWatch/`). Not the new-applicant SOP. |
 | **Existing clients** | Read-only `octane.dim_company` roster (`/v1/verification/roster*`) |
 | **Tickets** | `soon: true` — not mounted |
 
-**Record — Data Center.** On `/verification/applicants/{id}` (`CaseView`), not a workspace tab. Live `GET /v1/verification/flow/fmcsa/search?by=dot|mc|name&q=` wraps `lookupFmcsaCarrier` with one QCMobile key. Prefills USDOT → MC → name from the case; does not auto-run; does not write findings (Phase 4 `authority/run` still does that). Motus / Broker snapshot / Blacklist / CITI Fuel are listed Soon.
+**Data Center.** First-class desk tab, not Sales Verification and not Telegram-only. Live `GET /v1/verification/flow/fmcsa/search?by=dot|mc|name&q=` wraps `lookupFmcsaCarrier` with one QCMobile key. Prefills USDOT → MC → name from an open case or from the query; does not auto-run; does not write findings (Phase 4 `authority/run` still does that). Motus / Broker snapshot / Blacklist / CITI Fuel are listed Soon. The record chrome is the same component; a failed case GET hides only that chrome, not the workspace tab.
 
 Legacy “Verification cases” / “Decision rules” stay on disk and **undeclared** while `legacyDesk.ts` is off.
 
