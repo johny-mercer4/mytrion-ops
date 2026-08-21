@@ -6,11 +6,12 @@
  * specific user so that Zoho's "Created By" / "Modified By" fields reflect the real agent rather
  * than the shared service account (John Mercer).
  *
- * Falls back gracefully: if no token is stored (pre-existing worker, token expired past recovery,
- * or Zoho refresh failure) every function returns null and the caller falls back to the service
- * account path. Failures are logged but never thrown.
+ * Fail closed: missing/revoked tokens, scope mismatches, and permission denials throw actionable
+ * AppErrors. Callers must not silently retry under the service account for attributed writes.
+ * A definite expired-token 401 is retried once as the same worker after cache invalidation.
  */
 import { env } from '../config/env.js';
+import { AppError } from '../lib/errors.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { workerZohoTokenRepo } from '../repos/workerZohoTokenRepo.js';
@@ -103,46 +104,161 @@ export function invalidateUserToken(tenantId: string, zohoUserId: string): void 
 interface MutationRow {
   code?: string;
   status?: string;
-  details?: { id?: string };
+  details?: {
+    id?: string;
+    Created_By?: { id?: string; name?: string };
+  };
   message?: string;
+}
+
+interface ZohoErrorBody {
+  code?: string;
+  message?: string;
+  data?: MutationRow[];
+}
+
+function reauthError(cause?: unknown): AppError {
+  return new AppError(
+    'Your Zoho session cannot create CRM notes. Sign out and sign in again to refresh access.',
+    {
+      statusCode: 401,
+      code: 'ZOHO_USER_REAUTH_REQUIRED',
+      expose: true,
+      cause,
+    },
+  );
+}
+
+function scopeMismatchError(cause?: unknown): AppError {
+  return new AppError(
+    'Your Zoho login is missing Notes create permission. Sign out and sign in again so the app can request ZohoCRM.modules.notes.CREATE.',
+    {
+      statusCode: 403,
+      code: 'ZOHO_USER_SCOPE_MISMATCH',
+      expose: true,
+      cause,
+    },
+  );
+}
+
+function noPermissionError(cause?: unknown): AppError {
+  return new AppError(
+    'Your Zoho CRM profile cannot create notes. Ask an admin to grant Notes create permission.',
+    {
+      statusCode: 403,
+      code: 'ZOHO_USER_NO_PERMISSION',
+      expose: true,
+      cause,
+    },
+  );
+}
+
+async function postNoteAsUser(
+  accessToken: string,
+  noteData: Record<string, unknown>,
+): Promise<{ status: number; body: ZohoErrorBody }> {
+  const base = env.ZOHO_CRM_API_DOMAIN.replace(/\/+$/, '');
+  const res = await fetchWithTimeout(`${base}/Notes`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Zoho-oauthtoken ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ data: [noteData] }),
+  });
+  const body = (await res.json().catch(() => ({}))) as ZohoErrorBody;
+  return { status: res.status, body };
+}
+
+function throwForUnauthorized(body: ZohoErrorBody): never {
+  if (body.code === 'OAUTH_SCOPE_MISMATCH') throw scopeMismatchError(body);
+  throw reauthError(body);
+}
+
+function throwForMutationFailure(row: MutationRow | undefined): never {
+  const code = row?.code;
+  if (code === 'NO_PERMISSION' || code === 'AUTHORIZATION_FAILED') {
+    throw noPermissionError(row);
+  }
+  if (code === 'OAUTH_SCOPE_MISMATCH') throw scopeMismatchError(row);
+  throw new AppError(row?.message || 'Zoho rejected the note create for your user.', {
+    statusCode: 502,
+    code: 'ZOHO_USER_NOTE_CREATE_FAILED',
+    expose: true,
+    details: code ? { zohoCode: code } : undefined,
+  });
 }
 
 /**
  * Insert a Zoho CRM Notes record using the agent's own access token so that "Created By"
- * reflects the real agent. Returns the new note id, or null if the user token is unavailable
- * or the call fails (caller falls back to the service-account path).
+ * reflects the real agent. Throws on auth/scope/permission failures — never returns null.
  */
 export async function insertNoteAsUser(
   tenantId: string,
   zohoUserId: string,
   noteData: Record<string, unknown>,
-): Promise<string | null> {
-  const accessToken = await getUserAccessToken(tenantId, zohoUserId);
-  if (!accessToken) return null;
+): Promise<string> {
+  let accessToken = await getUserAccessToken(tenantId, zohoUserId);
+  if (!accessToken) throw reauthError();
 
-  const base = env.ZOHO_CRM_API_DOMAIN.replace(/\/+$/, '');
+  let result: { status: number; body: ZohoErrorBody };
   try {
-    const res = await fetchWithTimeout(`${base}/Notes`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Zoho-oauthtoken ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ data: [noteData] }),
-    });
-    if (res.status === 401) {
-      invalidateUserToken(tenantId, zohoUserId);
-      return null;
-    }
-    const json = (await res.json().catch(() => ({}))) as { data?: MutationRow[] };
-    const row = json.data?.[0];
-    if (!row || row.status !== 'success' || !row.details?.id) {
-      logger.warn({ zohoUserId, code: row?.code, message: row?.message }, 'zoho user note insert non-success');
-      return null;
-    }
-    return row.details.id;
+    result = await postNoteAsUser(accessToken, noteData);
   } catch (err) {
-    logger.warn({ err, zohoUserId }, 'zoho user note insert error');
-    return null;
+    logger.warn({ err, zohoUserId }, 'zoho user note insert network error');
+    throw new AppError('Could not reach Zoho CRM to create your note. Try again.', {
+      statusCode: 502,
+      code: 'ZOHO_USER_NOTE_CREATE_FAILED',
+      expose: true,
+      cause: err,
+    });
   }
+
+  if (result.status === 401) {
+    // Expired access token: invalidate and retry once as the same worker. Scope mismatch will
+    // fail again on the retry and surface ZOHO_USER_SCOPE_MISMATCH.
+    invalidateUserToken(tenantId, zohoUserId);
+    accessToken = await getUserAccessToken(tenantId, zohoUserId);
+    if (!accessToken) throw reauthError(result.body);
+    try {
+      result = await postNoteAsUser(accessToken, noteData);
+    } catch (err) {
+      logger.warn({ err, zohoUserId }, 'zoho user note insert retry network error');
+      throw new AppError('Could not reach Zoho CRM to create your note. Try again.', {
+        statusCode: 502,
+        code: 'ZOHO_USER_NOTE_CREATE_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
+    if (result.status === 401) throwForUnauthorized(result.body);
+  }
+
+  if (result.status === 403) throw noPermissionError(result.body);
+  if (result.status === 401) throwForUnauthorized(result.body);
+
+  const row = result.body.data?.[0];
+  if (!row || row.status !== 'success' || !row.details?.id) {
+    logger.warn({ zohoUserId, code: row?.code, message: row?.message }, 'zoho user note insert non-success');
+    throwForMutationFailure(row);
+  }
+
+  const createdById = row.details.Created_By?.id;
+  if (createdById && createdById !== zohoUserId) {
+    logger.error(
+      { zohoUserId, createdById, noteId: row.details.id },
+      'zoho user note Created_By mismatch — refusing to report success',
+    );
+    throw new AppError(
+      'The note was not attributed to your Zoho user. It was not recorded as successful.',
+      {
+        statusCode: 502,
+        code: 'ZOHO_USER_ATTRIBUTION_MISMATCH',
+        expose: true,
+        details: { noteId: row.details.id },
+      },
+    );
+  }
+
+  return row.details.id;
 }

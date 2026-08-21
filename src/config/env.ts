@@ -5,6 +5,7 @@ import { featureFlagEnvShape } from './envFeatureFlags.js';
 import { inboundSecretsEnvShape } from './envInboundSecrets.js';
 import { operationalEnvShape } from './envOperational.js';
 import { storageEnvShape } from './envStorage.js';
+import { DEFAULT_ZOHO_OAUTH_SCOPES } from './zohoOAuthScopes.js';
 
 /** Parse a '0'/'1'/'true'/'false' style flag into a boolean, with a default. */
 const flag = (def: '0' | '1') =>
@@ -370,8 +371,10 @@ const EnvSchema = z.object({
   // at all — `GET /users` is gated by the caller's CRM profile permission on the Users module, which
   // Administrators hold and Sales-type profiles usually do not, so login 403'd for everyone but admins.
   // The fallback identifies the human at the accounts level and reads their profile/role with the
-  // service token instead. Adding a scope means existing workers re-consent once on next sign-in.
-  ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ,AaaServer.profile.READ'),
+  // service token instead. `ZohoCRM.modules.notes.CREATE` is required so Notes are created as the
+  // signing-in agent (Created By), not the shared service account. Prefer this least-privilege set
+  // over `ZohoCRM.modules.ALL`. Adding a scope means existing workers re-consent once on next sign-in.
+  ZOHO_OAUTH_SCOPES: z.string().default(DEFAULT_ZOHO_OAUTH_SCOPES),
 
   // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
   // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).

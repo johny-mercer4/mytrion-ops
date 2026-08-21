@@ -547,7 +547,6 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
       throw crmError(err);
     }
   });
-
   /** Log a Zoho Note on the record (multipart: `content`, optional `title`, optional `file`). */
   async function logRecordNote(
     request: FastifyRequest,
@@ -572,6 +571,11 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
         ctx,
       );
     } catch (err) {
+      if (err instanceof AppError) {
+        await auditFromContext(ctx, { action: 'sales.datacenter.note_create', status: 'error',
+          resourceType: module === 'Leads' ? 'crm_lead' : 'crm_deal', resourceId: id, detail: { code: err.code } });
+        throw err;
+      }
       throw crmError(err);
     }
     // A note is saved even if its attachment fails — surface the note, warn on the file.
@@ -591,7 +595,6 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     });
     return { id: noteId, hasAttachment: Boolean(file) };
   }
-
   app.post('/data-center/leads/:id/notes', guard, (request) => logRecordNote(request, 'Leads', fetchLeadOwnerId));
   app.post('/data-center/deals/:id/notes', guard, (request) => logRecordNote(request, 'Deals', fetchDealOwnerId));
 }

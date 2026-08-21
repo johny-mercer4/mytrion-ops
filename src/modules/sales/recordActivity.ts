@@ -137,10 +137,10 @@ export async function fetchRecordNotes(module: CrmModule, id: string): Promise<N
 /**
  * Create a Zoho Note under a Lead/Deal. Returns the new note id (for an optional attachment).
  *
- * When ctx carries a real Zoho user id and a refresh token has been stored for that user, the
- * insert is made using their own access token so that Zoho's "Created By" field reflects the
- * real agent. The Owner field is always set to the agent's Zoho user id regardless of which
- * token path is used. Falls back to the service account on any failure.
+ * When ctx carries a real Zoho CRM user id, the insert MUST use that worker's token so
+ * "Created By" is attributed correctly. Failures throw (reauth / scope / permission) — we never
+ * silently post as the shared service account. Service-token create remains only for callers
+ * without a CRM user id (e.g. non-CRM sessions).
  */
 export async function createRecordNote(
   module: CrmModule,
@@ -161,10 +161,8 @@ export async function createRecordNote(
     ...(zohoUserId ? { Owner: { id: zohoUserId } } : {}),
   };
 
-  // Attempt user-attributed insert; fall back to service account if unavailable.
   if (zohoUserId && ctx) {
-    const noteId = await insertNoteAsUser(ctx.tenantId, zohoUserId, noteData);
-    if (noteId) return noteId;
+    return insertNoteAsUser(ctx.tenantId, zohoUserId, noteData);
   }
 
   return zohoCrmRecords.insertRecord('Notes', noteData);
