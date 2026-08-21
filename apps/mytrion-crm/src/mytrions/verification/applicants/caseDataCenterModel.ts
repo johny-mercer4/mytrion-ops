@@ -17,6 +17,7 @@ import type {
 } from '@/api/verificationFmcsa';
 import type { MotusCensusRecord, MotusSearchBy } from '@/api/verificationMotus';
 import type { BrokerSnapshotRecord, BrokerSnapshotSearchBy } from '@/api/verificationBrokerSnapshot';
+import type { BlacklistSearchBy } from '@/api/verificationBlacklist';
 import { authorityActiveFromStatus, formatDollars } from './caseAuthority';
 
 export interface FmcsaPrefillCase {
@@ -25,6 +26,8 @@ export interface FmcsaPrefillCase {
   companyName?: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 /** Workspace landing: `?dot=` / `?mc=` / `?name=` (or `?q=` as a name). Empty params stay empty. */
@@ -35,6 +38,8 @@ export function fmcsaPrefillFromSearch(search: string): FmcsaPrefillCase {
     dot: params.get('dot'),
     mc: params.get('mc'),
     companyName: params.get('name') ?? params.get('q'),
+    email: params.get('email'),
+    phone: params.get('phone'),
   };
 }
 
@@ -79,6 +84,26 @@ export function brokerPrefill(row: FmcsaPrefillCase): { by: BrokerSnapshotSearch
   if (person) return { by: 'name', q: person };
   const company = (row.companyName ?? '').trim();
   if (company) return { by: 'name', q: company };
+  return { by: 'dot', q: '' };
+}
+
+/**
+ * Blacklist keys are USDOT → MC → email → phone → name. Same ladder as the compact
+ * type+value control; we do not auto-run.
+ */
+export function blacklistPrefill(row: FmcsaPrefillCase): { by: BlacklistSearchBy; q: string } {
+  const dot = (row.dot ?? '').trim();
+  if (dot) return { by: 'dot', q: dot };
+  const mc = (row.mc ?? '').trim();
+  if (mc) return { by: 'mc', q: mc };
+  const email = (row.email ?? '').trim();
+  if (email) return { by: 'email', q: email };
+  const phone = (row.phone ?? '').trim();
+  if (phone) return { by: 'phone', q: phone };
+  const company = (row.companyName ?? '').trim();
+  if (company) return { by: 'name', q: company };
+  const person = personName(row);
+  if (person) return { by: 'name', q: person };
   return { by: 'dot', q: '' };
 }
 

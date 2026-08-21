@@ -1,7 +1,8 @@
 /**
  * The two CARRIER-ONLY phase surfaces — Phase 4's authority lookup and Phase 8's Highway review —
- * plus the Data Center FMCSA (QCMobile), Motus (Socrata), and Broker Snapshot (DWH)
- * searches, which read the same sources without writing findings.
+ * plus the Data Center FMCSA (QCMobile), Motus (Socrata), Broker Snapshot (DWH),
+ * and Blacklist (ban / duplicate / debtor) searches, which read the same sources
+ * without writing findings.
  *
  * Both writes belong to the phases that apply to carriers alone, and both were kept out of
  * `verificationFlow.routes.ts` because that file already sits over the house 600-line cap and cannot
@@ -17,6 +18,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { lookupFmcsaCarrier } from '../../integrations/fmcsaQcMobile.js';
+import { searchBlacklist } from '../../modules/verificationFlow/blacklistSearch.js';
 import { searchBrokerSnapshot } from '../../modules/verificationFlow/brokerSnapshotSearch.js';
 import { searchMotus } from '../../modules/verificationFlow/motusSearch.js';
 import { deskService } from '../../modules/verificationFlow/deskService.js';
@@ -51,6 +53,12 @@ const motusSearchQuery = z.object({
 /** USDOT and owner name only — `stg_broker_snapshot` has no MC column. */
 const brokerSnapshotSearchQuery = z.object({
   by: z.enum(['dot', 'name']),
+  q: z.string().trim().min(1).max(160),
+});
+
+/** Ban / duplicate / debtor — compact type + value, same door as the other Data Center tabs. */
+const blacklistSearchQuery = z.object({
+  by: z.enum(['dot', 'mc', 'email', 'phone', 'name']),
   q: z.string().trim().min(1).max(160),
 });
 
@@ -120,6 +128,17 @@ export async function verificationAuthorityRoutes(app: FastifyInstance): Promise
   app.get('/verification/flow/broker-snapshot/search', auth, async (request) => {
     requireVerificationRead(request);
     return searchBrokerSnapshot(brokerSnapshotSearchQuery.parse(request.query));
+  });
+
+  /**
+   * Parallel Ban / Duplicates / Debtors for the Blacklist Data Center tab.
+   *
+   * READ-ONLY. Always 200 with per-probe `{ available, error, ... }` — a down Credit
+   * Platform or DWH is "could not read", not an HTTP failure the UI would mix with RBAC.
+   */
+  app.get('/verification/flow/blacklist/search', auth, async (request) => {
+    const ctx = requireVerificationRead(request);
+    return searchBlacklist(ctx, blacklistSearchQuery.parse(request.query));
   });
 
   /**

@@ -3,11 +3,11 @@
  *
  * Workspace tab and the open-case chrome both render this. `caseRow` is optional: standalone
  * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
- * not auto-run. Blacklist / CITI Fuel stay Soon.
+ * not auto-run. CITI Fuel stays Soon.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  */
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Badge, Button, Icon, Input, Skeleton, Tabs, type BadgeIntent, type TabItem } from '@/ds';
+import { Button, Input, Skeleton, Tabs, type BadgeIntent, type TabItem } from '@/ds';
 import {
   searchFmcsa,
   type FmcsaCarrierRow,
@@ -27,6 +27,12 @@ import {
   type BrokerSnapshotSearchResult,
 } from '@/api/verificationBrokerSnapshot';
 import {
+  searchBlacklist,
+  type BlacklistSearchBy,
+  type BlacklistSearchResult,
+} from '@/api/verificationBlacklist';
+import {
+  blacklistPrefill,
   brokerPrefill,
   brokerSnapshotFacts,
   brokerSnapshotTitle,
@@ -43,17 +49,17 @@ import {
   motusMcLabel,
   motusPrefill,
   type FmcsaPrefillCase,
-  type VendorFact,
 } from './caseDataCenterModel';
+import { BlacklistResults, ExpandRow } from './CaseDataCenterBlacklist';
 import './caseDataCenter.css';
 
-type Source = 'fmcsa' | 'motus' | 'broker';
+type Source = 'fmcsa' | 'motus' | 'broker' | 'blacklist';
 
 const SOURCES: TabItem[] = [
   { value: 'fmcsa', label: 'FMCSA' },
   { value: 'motus', label: 'Motus' },
   { value: 'broker', label: 'Broker snapshot' },
-  { value: 'blacklist', label: 'Blacklist', disabled: true, title: 'Soon' },
+  { value: 'blacklist', label: 'Blacklist' },
   { value: 'citi', label: 'CITI Fuel', disabled: true, title: 'Soon' },
 ];
 
@@ -89,6 +95,22 @@ const BROKER_PLACEHOLDER: Record<BrokerSnapshotSearchBy, string> = {
   name: 'Owner name',
 };
 
+const BLACKLIST_KEYS: TabItem[] = [
+  { value: 'dot', label: 'USDOT' },
+  { value: 'mc', label: 'MC' },
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'name', label: 'Name' },
+];
+
+const BLACKLIST_PLACEHOLDER: Record<BlacklistSearchBy, string> = {
+  dot: 'USDOT',
+  mc: 'MC number',
+  email: 'Email',
+  phone: 'Phone',
+  name: 'Legal name',
+};
+
 const STATUS_INTENT: Record<FmcsaStatusVerdict, BadgeIntent> = {
   active: 'success',
   inactive: 'danger',
@@ -101,20 +123,26 @@ function censusStatus(code: MotusCensusRecord['statusCode']): FmcsaStatusVerdict
   return 'unknown';
 }
 
+type SearchBy = FmcsaSearchBy | BlacklistSearchBy;
+
 export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const seed = fmcsaPrefill(caseRow ?? {});
   const [source, setSource] = useState<Source>('fmcsa');
-  const [by, setBy] = useState<FmcsaSearchBy>(seed.by);
+  const [by, setBy] = useState<SearchBy>(seed.by);
   const [q, setQ] = useState(seed.q);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fmcsa, setFmcsa] = useState<FmcsaSearchResult | null>(null);
   const [motus, setMotus] = useState<MotusSearchResult | null>(null);
   const [broker, setBroker] = useState<BrokerSnapshotSearchResult | null>(null);
+  const [blacklist, setBlacklist] = useState<BlacklistSearchResult | null>(null);
   const req = useRef(0);
   const keysId = useId();
   const motusBy: MotusSearchBy = by === 'name' ? 'name' : 'dot';
   const brokerBy: BrokerSnapshotSearchBy = by === 'name' ? 'name' : 'dot';
+  const fmcsaBy: FmcsaSearchBy = by === 'mc' || by === 'name' ? by : 'dot';
+  const blacklistBy: BlacklistSearchBy =
+    by === 'mc' || by === 'email' || by === 'phone' || by === 'name' ? by : 'dot';
 
   useEffect(() => {
     const next =
@@ -122,17 +150,27 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ? motusPrefill(caseRow ?? {})
         : source === 'broker'
           ? brokerPrefill(caseRow ?? {})
-          : fmcsaPrefill(caseRow ?? {});
+          : source === 'blacklist'
+            ? blacklistPrefill(caseRow ?? {})
+            : fmcsaPrefill(caseRow ?? {});
     setBy(next.by);
     setQ(next.q);
     setFmcsa(null);
     setMotus(null);
     setBroker(null);
+    setBlacklist(null);
     setError(null);
   }, [source, seed.by, seed.q]);
 
   const changeSource = (next: string): void => {
-    if (next === 'fmcsa' || next === 'motus' || next === 'broker') setSource(next);
+    if (next === 'fmcsa' || next === 'motus' || next === 'broker' || next === 'blacklist') setSource(next);
+  };
+
+  const clearResults = (): void => {
+    setFmcsa(null);
+    setMotus(null);
+    setBroker(null);
+    setBlacklist(null);
   };
 
   const submit = (event: FormEvent): void => {
@@ -143,32 +181,41 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
     setBusy(true);
     setError(null);
     const run =
-      source === 'broker'
-        ? searchBrokerSnapshot({ by: brokerBy, q: value }).then((next) => {
+      source === 'blacklist'
+        ? searchBlacklist({ by: blacklistBy, q: value }).then((next) => {
             if (id !== req.current) return;
-            setBroker(next);
+            setBlacklist(next);
             setFmcsa(null);
             setMotus(null);
+            setBroker(null);
           })
-        : source === 'motus'
-          ? searchMotus({ by: motusBy, q: value }).then((next) => {
+        : source === 'broker'
+          ? searchBrokerSnapshot({ by: brokerBy, q: value }).then((next) => {
               if (id !== req.current) return;
-              setMotus(next);
+              setBroker(next);
               setFmcsa(null);
-              setBroker(null);
-            })
-          : searchFmcsa({ by, q: value }).then((next) => {
-              if (id !== req.current) return;
-              setFmcsa(next);
               setMotus(null);
-              setBroker(null);
-            });
+              setBlacklist(null);
+            })
+          : source === 'motus'
+            ? searchMotus({ by: motusBy, q: value }).then((next) => {
+                if (id !== req.current) return;
+                setMotus(next);
+                setFmcsa(null);
+                setBroker(null);
+                setBlacklist(null);
+              })
+            : searchFmcsa({ by: fmcsaBy, q: value }).then((next) => {
+                if (id !== req.current) return;
+                setFmcsa(next);
+                setMotus(null);
+                setBroker(null);
+                setBlacklist(null);
+              });
     void run
       .catch((err: unknown) => {
         if (id !== req.current) return;
-        setFmcsa(null);
-        setMotus(null);
-        setBroker(null);
+        clearResults();
         setError(err instanceof Error ? err.message : 'Search did not answer.');
       })
       .finally(() => {
@@ -187,23 +234,42 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
           ? broker.error ?? 'Warehouse did not answer.'
           : null);
   const empty =
-    source === 'fmcsa'
-      ? Boolean(fmcsa?.available && fmcsa.notFound && fmcsaRowsList.length === 0)
-      : source === 'motus'
-        ? Boolean(motus?.available && motus.notFound)
-        : Boolean(broker?.available && broker.notFound);
+    source === 'blacklist'
+      ? false
+      : source === 'fmcsa'
+        ? Boolean(fmcsa?.available && fmcsa.notFound && fmcsaRowsList.length === 0)
+        : source === 'motus'
+          ? Boolean(motus?.available && motus.notFound)
+          : Boolean(broker?.available && broker.notFound);
   const placeholder =
-    source === 'broker'
-      ? BROKER_PLACEHOLDER[brokerBy]
-      : source === 'motus'
-        ? MOTUS_PLACEHOLDER[motusBy]
-        : FMCSA_PLACEHOLDER[by];
-  const keyValue = source === 'broker' ? brokerBy : source === 'motus' ? motusBy : by;
-  const keyItems = source === 'broker' ? BROKER_KEYS : source === 'motus' ? MOTUS_KEYS : FMCSA_KEYS;
+    source === 'blacklist'
+      ? BLACKLIST_PLACEHOLDER[blacklistBy]
+      : source === 'broker'
+        ? BROKER_PLACEHOLDER[brokerBy]
+        : source === 'motus'
+          ? MOTUS_PLACEHOLDER[motusBy]
+          : FMCSA_PLACEHOLDER[fmcsaBy];
+  const keyValue =
+    source === 'blacklist' ? blacklistBy : source === 'broker' ? brokerBy : source === 'motus' ? motusBy : fmcsaBy;
+  const keyItems =
+    source === 'blacklist' ? BLACKLIST_KEYS : source === 'broker' ? BROKER_KEYS : source === 'motus' ? MOTUS_KEYS : FMCSA_KEYS;
   const keyLabel =
-    source === 'broker' ? 'Snapshot key' : source === 'motus' ? 'Socrata key' : 'QCMobile key';
+    source === 'blacklist'
+      ? 'Search key'
+      : source === 'broker'
+        ? 'Snapshot key'
+        : source === 'motus'
+          ? 'Socrata key'
+          : 'QCMobile key';
   const searching =
-    source === 'broker' ? 'Searching snapshot' : source === 'motus' ? 'Searching Motus' : 'Searching FMCSA';
+    source === 'blacklist'
+      ? 'Searching blacklist'
+      : source === 'broker'
+        ? 'Searching snapshot'
+        : source === 'motus'
+          ? 'Searching Motus'
+          : 'Searching FMCSA';
+  const inputMode = keyValue === 'email' ? 'email' : keyValue === 'phone' || keyValue === 'name' ? 'text' : 'numeric';
 
   return (
     <div className="va-dc">
@@ -223,7 +289,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
             className="va-dc-keys"
             items={keyItems}
             value={keyValue}
-            onValueChange={(next) => setBy(next as FmcsaSearchBy)}
+            onValueChange={(next) => setBy(next as SearchBy)}
             variant="pill"
             size="sm"
             idBase={keysId}
@@ -236,7 +302,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
             onChange={(event) => setQ(event.currentTarget.value)}
             placeholder={placeholder}
             aria-label={placeholder}
-            inputMode={keyValue === 'name' ? 'text' : 'numeric'}
+            inputMode={inputMode}
             autoComplete="off"
             fullWidth
           />
@@ -259,7 +325,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
                 : 'No carrier in the register.'}
           </p>
         ) : null}
-        {busy && fmcsa === null && motus === null && broker === null ? (
+        {busy && fmcsa === null && motus === null && broker === null && blacklist === null ? (
           <ResultsSkeleton label={searching} />
         ) : null}
         {source === 'fmcsa' && fmcsaRowsList.length > 0 ? (
@@ -270,6 +336,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
           />
         ) : null}
         {source === 'motus' && motus?.available ? <MotusResults result={motus} /> : null}
+        {source === 'blacklist' && blacklist ? <BlacklistResults result={blacklist} /> : null}
         {source === 'broker' && broker?.available ? <BrokerResults result={broker} /> : null}
       </div>
     </div>
@@ -449,67 +516,5 @@ function FrozenBlock({
       ) : null}
       {children}
     </section>
-  );
-}
-
-function ExpandRow({
-  title,
-  facts,
-  badge,
-  badgeIntent,
-  details,
-}: {
-  title: string;
-  facts: Array<string | null | undefined>;
-  badge?: string;
-  badgeIntent?: BadgeIntent;
-  details: VendorFact[];
-}) {
-  const [open, setOpen] = useState(false);
-  const shown = facts.filter((fact): fact is string => Boolean(fact?.trim()));
-
-  return (
-    <article className="va-dc-row">
-      <button
-        type="button"
-        className="va-dc-row-head"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="va-dc-row-title">
-          <span className="va-dc-row-name">{title}</span>
-          <span className="va-dc-row-facts">
-            {shown.map((fact) => (
-              <span key={fact} className={fact.startsWith('USDOT ') || fact.startsWith('MC ') ? 'num' : undefined}>
-                {fact}
-              </span>
-            ))}
-          </span>
-        </span>
-        <span className="va-dc-row-side">
-          {badge ? (
-            <Badge intent={badgeIntent ?? 'neutral'} size="sm">
-              {badge}
-            </Badge>
-          ) : null}
-          <Icon name="expand_more" size="sm" />
-        </span>
-      </button>
-      {open ? <FactList items={details} /> : null}
-    </article>
-  );
-}
-
-function FactList({ items }: { items: VendorFact[] }) {
-  if (items.length === 0) return null;
-  return (
-    <dl className="va-dc-detail">
-      {items.map((item) => (
-        <div key={item.label}>
-          <dt className="t-eyebrow">{item.label}</dt>
-          <dd>{item.value}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }

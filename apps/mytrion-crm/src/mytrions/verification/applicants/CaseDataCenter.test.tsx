@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FmcsaSearchResult } from '@/api/verificationFmcsa';
 import type { MotusSearchResult } from '@/api/verificationMotus';
 import type { BrokerSnapshotSearchResult } from '@/api/verificationBrokerSnapshot';
+import type { BlacklistSearchResult } from '@/api/verificationBlacklist';
 
 const searchFmcsa = vi.fn();
 const searchMotus = vi.fn();
 const searchBrokerSnapshot = vi.fn();
+const searchBlacklist = vi.fn();
 vi.mock('@/api/verificationFmcsa', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFmcsa')>();
   return { ...actual, searchFmcsa };
@@ -18,6 +20,10 @@ vi.mock('@/api/verificationMotus', async (importOriginal) => {
 vi.mock('@/api/verificationBrokerSnapshot', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationBrokerSnapshot')>();
   return { ...actual, searchBrokerSnapshot };
+});
+vi.mock('@/api/verificationBlacklist', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/verificationBlacklist')>();
+  return { ...actual, searchBlacklist };
 });
 
 const { CaseDataCenter } = await import('./CaseDataCenter');
@@ -113,13 +119,47 @@ function brokerHit(over: Partial<BrokerSnapshotSearchResult> = {}): BrokerSnapsh
   };
 }
 
+function blacklistHit(over: Partial<BlacklistSearchResult> = {}): BlacklistSearchResult {
+  return {
+    matchedOn: 'dot',
+    ban: {
+      available: true,
+      error: null,
+      ownAvailable: true,
+      platformAvailable: true,
+      hits: [
+        {
+          list: 'own',
+          entryType: 'usdot',
+          display: '987654',
+          reason: 'Fraud',
+          sourceCaseId: 'vc_banned',
+          date: '2026-08-01T00:00:00.000Z',
+          fields: { reason: 'Fraud', source_case_id: 'vc_banned' },
+        },
+      ],
+    },
+    duplicates: {
+      available: true,
+      error: null,
+      casesAvailable: true,
+      dealsAvailable: true,
+      hits: [],
+    },
+    debtors: { available: true, error: null, records: [] },
+    ...over,
+  };
+}
+
 beforeEach(() => {
   searchFmcsa.mockReset();
   searchMotus.mockReset();
   searchBrokerSnapshot.mockReset();
+  searchBlacklist.mockReset();
   searchFmcsa.mockResolvedValue(hit());
   searchMotus.mockResolvedValue(motusHit());
   searchBrokerSnapshot.mockResolvedValue(brokerHit());
+  searchBlacklist.mockResolvedValue(blacklistHit());
 });
 
 describe('CaseDataCenter FMCSA search', () => {
@@ -177,12 +217,12 @@ describe('CaseDataCenter FMCSA search', () => {
     expect(screen.getByText('12')).toBeInTheDocument();
   });
 
-  it('lists remaining sources as Soon and keeps Motus and Broker snapshot live', () => {
+  it('lists CITI Fuel as Soon and keeps Motus, Broker snapshot, and Blacklist live', () => {
     render(<CaseDataCenter caseRow={{}} />);
     expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Motus' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'Broker snapshot' })).not.toHaveAttribute('aria-disabled');
-    expect(screen.getByRole('tab', { name: 'Blacklist' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('tab', { name: 'Blacklist' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'CITI Fuel' })).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
     expect(screen.getByRole('tab', { name: 'Motus' })).toHaveAttribute('aria-selected', 'true');
@@ -303,5 +343,89 @@ describe('CaseDataCenter Broker snapshot search', () => {
     fireEvent.click(toggle);
     expect(screen.getByText('row_hash')).toBeInTheDocument();
     expect(screen.getByText('abc')).toBeInTheDocument();
+  });
+});
+
+describe('CaseDataCenter Blacklist search', () => {
+  it('is a live tab with USDOT / MC / Email / Phone / Name keys', () => {
+    render(<CaseDataCenter caseRow={{}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Blacklist' }));
+    expect(screen.getByRole('tab', { name: 'Blacklist' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'USDOT' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'MC' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Email' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Phone' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Name' })).toBeInTheDocument();
+    expect(searchBlacklist).not.toHaveBeenCalled();
+  });
+
+  it('prefills USDOT and searches on submit', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '987654', email: 'ops@kaiser.test' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Blacklist' }));
+    expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('987654');
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(searchBlacklist).toHaveBeenCalledWith({ by: 'dot', q: '987654' }));
+  });
+
+  it('keeps all three sections when only Ban hits', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '987654' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Blacklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByRole('region', { name: 'Ban list' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Duplicates' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Debtors' })).toBeInTheDocument();
+    expect(screen.getByText('987654')).toBeInTheDocument();
+    expect(screen.getByText('No duplicate case or Deal.')).toBeInTheDocument();
+    expect(screen.getByText('No debtor over $100.')).toBeInTheDocument();
+  });
+
+  it('keeps Ban and Duplicates visible when only Debtors hits', async () => {
+    searchBlacklist.mockResolvedValue(
+      blacklistHit({
+        ban: { available: true, error: null, ownAvailable: true, platformAvailable: true, hits: [] },
+        debtors: {
+          available: true,
+          error: null,
+          records: [
+            {
+              carrierId: '4421',
+              companyName: 'Kaiser Freight',
+              computedDebt: 150.25,
+              computedDebtDays: 11,
+              openInvoices: 2,
+              fields: { deal_email: 'ops@kaiser.test' },
+            },
+          ],
+        },
+      }),
+    );
+    render(<CaseDataCenter caseRow={{ dot: '987654' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Blacklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('Kaiser Freight')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Ban list' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Duplicates' })).toBeInTheDocument();
+    expect(screen.getByText('No ban-list match.')).toBeInTheDocument();
+    expect(screen.getByText('No duplicate case or Deal.')).toBeInTheDocument();
+  });
+
+  it('shows a down Credit Platform probe without hiding other sections', async () => {
+    searchBlacklist.mockResolvedValue(
+      blacklistHit({
+        ban: {
+          available: false,
+          error: 'VERIFICATION_DATABASE_URL is not configured',
+          ownAvailable: true,
+          platformAvailable: false,
+          hits: [],
+        },
+      }),
+    );
+    render(<CaseDataCenter caseRow={{ dot: '987654' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Blacklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('Credit Platform list is not configured.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Duplicates' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Debtors' })).toBeInTheDocument();
   });
 });

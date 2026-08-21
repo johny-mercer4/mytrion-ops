@@ -9,6 +9,7 @@ import {
   fmcsaRows,
   flattenFields,
   motusPrefill,
+  blacklistPrefill,
   brokerPrefill,
   brokerSnapshotTitle,
 } from './caseDataCenterModel';
@@ -75,6 +76,8 @@ describe('fmcsaPrefill', () => {
       dot: '987654',
       mc: '123456',
       companyName: null,
+      email: null,
+      phone: null,
     });
     expect(fmcsaPrefill(fmcsaPrefillFromSearch('?name=Ridgevale%20Freight'))).toEqual({
       by: 'name',
@@ -147,6 +150,45 @@ describe('brokerPrefill', () => {
       changeDate: null,
       isActive: true,
     })).toBe('Abdirehin Ahmed');
+  });
+});
+
+describe('blacklistPrefill', () => {
+  it('prefers USDOT, then MC, email, phone, then name', () => {
+    expect(blacklistPrefill({
+      dot: '987654',
+      mc: '123456',
+      email: 'ops@kaiser.test',
+      phone: '6145550110',
+      companyName: 'Ridgevale',
+    })).toEqual({ by: 'dot', q: '987654' });
+    expect(blacklistPrefill({ mc: '123456', email: 'ops@kaiser.test' })).toEqual({
+      by: 'mc',
+      q: '123456',
+    });
+    expect(blacklistPrefill({ email: 'ops@kaiser.test', phone: '6145550110' })).toEqual({
+      by: 'email',
+      q: 'ops@kaiser.test',
+    });
+    expect(blacklistPrefill({ phone: '6145550110', companyName: 'Ridgevale' })).toEqual({
+      by: 'phone',
+      q: '6145550110',
+    });
+    expect(blacklistPrefill({ companyName: 'Ridgevale Freight' })).toEqual({
+      by: 'name',
+      q: 'Ridgevale Freight',
+    });
+  });
+
+  it('reads email and phone from the workspace query', () => {
+    expect(blacklistPrefill(fmcsaPrefillFromSearch('?email=ops%40kaiser.test'))).toEqual({
+      by: 'email',
+      q: 'ops@kaiser.test',
+    });
+    expect(blacklistPrefill(fmcsaPrefillFromSearch('?phone=6145550110'))).toEqual({
+      by: 'phone',
+      q: '6145550110',
+    });
   });
 });
 
