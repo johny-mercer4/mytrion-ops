@@ -3,9 +3,12 @@ import type { FmcsaCarrierRow, FmcsaSearchResult } from '@/api/verificationFmcsa
 import {
   fmcsaAddress,
   fmcsaCarrierTitle,
+  fmcsaDetailFacts,
   fmcsaPrefill,
   fmcsaPrefillFromSearch,
   fmcsaRows,
+  flattenFields,
+  motusPrefill,
 } from './caseDataCenterModel';
 
 function row(over: Partial<FmcsaCarrierRow> = {}): FmcsaCarrierRow {
@@ -96,6 +99,28 @@ describe('fmcsaRows', () => {
   });
 });
 
+describe('motusPrefill', () => {
+  it('uses USDOT or name, never MC', () => {
+    expect(motusPrefill({ dot: '652739', mc: '307348', companyName: 'Stone' })).toEqual({
+      by: 'dot',
+      q: '652739',
+    });
+    expect(motusPrefill({ mc: '307348', companyName: 'Stone Express' })).toEqual({
+      by: 'name',
+      q: 'Stone Express',
+    });
+    expect(motusPrefill({ mc: '307348' })).toEqual({ by: 'dot', q: '' });
+  });
+});
+
+describe('flattenFields', () => {
+  it('keeps an extra key and skips nulls already shown in the row', () => {
+    expect(
+      flattenFields({ legalName: 'Ridgevale', totalPowerUnits: 12, phyCountry: null }, ['legalName']),
+    ).toEqual([{ label: 'totalPowerUnits', value: '12' }]);
+  });
+});
+
 describe('fmcsa labels', () => {
   it('joins a physical address and names the carrier', () => {
     const hit = row({
@@ -107,5 +132,8 @@ describe('fmcsa labels', () => {
     });
     expect(fmcsaAddress(hit)).toBe('100 Dock Rd · Chicago, IL · 60601');
     expect(fmcsaCarrierTitle(row({}))).toBe('Unnamed carrier');
+    expect(fmcsaDetailFacts(row({ fields: { totalPowerUnits: 4, legalName: 'X' } }))).toEqual([
+      { label: 'totalPowerUnits', value: '4' },
+    ]);
   });
 });

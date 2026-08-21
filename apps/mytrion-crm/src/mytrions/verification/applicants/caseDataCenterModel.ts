@@ -1,9 +1,10 @@
 /**
- * Data Center helpers — prefill and the scannable fields from a QCMobile row.
+ * Data Center helpers — prefill and the scannable fields from a vendor row.
  *
  * Prefill prefers USDOT, then MC, then legal name, because that is the register's own ladder.
- * Search itself is typed: the agent picks the key. We do not auto-run on open — that would hit
- * FMCSA on every case open, including from hosts the edge denies.
+ * Motus (Socrata) has no MC client, so its prefill skips MC. Search itself is typed: the agent
+ * picks the key. We do not auto-run on open — that would hit FMCSA on every case open, including
+ * from hosts the edge denies.
  */
 import type {
   FmcsaAuthorityLine,
@@ -14,6 +15,7 @@ import type {
   FmcsaSearchResult,
   FmcsaStatusVerdict,
 } from '@/api/verificationFmcsa';
+import type { MotusCensusRecord, MotusSearchBy } from '@/api/verificationMotus';
 import { formatDollars } from './caseAuthority';
 
 export interface FmcsaPrefillCase {
@@ -35,6 +37,13 @@ export function fmcsaPrefillFromSearch(search: string): FmcsaPrefillCase {
   };
 }
 
+function personName(row: FmcsaPrefillCase): string {
+  return [row.firstName, row.lastName]
+    .map((part) => (part ?? '').trim())
+    .filter((part) => part !== '')
+    .join(' ');
+}
+
 export function fmcsaPrefill(row: FmcsaPrefillCase): { by: FmcsaSearchBy; q: string } {
   const dot = (row.dot ?? '').trim();
   if (dot) return { by: 'dot', q: dot };
@@ -42,10 +51,18 @@ export function fmcsaPrefill(row: FmcsaPrefillCase): { by: FmcsaSearchBy; q: str
   if (mc) return { by: 'mc', q: mc };
   const company = (row.companyName ?? '').trim();
   if (company) return { by: 'name', q: company };
-  const person = [row.firstName, row.lastName]
-    .map((part) => (part ?? '').trim())
-    .filter((part) => part !== '')
-    .join(' ');
+  const person = personName(row);
+  if (person) return { by: 'name', q: person };
+  return { by: 'dot', q: '' };
+}
+
+/** Census / filings take a USDOT or a legal name — never an MC typed into the DOT box. */
+export function motusPrefill(row: FmcsaPrefillCase): { by: MotusSearchBy; q: string } {
+  const dot = (row.dot ?? '').trim();
+  if (dot) return { by: 'dot', q: dot };
+  const company = (row.companyName ?? '').trim();
+  if (company) return { by: 'name', q: company };
+  const person = personName(row);
   if (person) return { by: 'name', q: person };
   return { by: 'dot', q: '' };
 }
@@ -101,4 +118,101 @@ export function fmcsaAddress(row: FmcsaCarrierRow): string | null {
 
 export function fmcsaCarrierTitle(row: FmcsaCarrierRow): string {
   return row.legalName?.trim() || row.dbaName?.trim() || row.dotNumber?.trim() || 'Unnamed carrier';
+}
+
+export interface VendorFact {
+  label: string;
+  value: string;
+}
+
+const FMCSA_ROW_KEYS = ['legalName', 'dbaName', 'dotNumber'] as const;
+const CENSUS_ROW_KEYS = ['legal_name', 'dba_name', 'dot_number'] as const;
+
+/** Flatten a vendor row into definition-list facts. Skip null / empty / already-shown keys. */
+export function flattenFields(input: Record<string, unknown> | undefined, skip: readonly string[] = []): VendorFact[] {
+  if (!input) return [];
+  const hidden = new Set(skip);
+  const out: VendorFact[] = [];
+  const walk = (value: unknown, path: string): void => {
+    if (value == null) return;
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text !== '') out.push({ label: path, value: text });
+      return;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      out.push({ label: path, value: String(value) });
+      return;
+    }
+    if (typeof value === 'boolean') {
+      out.push({ label: path, value: value ? 'true' : 'false' });
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => walk(item, `${path}.${index}`));
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const [key, item] of Object.entries(value)) {
+        walk(item, path === '' ? key : `${path}.${key}`);
+      }
+    }
+  };
+  for (const [key, value] of Object.entries(input)) {
+    if (hidden.has(key)) continue;
+    walk(value, key);
+  }
+  return out;
+}
+
+export function fmcsaDetailFacts(row: FmcsaCarrierRow): VendorFact[] {
+  if (row.fields) return flattenFields(row.fields, FMCSA_ROW_KEYS);
+  const curated: VendorFact[] = [];
+  const push = (label: string, value: string | null | undefined): void => {
+    const text = value?.trim();
+    if (text) curated.push({ label, value: text });
+  };
+  push('ein', row.ein);
+  push('allowedToOperate', fmcsaFlagLabel(row.allowedToOperate));
+  push('address', fmcsaAddress(row));
+  push('carrierOperationDesc', row.carrierOperationDesc);
+  push('commonAuthority', fmcsaAuthorityLabel(row.authority.common));
+  push('contractAuthority', fmcsaAuthorityLabel(row.authority.contract));
+  push('brokerAuthority', fmcsaAuthorityLabel(row.authority.broker));
+  push('bipd', fmcsaInsuranceLabel(row.insurance.bipd));
+  push('bond', fmcsaInsuranceLabel(row.insurance.bond));
+  push('cargo', fmcsaInsuranceLabel(row.insurance.cargo));
+  push('safetyRating', row.safetyRating);
+  push('oosDate', row.oosDate);
+  return curated;
+}
+
+export function motusCensusTitle(row: MotusCensusRecord): string {
+  return row.legalName?.trim() || row.dbaName?.trim() || row.dotNumber.trim() || 'Unnamed carrier';
+}
+
+export function motusMcLabel(row: MotusCensusRecord): string | null {
+  const docket = row.dockets.find((item) => item.prefix === 'MC');
+  if (!docket) return null;
+  return `MC ${docket.number.replace(/^0+/, '') || docket.number}`;
+}
+
+export function motusCensusFacts(row: MotusCensusRecord): VendorFact[] {
+  if (row.fields) return flattenFields(row.fields, CENSUS_ROW_KEYS);
+  const curated: VendorFact[] = [];
+  const push = (label: string, value: string | null | undefined): void => {
+    const text = value?.trim();
+    if (text) curated.push({ label, value: text });
+  };
+  push('status', row.statusLabel);
+  push('operation', row.carrierOperationLabel);
+  if (row.powerUnits != null) push('powerUnits', String(row.powerUnits));
+  if (row.totalDrivers != null) push('totalDrivers', String(row.totalDrivers));
+  push('addDate', row.addDate);
+  push('safetyRating', row.safetyRating);
+  push('phone', row.phone);
+  const city = [row.address.city, row.address.state].filter((part) => Boolean(part?.trim())).join(', ');
+  const address = [row.address.street, city, row.address.zip].filter((part) => Boolean(part?.trim())).join(' · ');
+  push('address', address);
+  return curated;
 }

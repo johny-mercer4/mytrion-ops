@@ -1,11 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FmcsaSearchResult } from '@/api/verificationFmcsa';
+import type { MotusSearchResult } from '@/api/verificationMotus';
 
 const searchFmcsa = vi.fn();
+const searchMotus = vi.fn();
 vi.mock('@/api/verificationFmcsa', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFmcsa')>();
   return { ...actual, searchFmcsa };
+});
+vi.mock('@/api/verificationMotus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/verificationMotus')>();
+  return { ...actual, searchMotus };
 });
 
 const { CaseDataCenter } = await import('./CaseDataCenter');
@@ -33,6 +39,7 @@ function hit(over: Partial<FmcsaSearchResult> = {}): FmcsaSearchResult {
         bond: { raw: '0', dollars: 0, onFile: false, required: 'unknown', requiredDollars: null },
         cargo: { raw: '0', dollars: 0, onFile: false, required: 'unknown', requiredDollars: null },
       },
+      fields: { totalPowerUnits: 12, phyCountry: 'US' },
     },
     candidates: [],
     candidatesTruncated: false,
@@ -42,9 +49,41 @@ function hit(over: Partial<FmcsaSearchResult> = {}): FmcsaSearchResult {
   };
 }
 
+function motusHit(over: Partial<MotusSearchResult> = {}): MotusSearchResult {
+  const record = {
+    dotNumber: '652739',
+    legalName: 'STONE EXPRESS INC',
+    dbaName: null,
+    statusCode: 'A' as const,
+    statusLabel: 'Active',
+    carrierOperation: 'A' as const,
+    carrierOperationLabel: 'Interstate',
+    powerUnits: 7,
+    totalDrivers: 5,
+    addDate: '1996-07-31',
+    safetyRating: null,
+    dockets: [{ prefix: 'MC', number: '307348', statusCode: 'A', statusLabel: 'Active' }],
+    address: { street: '99 DELL GLEN AVE', city: 'LODI', state: 'NJ', zip: '07644' },
+    phone: '9737672454',
+    fields: { email_address: 'dispatch@stone.example', company_officer_1: 'JOHN STONE' },
+  };
+  return {
+    available: true,
+    error: null,
+    matchedOn: 'dot',
+    notFound: false,
+    census: { available: true, error: null, record, records: [record], truncated: false },
+    insurance: { available: true, error: null, frozen: true, dataAsOf: '2026-05-14', filings: [] },
+    processAgents: { available: true, error: null, frozen: true, dataAsOf: '2026-05-14', agents: [] },
+    ...over,
+  };
+}
+
 beforeEach(() => {
   searchFmcsa.mockReset();
+  searchMotus.mockReset();
   searchFmcsa.mockResolvedValue(hit());
+  searchMotus.mockResolvedValue(motusHit());
 });
 
 describe('CaseDataCenter FMCSA search', () => {
@@ -98,16 +137,17 @@ describe('CaseDataCenter FMCSA search', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('BIPD')).toBeInTheDocument();
+    expect(screen.getByText('totalPowerUnits')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 
-  it('lists other sources as Soon and keeps FMCSA selected', () => {
+  it('lists remaining sources as Soon and keeps Motus live', () => {
     render(<CaseDataCenter caseRow={{}} />);
     expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Motus' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('tab', { name: 'Motus' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'Broker snapshot' })).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
-    expect(screen.getByRole('tab', { name: 'FMCSA' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Motus' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('searches with no case — empty box, typed query', async () => {
@@ -118,5 +158,60 @@ describe('CaseDataCenter FMCSA search', () => {
     fireEvent.change(box, { target: { value: '11111' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await waitFor(() => expect(searchFmcsa).toHaveBeenCalledWith({ by: 'dot', q: '11111' }));
+  });
+});
+
+describe('CaseDataCenter Motus search', () => {
+  it('prefills USDOT and searches Motus on that key', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '652739', mc: '307348', companyName: 'STONE EXPRESS INC' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
+    expect(screen.getByRole('searchbox', { name: 'USDOT' })).toHaveValue('652739');
+    expect(screen.queryByRole('tab', { name: 'MC' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(searchMotus).toHaveBeenCalledWith({ by: 'dot', q: '652739' }));
+    expect(await screen.findByText('STONE EXPRESS INC')).toBeInTheDocument();
+    expect(screen.getByText('USDOT 652739')).toBeInTheDocument();
+    expect(screen.getByText('MC 307348')).toBeInTheDocument();
+  });
+
+  it('searches by name on Enter', async () => {
+    render(<CaseDataCenter caseRow={{ companyName: 'STONE EXPRESS INC' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
+    fireEvent.submit(screen.getByRole('searchbox', { name: 'Legal name' }).closest('form')!);
+    await waitFor(() => expect(searchMotus).toHaveBeenCalledWith({ by: 'name', q: 'STONE EXPRESS INC' }));
+  });
+
+  it('shows a one-line miss', async () => {
+    searchMotus.mockResolvedValue(motusHit({ notFound: true, census: { available: true, error: null, record: null, records: [], truncated: false } }));
+    render(<CaseDataCenter caseRow={{ dot: '111111' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('No carrier in the census.')).toBeInTheDocument();
+  });
+
+  it('shows a one-line vendor error', async () => {
+    searchMotus.mockResolvedValue(
+      motusHit({
+        available: false,
+        error: 'SOCRATA_BASE_URL is not configured',
+        census: { available: false, error: 'SOCRATA_BASE_URL is not configured', record: null, records: [], truncated: false },
+        insurance: null,
+        processAgents: null,
+      }),
+    );
+    render(<CaseDataCenter caseRow={{ dot: '652739' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/SOCRATA_BASE_URL/);
+  });
+
+  it('expands a census row to leftover Socrata columns', async () => {
+    render(<CaseDataCenter caseRow={{ dot: '652739' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    const toggle = await screen.findByRole('button', { name: /STONE EXPRESS INC/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText('email_address')).toBeInTheDocument();
+    expect(screen.getByText('dispatch@stone.example')).toBeInTheDocument();
   });
 });

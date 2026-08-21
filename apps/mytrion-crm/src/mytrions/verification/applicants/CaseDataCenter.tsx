@@ -1,12 +1,12 @@
 /**
- * Data Center — live vendor search, starting with FMCSA (QCMobile).
+ * Data Center — live vendor search (FMCSA QCMobile + Motus / Socrata).
  *
  * Workspace tab and the open-case chrome both render this. `caseRow` is optional: standalone
  * search has no case; arriving from a case (or `?dot=` / `?mc=` / `?name=`) prefills and does
- * not auto-run. Other sources are listed so the IA is visible; they stay Soon.
+ * not auto-run. Broker snapshot / Blacklist / CITI Fuel stay Soon.
  * Search is view-only: nothing here writes onto the case (Phase 4's Run still does that).
  */
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Badge, Button, Icon, Input, Skeleton, Tabs, type BadgeIntent, type TabItem } from '@/ds';
 import {
   searchFmcsa,
@@ -16,36 +16,57 @@ import {
   type FmcsaStatusVerdict,
 } from '@/api/verificationFmcsa';
 import {
-  fmcsaAddress,
-  fmcsaAuthorityLabel,
+  searchMotus,
+  type MotusCensusRecord,
+  type MotusSearchBy,
+  type MotusSearchResult,
+} from '@/api/verificationMotus';
+import {
   fmcsaCarrierTitle,
   fmcsaCityState,
-  fmcsaFlagLabel,
-  fmcsaInsuranceLabel,
+  fmcsaDetailFacts,
   fmcsaPrefill,
   fmcsaRows,
   fmcsaStatusLabel,
+  flattenFields,
+  motusCensusFacts,
+  motusCensusTitle,
+  motusMcLabel,
+  motusPrefill,
   type FmcsaPrefillCase,
+  type VendorFact,
 } from './caseDataCenterModel';
 import './caseDataCenter.css';
 
+type Source = 'fmcsa' | 'motus';
+
 const SOURCES: TabItem[] = [
   { value: 'fmcsa', label: 'FMCSA' },
-  { value: 'motus', label: 'Motus', disabled: true, title: 'Soon' },
+  { value: 'motus', label: 'Motus' },
   { value: 'broker', label: 'Broker snapshot', disabled: true, title: 'Soon' },
   { value: 'blacklist', label: 'Blacklist', disabled: true, title: 'Soon' },
   { value: 'citi', label: 'CITI Fuel', disabled: true, title: 'Soon' },
 ];
 
-const KEYS: TabItem[] = [
+const FMCSA_KEYS: TabItem[] = [
   { value: 'dot', label: 'USDOT' },
   { value: 'mc', label: 'MC' },
   { value: 'name', label: 'Name' },
 ];
 
-const PLACEHOLDER: Record<FmcsaSearchBy, string> = {
+const MOTUS_KEYS: TabItem[] = [
+  { value: 'dot', label: 'USDOT' },
+  { value: 'name', label: 'Name' },
+];
+
+const FMCSA_PLACEHOLDER: Record<FmcsaSearchBy, string> = {
   dot: 'USDOT',
   mc: 'MC number',
+  name: 'Legal name',
+};
+
+const MOTUS_PLACEHOLDER: Record<MotusSearchBy, string> = {
+  dot: 'USDOT',
   name: 'Legal name',
 };
 
@@ -55,22 +76,37 @@ const STATUS_INTENT: Record<FmcsaStatusVerdict, BadgeIntent> = {
   unknown: 'neutral',
 };
 
+function censusStatus(code: MotusCensusRecord['statusCode']): FmcsaStatusVerdict {
+  if (code === 'A') return 'active';
+  if (code === 'I') return 'inactive';
+  return 'unknown';
+}
+
 export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   const seed = fmcsaPrefill(caseRow ?? {});
+  const [source, setSource] = useState<Source>('fmcsa');
   const [by, setBy] = useState<FmcsaSearchBy>(seed.by);
   const [q, setQ] = useState(seed.q);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<FmcsaSearchResult | null>(null);
+  const [fmcsa, setFmcsa] = useState<FmcsaSearchResult | null>(null);
+  const [motus, setMotus] = useState<MotusSearchResult | null>(null);
   const req = useRef(0);
   const keysId = useId();
+  const motusBy: MotusSearchBy = by === 'name' ? 'name' : 'dot';
 
   useEffect(() => {
-    setBy(seed.by);
-    setQ(seed.q);
-    setResult(null);
+    const next = source === 'motus' ? motusPrefill(caseRow ?? {}) : fmcsaPrefill(caseRow ?? {});
+    setBy(next.by);
+    setQ(next.q);
+    setFmcsa(null);
+    setMotus(null);
     setError(null);
-  }, [seed.by, seed.q]);
+  }, [source, seed.by, seed.q]);
+
+  const changeSource = (next: string): void => {
+    if (next === 'fmcsa' || next === 'motus') setSource(next);
+  };
 
   const submit = (event: FormEvent): void => {
     event.preventDefault();
@@ -79,52 +115,77 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
     const id = ++req.current;
     setBusy(true);
     setError(null);
-    void searchFmcsa({ by, q: value })
-      .then((next) => {
-        if (id !== req.current) return;
-        setResult(next);
-      })
+    const run =
+      source === 'motus'
+        ? searchMotus({ by: motusBy, q: value }).then((next) => {
+            if (id !== req.current) return;
+            setMotus(next);
+            setFmcsa(null);
+          })
+        : searchFmcsa({ by, q: value }).then((next) => {
+            if (id !== req.current) return;
+            setFmcsa(next);
+            setMotus(null);
+          });
+    void run
       .catch((err: unknown) => {
         if (id !== req.current) return;
-        setResult(null);
-        setError(err instanceof Error ? err.message : 'FMCSA did not answer.');
+        setFmcsa(null);
+        setMotus(null);
+        setError(err instanceof Error ? err.message : 'Search did not answer.');
       })
       .finally(() => {
         if (id === req.current) setBusy(false);
       });
   };
 
-  const rows = result ? fmcsaRows(result) : [];
+  const fmcsaRowsList = fmcsa ? fmcsaRows(fmcsa) : [];
   const vendorLine =
-    error ?? (result && !result.available ? result.error ?? 'FMCSA did not answer.' : null);
-  const empty = Boolean(result?.available && result.notFound && rows.length === 0);
+    error ??
+    (source === 'fmcsa' && fmcsa && !fmcsa.available
+      ? fmcsa.error ?? 'FMCSA did not answer.'
+      : source === 'motus' && motus && !motus.available
+        ? motus.error ?? 'Socrata did not answer.'
+        : null);
+  const empty =
+    source === 'fmcsa'
+      ? Boolean(fmcsa?.available && fmcsa.notFound && fmcsaRowsList.length === 0)
+      : Boolean(motus?.available && motus.notFound);
+  const placeholder = source === 'motus' ? MOTUS_PLACEHOLDER[motusBy] : FMCSA_PLACEHOLDER[by];
+  const keyValue = source === 'motus' ? motusBy : by;
 
   return (
     <div className="va-dc">
       <div className="va-dc-sources">
-        <Tabs items={SOURCES} value="fmcsa" onValueChange={() => undefined} size="sm" aria-label="Data source" />
+        <Tabs
+          items={SOURCES}
+          value={source}
+          onValueChange={changeSource}
+          size="sm"
+          aria-label="Data source"
+        />
       </div>
 
       <div className="va-dc-panel">
         <form className="va-dc-form" onSubmit={submit}>
           <Tabs
             className="va-dc-keys"
-            items={KEYS}
-            value={by}
+            items={source === 'motus' ? MOTUS_KEYS : FMCSA_KEYS}
+            value={keyValue}
             onValueChange={(next) => setBy(next as FmcsaSearchBy)}
             variant="pill"
             size="sm"
             idBase={keysId}
-            aria-label="QCMobile key"
+            aria-label={source === 'motus' ? 'Socrata key' : 'QCMobile key'}
           />
           <Input
             className="va-dc-q"
             type="search"
             value={q}
             onChange={(event) => setQ(event.currentTarget.value)}
-            placeholder={PLACEHOLDER[by]}
-            aria-label={PLACEHOLDER[by]}
-            inputMode={by === 'name' ? 'text' : 'numeric'}
+            placeholder={placeholder}
+            aria-label={placeholder}
+            inputMode={keyValue === 'name' ? 'text' : 'numeric'}
             autoComplete="off"
             fullWidth
           />
@@ -140,25 +201,26 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         ) : null}
         {empty ? (
           <p className="va-dc-status" role="status">
-            No carrier in the register.
+            {source === 'motus' ? 'No carrier in the census.' : 'No carrier in the register.'}
           </p>
         ) : null}
-        {busy && result === null ? <FmcsaResultsSkeleton /> : null}
-        {rows.length > 0 ? (
+        {busy && fmcsa === null && motus === null ? <ResultsSkeleton label={source === 'motus' ? 'Searching Motus' : 'Searching FMCSA'} /> : null}
+        {source === 'fmcsa' && fmcsaRowsList.length > 0 ? (
           <FmcsaResults
-            rows={rows}
-            truncated={Boolean(result?.candidatesTruncated)}
-            matchedOn={result?.matchedOn ?? null}
+            rows={fmcsaRowsList}
+            truncated={Boolean(fmcsa?.candidatesTruncated)}
+            matchedOn={fmcsa?.matchedOn ?? null}
           />
         ) : null}
+        {source === 'motus' && motus?.available ? <MotusResults result={motus} /> : null}
       </div>
     </div>
   );
 }
 
-function FmcsaResultsSkeleton() {
+function ResultsSkeleton({ label }: { label: string }) {
   return (
-    <div className="va-dc-list" aria-busy="true" aria-label="Searching FMCSA">
+    <div className="va-dc-list" aria-busy="true" aria-label={label}>
       <Skeleton variant="rect" height="64px" radius="control" />
       <Skeleton variant="rect" height="64px" radius="control" />
     </div>
@@ -182,17 +244,146 @@ function FmcsaResults({
         {truncated ? ' · first 50 — refine the name' : ''}
       </p>
       {rows.map((row, index) => (
-        <FmcsaRow key={row.dotNumber ?? `${row.legalName ?? 'row'}-${index}`} row={row} />
+        <ExpandRow
+          key={row.dotNumber ?? `${row.legalName ?? 'row'}-${index}`}
+          title={fmcsaCarrierTitle(row)}
+          facts={[
+            row.dotNumber ? `USDOT ${row.dotNumber}` : null,
+            row.dbaName && row.dbaName !== row.legalName ? `DBA ${row.dbaName}` : null,
+            fmcsaCityState(row),
+          ]}
+          badge={fmcsaStatusLabel(row.status)}
+          badgeIntent={STATUS_INTENT[row.status]}
+          details={fmcsaDetailFacts(row)}
+        />
       ))}
     </div>
   );
 }
 
-function FmcsaRow({ row }: { row: FmcsaCarrierRow }) {
+function MotusResults({ result }: { result: MotusSearchResult }) {
+  const census = result.census.records;
+  const filings = result.insurance?.filings ?? [];
+  const agents = result.processAgents?.agents ?? [];
+  if (census.length === 0 && filings.length === 0 && agents.length === 0) return null;
+
+  return (
+    <div className="va-dc-list">
+      <p className="va-dc-meta" role="status">
+        {census.length === 1 ? '1 carrier' : `${census.length} carriers`}
+        {result.matchedOn === 'name' ? ' · by name' : result.matchedOn === 'dot' ? ' · by USDOT' : ''}
+        {result.census.truncated ? ' · first page — refine the name' : ''}
+      </p>
+      {result.census.error && result.census.available === false ? (
+        <p className="va-dc-status" data-tone="danger" role="alert">
+          {result.census.error}
+        </p>
+      ) : null}
+      {census.map((row) => (
+        <ExpandRow
+          key={row.dotNumber}
+          title={motusCensusTitle(row)}
+          facts={[
+            `USDOT ${row.dotNumber}`,
+            motusMcLabel(row),
+            row.dbaName && row.dbaName !== row.legalName ? `DBA ${row.dbaName}` : null,
+            [row.address.city, row.address.state].filter(Boolean).join(', ') || null,
+          ]}
+          badge={row.statusLabel ?? 'Unknown'}
+          badgeIntent={STATUS_INTENT[censusStatus(row.statusCode)]}
+          details={motusCensusFacts(row)}
+        />
+      ))}
+      {result.insurance ? (
+        <FrozenBlock
+          title="Insurance filings"
+          asOf={result.insurance.dataAsOf}
+          error={!result.insurance.available ? result.insurance.error : null}
+          empty={result.insurance.available && filings.length === 0}
+          emptyText="No insurance filings in the snapshot."
+        >
+          {filings.map((filing, index) => (
+            <ExpandRow
+              key={`${filing.docketNumber}-${filing.formCode}-${index}`}
+              title={filing.formLabel ?? filing.formCode}
+              facts={[filing.docketNumber, filing.insurer, filing.status]}
+              details={flattenFields(filing.fields, [])}
+            />
+          ))}
+        </FrozenBlock>
+      ) : null}
+      {result.processAgents ? (
+        <FrozenBlock
+          title="Process agents"
+          asOf={result.processAgents.dataAsOf}
+          error={!result.processAgents.available ? result.processAgents.error : null}
+          empty={result.processAgents.available && agents.length === 0}
+          emptyText="No process-agent rows in the snapshot."
+        >
+          {agents.map((agent, index) => (
+            <ExpandRow
+              key={`${agent.docketNumber ?? 'agent'}-${index}`}
+              title={agent.agentName ?? 'Process agent'}
+              facts={[agent.docketNumber, agent.attnTo, [agent.address.city, agent.address.state].filter(Boolean).join(', ') || null]}
+              details={flattenFields(agent.fields, ['co_name'])}
+            />
+          ))}
+        </FrozenBlock>
+      ) : null}
+    </div>
+  );
+}
+
+function FrozenBlock({
+  title,
+  asOf,
+  error,
+  empty,
+  emptyText,
+  children,
+}: {
+  title: string;
+  asOf: string;
+  error: string | null;
+  empty: boolean;
+  emptyText: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="va-dc-block">
+      <p className="va-dc-meta">
+        {title} · frozen as of {asOf || '—'}
+      </p>
+      {error ? (
+        <p className="va-dc-status" data-tone="danger" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {empty ? (
+        <p className="va-dc-status" role="status">
+          {emptyText}
+        </p>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+function ExpandRow({
+  title,
+  facts,
+  badge,
+  badgeIntent,
+  details,
+}: {
+  title: string;
+  facts: Array<string | null | undefined>;
+  badge?: string;
+  badgeIntent?: BadgeIntent;
+  details: VendorFact[];
+}) {
   const [open, setOpen] = useState(false);
-  const city = fmcsaCityState(row);
-  const address = fmcsaAddress(row);
-  const title = fmcsaCarrierTitle(row);
+  const shown = facts.filter((fact): fact is string => Boolean(fact?.trim()));
 
   return (
     <article className="va-dc-row">
@@ -205,45 +396,37 @@ function FmcsaRow({ row }: { row: FmcsaCarrierRow }) {
         <span className="va-dc-row-title">
           <span className="va-dc-row-name">{title}</span>
           <span className="va-dc-row-facts">
-            {row.dotNumber ? <span className="num">USDOT {row.dotNumber}</span> : null}
-            {row.dbaName && row.dbaName !== row.legalName ? <span>DBA {row.dbaName}</span> : null}
-            {city ? <span>{city}</span> : null}
+            {shown.map((fact) => (
+              <span key={fact} className={fact.startsWith('USDOT ') || fact.startsWith('MC ') ? 'num' : undefined}>
+                {fact}
+              </span>
+            ))}
           </span>
         </span>
         <span className="va-dc-row-side">
-          <Badge intent={STATUS_INTENT[row.status]} size="sm">
-            {fmcsaStatusLabel(row.status)}
-          </Badge>
+          {badge ? (
+            <Badge intent={badgeIntent ?? 'neutral'} size="sm">
+              {badge}
+            </Badge>
+          ) : null}
           <Icon name="expand_more" size="sm" />
         </span>
       </button>
-      {open ? (
-        <dl className="va-dc-detail">
-          <Fact label="EIN" value={row.ein} />
-          <Fact label="Allowed to operate" value={fmcsaFlagLabel(row.allowedToOperate)} />
-          <Fact label="Address" value={address} />
-          <Fact label="Operation" value={row.carrierOperationDesc} />
-          <Fact label="Common" value={fmcsaAuthorityLabel(row.authority.common)} />
-          <Fact label="Contract" value={fmcsaAuthorityLabel(row.authority.contract)} />
-          <Fact label="Broker" value={fmcsaAuthorityLabel(row.authority.broker)} />
-          <Fact label="BIPD" value={fmcsaInsuranceLabel(row.insurance.bipd)} />
-          <Fact label="Bond" value={fmcsaInsuranceLabel(row.insurance.bond)} />
-          <Fact label="Cargo" value={fmcsaInsuranceLabel(row.insurance.cargo)} />
-          <Fact label="Safety rating" value={row.safetyRating} />
-          <Fact label="OOS date" value={row.oosDate} />
-        </dl>
-      ) : null}
+      {open ? <FactList items={details} /> : null}
     </article>
   );
 }
 
-function Fact({ label, value }: { label: string; value: string | null | undefined }) {
-  const text = value?.trim();
-  if (!text) return null;
+function FactList({ items }: { items: VendorFact[] }) {
+  if (items.length === 0) return null;
   return (
-    <div>
-      <dt className="t-eyebrow">{label}</dt>
-      <dd>{text}</dd>
-    </div>
+    <dl className="va-dc-detail">
+      {items.map((item) => (
+        <div key={item.label}>
+          <dt className="t-eyebrow">{item.label}</dt>
+          <dd>{item.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

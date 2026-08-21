@@ -52,6 +52,8 @@ export interface FmcsaCarrierRow {
   safetyRating?: string;
   driverOosRate?: number;
   vehicleOosRate?: number;
+  /** Every QCMobile element on the carrier, including keys the summary does not name. */
+  fields?: Record<string, unknown>;
 }
 
 export interface FmcsaSearchResult {
