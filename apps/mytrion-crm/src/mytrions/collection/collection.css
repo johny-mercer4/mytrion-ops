@@ -544,11 +544,27 @@
   color: var(--text-primary);
 }
 
-/* Visually hidden, still announced. There is no app-wide utility for this — every ds component
-   redefines the clip pattern locally — so the module gets one rather than three. */
+/*
+ * Visually hidden, still announced. There is no app-wide utility for this — every ds component
+ * redefines the clip pattern locally — so the module gets one rather than three.
+ *
+ * ⚠ `inset: 0 auto auto 0` IS THE LOAD-BEARING PART. The stock sr-only recipe leaves the box at its
+ * STATIC position, which is fine in an app where the document scrolls. This app does not: the
+ * workspace scrolls inside `.co-root`, while the nearest positioned ancestor is the shell's
+ * `_body_` OUTSIDE that scroller. An absolutely positioned descendant therefore resolves against
+ * `_body_`, is not clipped by `.co-root`, and reports its static position — 1,900-odd pixels down
+ * a long case record — as real layout. The document grew to match, and everything below the app
+ * shell rendered as a black void the user could scroll into.
+ *
+ * Pinning the box to the top of its containing block makes that structurally impossible: it can
+ * never sit below anything, so it can never stretch anything. Screen readers read the a11y tree,
+ * which follows DOM order, so moving the box does not change what is announced or when.
+ */
 .co-root .co-sr,
 [data-mytrion='collection'] .co-sr {
   position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   width: 1px;
   height: 1px;
   padding: 0;
@@ -675,4 +691,15 @@
   gap: var(--space-2_5);
   min-width: 0;
   flex: 1;
+}
+
+/* A tel: link where the softphone cannot dial — on a phone this is the better affordance. */
+[data-mytrion="collection"] .co-tel {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+[data-mytrion="collection"] .co-tel:hover {
+  text-decoration: underline;
 }

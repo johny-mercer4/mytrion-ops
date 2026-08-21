@@ -23,13 +23,13 @@ export type CaseScope = 'open' | 'closed' | 'all';
  * Deliberately three, and deliberately not "my cases": nothing writes `assignee_user_id` yet, so
  * an owner filter would be a chip that always returns nothing. It goes in when assignment does.
  */
-export type SavedViewId = 'high_value' | 'never_contacted' | 'long_overdue';
+export type SavedViewId = 'high_value' | 'never_contacted' | 'long_overdue' | 'mine' | 'unowned';
 
 export interface SavedView {
   id: SavedViewId;
   label: string;
   hint: string;
-  filter: { minRemaining?: number; neverContacted?: boolean };
+  filter: { minRemaining?: number; neverContacted?: boolean; assignee?: string };
 }
 
 export const SAVED_VIEWS: readonly SavedView[] = [
@@ -51,6 +51,20 @@ export const SAVED_VIEWS: readonly SavedView[] = [
     hint: 'Above the $5,000 agency placement floor',
     filter: { minRemaining: 5_000 },
   },
+  {
+    id: 'mine',
+    label: 'Mine',
+    hint: 'Cases assigned to you',
+    // Resolved server-side from the caller: the client does not know its own id in the format
+    // the token carries, and teaching it that format is how the two drift apart.
+    filter: { assignee: 'me' },
+  },
+  {
+    id: 'unowned',
+    label: 'Unassigned',
+    hint: 'Nobody has taken these',
+    filter: { assignee: 'unassigned' },
+  },
 ];
 export type CaseViewMode = 'list' | 'kanban';
 
@@ -62,22 +76,38 @@ export const CASE_SCOPES: ReadonlyArray<{ id: CaseScope; label: string }> = [
 
 export const STAGE_LABEL: Record<CollectionStage, string> = {
   intake: 'Intake',
+  nc_attempt_1: 'No contact 1',
+  nc_attempt_2: 'No contact 2',
+  nc_attempt_3: 'No contact 3',
+  usps_letter: 'USPS letter',
   connected: 'Connected',
-  with_agency: 'With agency',
   payment_plan: 'Payment plan',
+  reconnect_attempt: 'Reconnect',
+  failed_promise: 'Failed promise',
+  with_agency: 'With agency',
   skip_tracing: 'Skip tracing',
+  legal_action: 'Legal action',
   small_claims: 'Small claims',
+  civil_court: 'Civil court',
   closed_successfully: 'Recovered',
   case_lost: 'Case lost',
 };
 
 export const STAGE_HINT: Record<CollectionStage, string> = {
   intake: 'Just handed off',
+  nc_attempt_1: 'First call, no answer',
+  nc_attempt_2: 'Second call, no answer',
+  nc_attempt_3: 'Third call, no answer',
+  usps_letter: 'Letter posted, awaiting a reply',
   connected: 'Reached the debtor',
-  with_agency: 'Placed with Array',
   payment_plan: 'Paying on a plan',
+  reconnect_attempt: 'Missed an instalment, chasing again',
+  failed_promise: 'Promised and did not pay',
+  with_agency: 'Placed with an agency',
   skip_tracing: 'Cannot be found',
-  small_claims: 'In court',
+  legal_action: 'Handed to legal',
+  small_claims: 'In small claims',
+  civil_court: 'In civil court',
   closed_successfully: 'Recovered or closed clean',
   case_lost: 'Written off',
 };
@@ -93,41 +123,36 @@ export const CLOSED_REASON_LABEL: Record<CollectionClosedReason, string> = {
 export const KANBAN_STAGES: readonly CollectionStage[] = COLLECTION_STAGES;
 
 /**
- * READING ORDER for the case spine, and the order `Advance stage` walks.
+ * READING ORDER, and the order `Advance stage` walks.
  *
- * COLLECTION_STAGES is the wire vocabulary and its order is arbitrary — it lists `with_agency`
- * BEFORE `payment_plan`, so a left-to-right rail in enum order shows a case on a plan as having
- * already been to the agency. This is the order the work actually happens in. It contains exactly
- * the same eight members (asserted in collectionModel.test.ts); nothing is renamed or dropped.
+ * COLLECTION_STAGES is the wire vocabulary and its order is arbitrary. This is the order the work
+ * actually happens in, following the Zoho Blueprint's forward edges: chase, reach, arrange, fail,
+ * escalate, close. It contains exactly the same sixteen members (asserted in
+ * collectionModel.test.ts); nothing is renamed or dropped.
+ *
+ * It is a READING order, not the transition graph. The blueprint branches — Intake goes to either
+ * `nc_attempt_1` or `connected`, and almost every stage can jump straight back to `connected` when
+ * the debtor finally picks up. `Advance stage` walks this list one step; it is a convenience for
+ * the common forward move, not an assertion that the process is linear.
  */
 export const STAGE_PROGRESSION: readonly CollectionStage[] = [
   'intake',
+  'nc_attempt_1',
+  'nc_attempt_2',
+  'nc_attempt_3',
+  'usps_letter',
   'connected',
   'payment_plan',
-  'skip_tracing',
+  'reconnect_attempt',
+  'failed_promise',
   'with_agency',
+  'skip_tracing',
+  'legal_action',
   'small_claims',
+  'civil_court',
   'closed_successfully',
   'case_lost',
 ];
-
-/**
- * How a stage renders on the spine.
- *
- * `done` comes from the case's OWN history, never from position: a linear rail cannot express a
- * branching process, and marking everything to the left as visited claims a case went through
- * agency placement when it went straight onto a plan. `intake` is the one safe assumption — every
- * case starts there.
- */
-export function spineState(
-  current: CollectionStage,
-  stage: CollectionStage,
-  history: readonly CollectionStage[],
-): 'done' | 'now' | 'todo' {
-  if (stage === current) return 'now';
-  if (stage === 'intake') return 'done';
-  return history.includes(stage) ? 'done' : 'todo';
-}
 
 /** The stage `Advance` moves to, or null at the end of the progression. */
 export function nextStage(current: CollectionStage): CollectionStage | null {
@@ -161,11 +186,18 @@ export const BOARD_LANES: readonly BoardLane[] = [
     stages: ['intake'],
   },
   {
+    id: 'chasing',
+    label: 'Chasing',
+    hint: 'Called, no answer yet',
+    tone: 'var(--tone-violet)',
+    stages: ['nc_attempt_1', 'nc_attempt_2', 'nc_attempt_3', 'usps_letter'],
+  },
+  {
     id: 'working',
     label: 'Working',
     hint: 'Reached, chasing payment',
     tone: 'var(--tone-sky)',
-    stages: ['connected'],
+    stages: ['connected', 'reconnect_attempt', 'failed_promise'],
   },
   {
     id: 'plan',
@@ -177,9 +209,9 @@ export const BOARD_LANES: readonly BoardLane[] = [
   {
     id: 'agency',
     label: 'Agency & legal',
-    hint: 'Array, skip tracing, small claims',
+    hint: 'Agency, skip tracing, court',
     tone: 'var(--tone-amber)',
-    stages: ['with_agency', 'skip_tracing', 'small_claims'],
+    stages: ['with_agency', 'skip_tracing', 'legal_action', 'small_claims', 'civil_court'],
   },
   {
     id: 'closed',
@@ -197,6 +229,33 @@ const LANE_OF_STAGE = new Map<CollectionStage, string>(
 /** Which board lane a stage belongs to. Falls back to intake so an unknown stage is never lost. */
 export function laneOfStage(stage: CollectionStage): string {
   return LANE_OF_STAGE.get(stage) ?? 'intake';
+}
+
+/**
+ * The case-record spine renders MILESTONES, not stages.
+ *
+ * Sixteen chips on a rail is a legend, not a progress indicator, and the reader cannot tell at a
+ * glance how far along a case is. The six board lanes are the milestones a collector actually
+ * thinks in, and the exact stage is still on the header chip right above the spine.
+ */
+export const SPINE_MILESTONES = BOARD_LANES;
+
+/**
+ * How a milestone renders on the spine.
+ *
+ * `done` comes from the case's OWN history, never from position: a linear rail cannot express a
+ * branching process, and marking everything to the left as visited claims a case went through
+ * agency placement when it went straight onto a plan. Intake is the one safe assumption — every
+ * case starts there.
+ */
+export function milestoneState(
+  current: CollectionStage,
+  lane: BoardLane,
+  history: readonly CollectionStage[],
+): 'done' | 'now' | 'todo' {
+  if (lane.stages.includes(current)) return 'now';
+  if (lane.id === 'intake') return 'done';
+  return history.some((stage) => lane.stages.includes(stage)) ? 'done' : 'todo';
 }
 
 export function stageLabel(stage: string): string {
@@ -229,10 +288,13 @@ export function stageChip(stage: CollectionStage): { intent: BadgeIntent; icon: 
     case 'closed_successfully':
       return { intent: 'success', icon: 'check_circle' };
     case 'case_lost':
+    case 'legal_action':
     case 'small_claims':
+    case 'civil_court':
       return { intent: 'danger', icon: 'gavel' };
     case 'with_agency':
     case 'skip_tracing':
+    case 'failed_promise':
       return { intent: 'warning', icon: 'warning' };
     default:
       return { intent: 'info', icon: 'schedule' };

@@ -29,6 +29,7 @@ import { KpiRowSkeleton, WorklistSkeleton } from '../CollectionSkeletons';
 import { WorklistRow } from './WorklistRow';
 import { LANES } from './worklistCopy';
 import './today.css';
+import { callPhone, dialForCase } from '../CollectionCall';
 
 export function CollectionToday({
   onOpenCase,
@@ -74,7 +75,13 @@ export function CollectionToday({
         onOpenCase(item.case.id);
         break;
       default:
-        actions.openContact(item.case);
+        // DIAL, don't just open a form. The softphone tags the call with this case, so the
+        // finished call writes itself onto the timeline with its duration — the collector only
+        // opens the contact dialog when there is an outcome to record beyond "they answered", or
+        // when the softphone is not there to dial with.
+        if (!dialForCase(item.case.id, callPhone(item.case))) {
+          actions.openContact(item.case);
+        }
     }
   };
 

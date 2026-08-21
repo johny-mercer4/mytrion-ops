@@ -9,8 +9,9 @@
  *      exclusions happened, so a missing field blocks the button rather than warning past it.
  */
 import { useState } from 'react';
-import { Button, Dialog, DateField, Icon, Input, Textarea, useToast } from '@/ds';
+import { Button, Dialog, DateField, Icon, Select, Textarea, useToast } from '@/ds';
 import { placeWithAgency, type Metro2Field, type PlacementRow } from '@/api/collectionDesk';
+import { CAINE_WEINER_TIERS, COLLECTION_AGENCIES } from '@/api/collection';
 import type { CollectionCaseRow } from '@/api/collection';
 import { caseName } from '../cases/casesModel';
 import { money } from '../collectionFormat';
@@ -24,8 +25,13 @@ const FIELD_LABEL: Record<Metro2Field, string> = {
   firstDelinquency: 'Date of first delinquency',
 };
 
-/** The default. A free-text field, because nothing in the data models the agency list yet. */
-const DEFAULT_AGENCY = 'Array Recovery';
+/**
+ * The agencies that actually hold Octane debt, as the literal strings the data uses. This was a
+ * free-text input defaulting to "Array Recovery" — a name that appears nowhere in the book, and
+ * which the API now rejects outright. Trust Altus holds 158 of the 220 placed cases, so it leads.
+ */
+const AGENCY_OPTIONS = COLLECTION_AGENCIES.map((a) => ({ value: a, label: a }));
+const DEFAULT_AGENCY: string = COLLECTION_AGENCIES[0];
 
 export function PlacementDialog({
   row,
@@ -46,27 +52,30 @@ export function PlacementDialog({
 }) {
   const { toast } = useToast();
   const [agency, setAgency] = useState(DEFAULT_AGENCY);
+  /** Only Caine & Weiner grade the work, so the control only appears for them. */
+  const [tier, setTier] = useState<string>('Standard');
   const [placementDate, setPlacementDate] = useState<string | null>(todayIso());
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
   const missing = placement?.missing ?? [];
   const blocked = missing.length > 0;
-  const canSave = !blocked && agency.trim().length > 0 && Boolean(placementDate);
+  const canSave = !blocked && agency.length > 0 && Boolean(placementDate);
 
   const submit = async (): Promise<void> => {
     if (!canSave || !placementDate) return;
     setSaving(true);
     try {
       await placeWithAgency(row.id, {
-        agency: agency.trim(),
+        agency,
         placementDate,
+        ...(agency === 'Caine & Weiner' ? { tier } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       toast({
         intent: 'success',
         title: 'Marked as placed',
-        description: `${caseName(row)} is now with ${agency.trim()}.`,
+        description: `${caseName(row)} is now with ${agency}.`,
       });
       onDone();
       onClose();
@@ -130,13 +139,32 @@ export function PlacementDialog({
         ) : null}
 
         <div className="ca-grid">
-          <ActionField label="Agency">
-            <Input fullWidth value={agency} onChange={(e) => setAgency(e.currentTarget.value)} />
-          </ActionField>
+          <Select
+            label="Agency"
+            value={agency}
+            onChange={(v) => setAgency(v ?? DEFAULT_AGENCY)}
+            options={AGENCY_OPTIONS}
+          />
           <ActionField label="Placement date">
             <DateField value={placementDate} onChange={(v) => setPlacementDate(v)} />
           </ActionField>
         </div>
+
+        {agency === 'Caine & Weiner' ? (
+          <Select
+            label="Tier"
+            value={tier}
+            onChange={(v) => setTier(v ?? 'Standard')}
+            options={CAINE_WEINER_TIERS.map((t) => ({ value: t, label: t }))}
+          />
+        ) : null}
+
+        {row.placementDate && row.currentAgency && row.currentAgency !== agency ? (
+          <ActionNote tone="warning">
+            This case is already with {row.currentAgency}. Placing it again moves it to {agency};
+            the original agency stays on the record as the first placement.
+          </ActionNote>
+        ) : null}
 
         <ActionField label="Note">
           <Textarea

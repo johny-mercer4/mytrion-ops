@@ -9,7 +9,8 @@
  *
  * Same global-operational keying as `collection_cases`: no `tenant_id` column, isolation enforced
  * in the repo through `canReadCollectionSnapshot`. Everything cascades off the case, so a case the
- * finder drops below the $100 floor takes its desk history with it.
+ * finder is ever deleted takes its desk history with it. In practice the finder never deletes —
+ * it zeroes the money and leaves the row — so this is a guarantee, not a routine path.
  */
 import { createId } from '@paralleldrive/cuid2';
 import { sql } from 'drizzle-orm';

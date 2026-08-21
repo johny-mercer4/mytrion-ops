@@ -15,7 +15,12 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { COLLECTION_CLOSED_REASONS, COLLECTION_STAGES } from '../../db/schema/collection.js';
+import {
+  CAINE_WEINER_TIERS,
+  COLLECTION_AGENCIES,
+  COLLECTION_CLOSED_REASONS,
+  COLLECTION_STAGES,
+} from '../../db/schema/collection.js';
 import {
   COLLECTION_CONTACT_CHANNELS,
   COLLECTION_CONTACT_OUTCOMES,
@@ -30,6 +35,11 @@ import {
   planSummary,
   stageSummary,
 } from '../../modules/collection/deskSummaries.js';
+import {
+  canTransition,
+  transitionFor,
+  transitionsFrom,
+} from '../../modules/collection/stageGraph.js';
 import { collectionActivityRepo } from '../../repos/collectionActivityRepo.js';
 import { collectionCaseRepo } from '../../repos/collectionCaseRepo.js';
 import { collectionPlanRepo } from '../../repos/collectionPlanRepo.js';
@@ -75,8 +85,10 @@ const stageBody = z.object({
 });
 
 const placementBody = z.object({
-  agency: z.string().trim().min(1).max(120),
+  agency: z.enum(COLLECTION_AGENCIES),
   placementDate: ymd,
+  /** Only Caine & Weiner grade the work; ignored for every other agency. */
+  tier: z.enum(CAINE_WEINER_TIERS).optional(),
   note: z.string().trim().max(1000).optional(),
 });
 
@@ -244,15 +256,33 @@ export async function collectionActionRoutes(app: FastifyInstance): Promise<void
     const { id } = idParams.parse(request.params);
     const { ctx, row } = await requireCase(request, id);
     const body = stageBody.parse(request.body);
-    if (body.stage === row.collectionStage) return { case: row };
+    // A self-edge is a real move on With Agency ("pick next agency"), so an unchanged stage is
+    // only a no-op when the Blueprint has no self-edge to justify it.
+    if (body.stage === row.collectionStage && !canTransition(row.collectionStage, body.stage)) {
+      return { case: row };
+    }
+    // THE BLUEPRINT IS THE RULE. Zoho would not let a collector jump Intake straight to With
+    // Agency, and neither does this. Rejecting here rather than in the UI matters because the
+    // desk is not the only caller — the API is what servercrm and any future automation reach.
+    const transition = transitionFor(row.collectionStage, body.stage);
+    if (!transition) {
+      const allowed = transitionsFrom(row.collectionStage)
+        .map((t) => t.to)
+        .join(', ');
+      throw new ValidationError(
+        `A case on ${row.collectionStage} cannot move to ${body.stage}. Allowed from here: ${allowed || 'nothing'}.`,
+      );
+    }
     const updated = await collectionCaseRepo.setStage(id, body.stage);
     if (!updated) throw new NotFoundError('Collection case not found');
     await collectionActivityRepo.insert({
       caseId: id,
       kind: 'stage',
-      summary: stageSummary(row.collectionStage, body.stage),
+      // The Blueprint's own wording for the move, which is what a collector recognises, with the
+      // plain from/to underneath for anyone reading the timeline cold.
+      summary: `${transition.label} — ${stageSummary(row.collectionStage, body.stage)}`,
       ...(body.note !== undefined ? { note: body.note } : {}),
-      meta: { from: row.collectionStage, to: body.stage },
+      meta: { from: row.collectionStage, to: body.stage, transition: transition.label },
       ...actor(ctx),
     });
     await auditFromContext(ctx, {
@@ -276,11 +306,18 @@ export async function collectionActionRoutes(app: FastifyInstance): Promise<void
   app.post<{ Params: { id: string } }>('/collection/cases/:id/placement', auth, async (request, reply) => {
     const { id } = idParams.parse(request.params);
     const { ctx, row } = await requireCase(request, id);
-    if (row.placementDate) throw new ValidationError('This case has already been placed');
     const body = placementBody.parse(request.body);
+    // RE-PLACEMENT IS ALLOWED, to a DIFFERENT agency. The Blueprint's "120 days · no payment →
+    // pick next agency" self-edge is exactly this move, and refusing it outright (as this used
+    // to) left the desk unable to represent a case that had been through two agencies. Placing
+    // twice with the same agency is still a mistake, so that one is refused.
+    if (row.placementDate && row.currentAgency === body.agency) {
+      throw new ValidationError(`This case is already placed with ${body.agency}`);
+    }
     const updated = await collectionCaseRepo.markPlaced(id, {
       placementDate: body.placementDate,
       agency: body.agency,
+      tier: body.tier ?? null,
     });
     if (!updated) throw new NotFoundError('Collection case not found');
     await collectionPlanRepo
@@ -289,7 +326,9 @@ export async function collectionActionRoutes(app: FastifyInstance): Promise<void
     await collectionActivityRepo.insert({
       caseId: id,
       kind: 'agency',
-      summary: `Placed with ${body.agency}`,
+      summary: row.placementDate
+        ? `Moved to ${body.agency} from ${row.currentAgency ?? 'the previous agency'}`
+        : `Placed with ${body.agency}`,
       ...(body.note !== undefined ? { note: body.note } : {}),
       meta: { agency: body.agency, placementDate: body.placementDate },
       ...actor(ctx),

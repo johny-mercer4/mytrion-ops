@@ -34,11 +34,19 @@ export const OUTCOME_LABEL: Record<CollectionContactOutcome, string> = {
 
 const STAGE_LABEL: Record<CollectionStage, string> = {
   intake: 'Intake',
+  nc_attempt_1: 'No contact — attempt 1',
+  nc_attempt_2: 'No contact — attempt 2',
+  nc_attempt_3: 'No contact — attempt 3',
+  usps_letter: 'USPS letter',
   connected: 'Connected',
-  with_agency: 'With agency',
   payment_plan: 'Payment plan',
+  reconnect_attempt: 'Reconnect attempt',
+  failed_promise: 'Failed promise',
+  with_agency: 'With agency',
   skip_tracing: 'Skip tracing',
+  legal_action: 'Legal action',
   small_claims: 'Small claims',
+  civil_court: 'Civil court',
   closed_successfully: 'Recovered',
   case_lost: 'Case lost',
 };

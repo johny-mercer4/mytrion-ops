@@ -51,6 +51,8 @@ import { mytrionWatchRoutes } from './routes/v1/mytrionWatch.routes.js';
 import { collectionRoutes } from './routes/v1/collection.routes.js';
 import { collectionActionRoutes } from './routes/v1/collectionActions.routes.js';
 import { collectionAgencyRoutes } from './routes/v1/collectionAgency.routes.js';
+import { collectionAttachmentRoutes } from './routes/v1/collectionAttachments.routes.js';
+import { collectionCaseFieldRoutes } from './routes/v1/collectionCaseFields.routes.js';
 import { verificationFirstRunRoutes } from './routes/v1/verificationFirstRun.routes.js';
 import { verificationStrategiesRoutes } from './routes/v1/verificationStrategies.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
@@ -502,6 +504,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(collectionAgencyRoutes);
       await v1.register(collectionRoutes);
       await v1.register(collectionActionRoutes);
+      await v1.register(collectionCaseFieldRoutes);
+      await v1.register(collectionAttachmentRoutes);
       await v1.register(verificationCasesRoutes);
       await v1.register(verificationFirstRunRoutes);
       await v1.register(verificationStrategiesRoutes);

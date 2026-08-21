@@ -26,11 +26,29 @@
   opacity: 0.72;
 }
 
+/*
+ * The page-header control row: search, a stage picker, a view toggle, Refresh.
+ *
+ * ONE HEIGHT FOR ALL OF THEM. `ds` sizes each primitive from its own font and padding rather than
+ * a shared control height, so four components asked for at the same nominal size came out at four
+ * different heights — 32 / 26 / 38 / 32 in the Cases header, which read as a row of mismatched
+ * boxes. Every control in this bar is unlabelled (the Select uses `labelHidden`), so pinning the
+ * row height is safe here in a way it would not be over a bar with labels above the fields.
+ */
 [data-mytrion='collection'] .cc-head-actions {
+  --cc-control-h: 2rem;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+[data-mytrion='collection'] .cc-head-actions > * {
+  height: var(--cc-control-h);
+}
+/* The pill group frames its tabs; tighten the frame rather than shrinking the tabs inside it. */
+[data-mytrion='collection'] .cc-head-actions [role='tablist'] {
+  height: 100%;
+  padding: 1px;
 }
 [data-mytrion='collection'] .cc-search {
   width: 250px;
@@ -180,6 +198,18 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+/* Two lines whether the hint needs them or not: a lane whose hint fits on one line otherwise
+   starts its card rail 20px above its neighbours, and the board reads as misaligned. */
+[data-mytrion='collection'] .cc-col-hint {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* line-height pinned so the min-height is exactly two lines, whatever the inherited leading. */
+  line-height: 1.4;
+  min-height: 2.8em;
+}
 [data-mytrion='collection'] .cc-col-body {
   display: flex;
   flex: 1;
@@ -200,6 +230,12 @@
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-2);
+  /* Do NOT shrink. `.cc-col-body` is a scrolling COLUMN flex container, so its children shrink by
+     default once a lane holds more cards than fit — and because the card is `overflow: hidden`,
+     `min-height: auto` resolves to 0 and the squeeze lands entirely on `.cc-ident`, which
+     collapsed to zero height and spilled the carrier name out through the top of the card. The
+     lane is meant to scroll, not compress. */
+  flex: none;
   min-height: 44px;
   padding: var(--space-2_5);
   text-align: left;
@@ -230,8 +266,9 @@
   color: var(--text-primary);
 }
 
-/* Board lanes are FIVE and equal-width now, not eight fixed-width columns that scrolled off the
-   pane. `flex: 1` with a floor, so five lanes fill the measure and nothing is hidden at rest. */
+/* Board lanes are MILESTONES and equal-width, not one fixed-width column per stage — there are
+   sixteen stages, and sixteen columns is four screens of board. `flex: 1` with a floor, so the
+   lanes fill the measure and nothing is hidden at rest. */
 [data-mytrion='collection'] .cc-board {
   align-items: stretch;
 }
@@ -375,4 +412,11 @@
     background: var(--surface);
     border-color: var(--border);
   }
+}
+
+/* The owner column. Wraps rather than truncating: a half-shown name is worse than two lines. */
+[data-mytrion="collection"] .cc-owner {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }

@@ -16,10 +16,21 @@ describe('monthBefore', () => {
     expect(monthBefore('2026-05', 23)).toBe('Jun 2024');
   });
 
+  it("reads the format production actually stores — 'Aug 2026', not '2026-08'", () => {
+    expect(monthBefore('Aug 2026', 0)).toBe('Aug 2026');
+    expect(monthBefore('Aug 2026', 1)).toBe('Jul 2026');
+    expect(monthBefore('May 2026', 5)).toBe('Dec 2025');
+    expect(monthBefore('Jan 2026', 1)).toBe('Dec 2025');
+    // Case and a full month name both resolve; the generator only ever emits the short form.
+    expect(monthBefore('august 2026', 0)).toBe('Aug 2026');
+    expect(monthBefore('September 2026', 0)).toBe('Sep 2026');
+  });
+
   it('returns null rather than inventing a date', () => {
     expect(monthBefore(null, 0)).toBeNull();
-    expect(monthBefore('May 2026', 0)).toBeNull();
     expect(monthBefore('', 3)).toBeNull();
+    expect(monthBefore('Smarch 2026', 0)).toBeNull();
+    expect(monthBefore('2026', 0)).toBeNull();
   });
 });
 
@@ -27,9 +38,15 @@ describe('parsePaymentHistory', () => {
   it('parses the real profile from the screen that prompted this', () => {
     const months = parsePaymentHistory('000000000000BBBBBBBBBBBB', '2026-05');
     expect(months).toHaveLength(24);
-    expect(months[0]).toMatchObject({ code: '0', tone: 'current', month: 'May 2026' });
-    expect(months[11]).toMatchObject({ code: '0', tone: 'current', month: 'Jun 2025' });
-    expect(months[12]).toMatchObject({ code: 'B', tone: 'none', month: 'May 2025' });
+    expect(months[0]).toMatchObject({ code: '0', tone: 'current', month: 'Apr 2026' });
+    expect(months[11]).toMatchObject({ code: '0', tone: 'current', month: 'May 2025' });
+    expect(months[12]).toMatchObject({ code: 'B', tone: 'none', month: 'Apr 2025' });
+  });
+
+  it('opens on the month BEFORE the filing, which is where the generator starts', () => {
+    // arrayReportSync.js: "Position 0 = the most recent month-end (= previous reporting period)".
+    const months = parsePaymentHistory('000', 'Aug 2026');
+    expect(months.map((m) => m.month)).toEqual(['Jul 2026', 'Jun 2026', 'May 2026']);
   });
 
   it('never reads absence as good standing', () => {
@@ -56,7 +73,7 @@ describe('parsePaymentHistory', () => {
     const months = parsePaymentHistory('0?0', '2026-05');
     expect(months).toHaveLength(3);
     expect(months[1]).toMatchObject({ code: '?', tone: 'none' });
-    expect(months[2]?.month).toBe('Mar 2026');
+    expect(months[2]?.month).toBe('Feb 2026');
   });
 
   it('is empty for an absent or blank profile', () => {
@@ -82,7 +99,7 @@ describe('summarisePaymentHistory', () => {
     const s = summarisePaymentHistory(parsePaymentHistory('0006000', '2026-05'));
     expect(s.clean).toBe(false);
     expect(s.worst?.tone).toBe('derogatory');
-    expect(s.worst?.month).toBe('Feb 2026');
+    expect(s.worst?.month).toBe('Jan 2026');
   });
 
   it('is not clean when nothing was reported at all', () => {

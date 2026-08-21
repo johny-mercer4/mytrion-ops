@@ -45,21 +45,45 @@ export interface HistoryMonth {
   code: string;
   label: string;
   tone: HistoryTone;
-  /** "May 2026", derived by counting back from the report period. */
+  /** "Jul 2026" — the month this position covers, one further back per position. */
   month: string;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * Month label `n` places before a `YYYY-MM` period. Returns null when the period is unparseable —
- * the strip then renders positions without dates rather than inventing them.
+ * Month label `n` places before a report period.
+ *
+ * Accepts BOTH shapes the period comes in. Production writes `'Aug 2026'` — servercrm's AR-SYNC
+ * builds it with `toLocaleString('en-US', { month: 'short', year: 'numeric' })` — while fixtures
+ * and local seeds use `'2026-08'`. Only the second was handled here, so every real record fell
+ * through to the null branch and the whole strip rendered as "1 month back, 2 months back…".
+ *
+ * Returns null for anything else, and the strip then shows positions without dates rather than
+ * inventing them.
  */
 export function monthBefore(period: string | null | undefined, n: number): string | null {
-  const m = /^(\d{4})-(\d{2})$/.exec((period ?? '').trim());
-  if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]) - 1 - n;
+  const raw = (period ?? '').trim();
+  const iso = /^(\d{4})-(\d{2})$/.exec(raw);
+  const named = /^([A-Za-z]{3})[a-z]*\s+(\d{4})$/.exec(raw);
+
+  let year: number;
+  let monthIndex: number;
+  if (iso) {
+    year = Number(iso[1]);
+    monthIndex = Number(iso[2]) - 1;
+  } else if (named) {
+    const abbrev = (named[1] ?? '').toLowerCase();
+    const found = MONTHS.findIndex((m) => m.toLowerCase() === abbrev);
+    if (found < 0) return null;
+    year = Number(named[2]);
+    monthIndex = found;
+  } else {
+    return null;
+  }
+  if (monthIndex < 0 || monthIndex > 11) return null;
+
+  const month = monthIndex - n;
   const y = year + Math.floor(month / 12);
   const mo = ((month % 12) + 12) % 12;
   return `${MONTHS[mo]} ${y}`;
@@ -67,6 +91,12 @@ export function monthBefore(period: string | null | undefined, n: number): strin
 
 /**
  * Parse the profile into months, newest first.
+ *
+ * POSITION 0 IS THE MONTH BEFORE THE REPORT PERIOD, not the report period itself. The generator
+ * says so outright — `servercrm/jobs/arrayReportSync.js`: "Position 0 = the most recent month-end
+ * (= previous reporting period)" — and its `monthEndUTC(today, i)` returns day 0 of month
+ * `(month - i)`, which is the last day of `(month - i - 1)`. An August filing therefore opens on
+ * July. Labelling position 0 as August, as this did, put every one of the 24 cells a month early.
  *
  * An unrecognised character is kept and shown as unknown rather than dropped — a code we do not
  * have a label for is still a month the bureau reported something in, and silently omitting it
@@ -85,7 +115,7 @@ export function parsePaymentHistory(
       code: char,
       label: known?.label ?? `Unrecognised code ${char}`,
       tone: known?.tone ?? 'none',
-      month: monthBefore(reportPeriod, index) ?? `${index + 1} month${index === 0 ? '' : 's'} back`,
+      month: monthBefore(reportPeriod, index + 1) ?? `${index + 1} month${index === 0 ? '' : 's'} back`,
     };
   });
 }
