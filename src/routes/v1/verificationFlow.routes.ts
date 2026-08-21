@@ -12,7 +12,6 @@ import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { deskService } from '../../modules/verificationFlow/deskService.js';
 import { documentService } from '../../modules/verificationFlow/documentService.js';
-import { verificationPolicyRepo } from '../../repos/verificationReviewRepo.js';
 import {
   VERIFICATION_APPLICANT_TYPES,
   VERIFICATION_DOC_TYPES,
@@ -31,6 +30,8 @@ import {
   principalBody as deskPrincipalBody,
 } from './verificationApplications.routes.js';
 import { applicationService } from '../../modules/verificationFlow/applicationService.js';
+import { afterDeskDocumentUpload } from '../../modules/verificationFlow/deskPhase1Writes.js';
+import { readDeskBrokerSnapshot } from '../../modules/verificationFlow/deskSnapshot.js';
 import { AppError } from '../../lib/errors.js';
 import {
   MAX_DOCUMENT_BYTES,
@@ -41,7 +42,6 @@ const deskPrincipalParams = z.object({
   id: z.string().min(1),
   principalId: z.string().min(1),
 });
-import { resolveVerificationCaseOwner } from '../../modules/verification/verificationOwner.js';
 import { requireDepartment, requireMytrionWrite } from './helpers.js';
 
 function requireVerificationRead(request: FastifyRequest): TenantContext {
@@ -77,6 +77,17 @@ const listQuery = z.object({
 const decisionBody = z.object({
   outcome: z.enum(VERIFICATION_PHASE_OUTCOMES),
   note: z.string().trim().max(2000).optional(),
+  findings: z
+    .object({ reviewOrder: z.enum(['banking_first', 'credit_first']) })
+    .optional(),
+});
+
+/**
+ * A reason, REQUIRED. Reopening withdraws a decision somebody else recorded, so `min(3)` rather than
+ * `min(1)`: a single character satisfies "required" and tells the next reviewer nothing.
+ */
+const reopenBody = z.object({
+  reason: z.string().trim().min(3).max(2000),
 });
 
 const verdictBody = z.object({
@@ -153,6 +164,12 @@ const finalBody = z.object({
   ]),
   approvedLimit: z.coerce.number().min(0).max(99_999_999).optional(),
   note: z.string().trim().max(2000).optional(),
+  /**
+   * Which arrangement a `deposit_prepaid` outcome is. The status column cannot tell a 1:1 deposit
+   * from a prepaid account, and the SOP asks for the conditions to be recorded — so the instrument
+   * is part of the decision, not a detail of the note.
+   */
+  instrument: z.enum(['deposit_1_1', 'prepaid']).optional(),
 });
 
 const docRequestBody = z.object({
@@ -169,15 +186,6 @@ const docRequestBody = z.object({
     .max(20),
 });
 
-const policyBody = z.object({
-  strongFactor: z.coerce.number().min(0).max(10).nullable().optional(),
-  moderateFactor: z.coerce.number().min(0).max(10).nullable().optional(),
-  weakFactor: z.coerce.number().min(0).max(10).nullable().optional(),
-  adbReviewThreshold: z.coerce.number().min(0).max(10_000_000).optional(),
-  nsfReviewThreshold: z.coerce.number().int().min(0).max(1000).optional(),
-  bankFirstTruckMin: z.coerce.number().int().min(1).max(10_000).optional(),
-  wexCardCutoff: z.coerce.number().int().min(1).max(10_000).optional(),
-});
 
 /** numeric columns take text; null stays null so a factor can be UNSET, not zeroed. */
 const numText = (v: number | null | undefined): string | null | undefined =>
@@ -197,16 +205,12 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
     return deskService.detail(ctx, id);
   });
 
-  /**
-   * Open a document Sales uploaded.
-   *
-   * READ-gated, not write: looking at a bank statement is the underwriting job itself, and every
-   * phase from 2 onward depends on it. Without this the desk could see that three statements exist
-   * and never open one — the files went to Dropbox and were unreachable from the product.
-   *
-   * Returns a short-lived link rather than proxying bytes, matching the Sales-side route so both
-   * desks resolve the same document the same way.
-   */
+  app.get<{ Params: { id: string } }>('/verification/flow/cases/:id/snapshot', auth, async (request) => {
+    const ctx = requireVerificationRead(request);
+    return readDeskBrokerSnapshot(ctx, idParams.parse(request.params).id);
+  });
+
+  /** READ-gated document open — short-lived link, same as the Sales route. */
   app.get<{ Params: { id: string; documentId: string } }>(
     '/verification/flow/cases/:id/documents/:documentId/download',
     auth,
@@ -319,9 +323,8 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
         resourceId: id,
         detail: { docType, fileCount: files.length, byDesk: true },
       });
-      // A document can complete the intake, so the desk gets the re-evaluated case back rather
-      // than having to refetch to learn the gate opened.
-      return reply.code(201).send(await deskService.detail(ctx, id));
+      // Opens the gate when this file was the last outstanding item — see deskPhase1Writes.
+      return reply.code(201).send(await afterDeskDocumentUpload(ctx, id));
     },
   );
 
@@ -334,10 +337,15 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
       // Same destructure as the Sales route: `ownershipPct` validates as a number but stores as
       // numeric text, so spreading it would let the number win over the conversion.
       const { ownershipPct, ...body } = deskPrincipalBody.parse(request.body ?? {});
-      await applicationService.addPrincipal(ctx, id, {
-        ...body,
-        ...(ownershipPct === undefined ? {} : { ownershipPct: String(ownershipPct) }),
-      });
+      await applicationService.addPrincipal(
+        ctx,
+        id,
+        {
+          ...body,
+          ...(ownershipPct === undefined ? {} : { ownershipPct: String(ownershipPct) }),
+        },
+        { asDesk: true },
+      );
       await auditFromContext(ctx, {
         action: 'verification.flow.principal_added',
         status: 'ok',
@@ -355,7 +363,7 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
     async (request) => {
       const ctx = requireVerificationWrite(request);
       const { id, principalId } = deskPrincipalParams.parse(request.params);
-      await applicationService.removePrincipal(ctx, id, principalId);
+      await applicationService.removePrincipal(ctx, id, principalId, { asDesk: true });
       await auditFromContext(ctx, {
         action: 'verification.flow.principal_removed',
         status: 'ok',
@@ -381,6 +389,32 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
         resourceType: 'verification_case',
         resourceId: id,
         detail: { phase, outcome: body.outcome, statusCode: detail.case.statusCode },
+      });
+      return detail;
+    },
+  );
+
+  /**
+   * Reopen a phase — the desk's way back. Sibling of `/decision`, and the reason it is a POST with a
+   * body rather than a DELETE on the decision: the REASON is required and belongs in the request, not
+   * in a query string that ends up in an access log.
+   */
+  app.post<{ Params: { id: string; phase: string } }>(
+    '/verification/flow/cases/:id/phases/:phase/reopen',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id, phase } = phaseParams.parse(request.params);
+      const body = reopenBody.parse(request.body ?? {});
+      const detail = await deskService.reopenPhase(ctx, id, phase, body);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.phase_reopened',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        // The reason is on the case timeline as the event note; it is audited here too because this
+        // withdraws a decision somebody else recorded.
+        detail: { phase, reason: body.reason, statusCode: detail.case.statusCode },
       });
       return detail;
     },
@@ -516,77 +550,24 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
       const body = finalBody.parse(request.body ?? {});
       const detail = await deskService.decide(ctx, id, {
         decision: body.decision,
-        ...(body.approvedLimit === undefined ? {} : { approvedLimit: String(body.approvedLimit) }),
+        ...(body.approvedLimit === undefined ? {} : { approvedLimit: body.approvedLimit }),
         ...(body.note === undefined ? {} : { note: body.note }),
+        ...(body.instrument === undefined ? {} : { instrument: body.instrument }),
       });
       await auditFromContext(ctx, {
         action: 'verification.flow.decision',
         status: 'ok',
         resourceType: 'verification_case',
         resourceId: id,
-        detail: { decision: body.decision, approvedLimit: body.approvedLimit ?? null },
+        detail: {
+          decision: body.decision,
+          approvedLimit: body.approvedLimit ?? null,
+          instrument: body.instrument ?? null,
+          statusCode: detail.case.statusCode,
+        },
       });
       return detail;
     },
   );
 
-  // ---- policy ----
-
-  /**
-   * Underwriting policy, plus WHO the Verification agent is.
-   *
-   * The owner rides along here because this is the one call both desk surfaces already make — the
-   * queue and the case view each load it, cached for an hour — and because there is nothing
-   * per-case to project: no `decided_by`, no case-event actor, `distribute_type: 'shared'`. One
-   * configured agent owns every case, so it is desk config, not row data.
-   */
-  app.get('/verification/flow/policy', auth, async (request) => {
-    const ctx = requireVerificationRead(request);
-    const [policy, verificationOwner] = await Promise.all([
-      verificationPolicyRepo.get(ctx),
-      resolveVerificationCaseOwner(),
-    ]);
-    return { ...policy, verificationOwner };
-  });
-
-  app.post(
-    '/verification/flow/policy',
-    // Underwriting policy sets the risk factors that price every limit, so it is admin-only —
-    // deliberately narrower than the rest of the desk, and enforced as a preHandler so the check
-    // cannot be skipped by an early return in the body.
-    { onRequest: [app.authenticate], preHandler: [app.requireRole('admin')] },
-    async (request) => {
-      const ctx = requireVerificationWrite(request);
-      const body = policyBody.parse(request.body ?? {});
-      const updated = await verificationPolicyRepo.update(
-        ctx,
-        {
-          ...(body.strongFactor === undefined ? {} : { strongFactor: numText(body.strongFactor) }),
-          ...(body.moderateFactor === undefined
-            ? {}
-            : { moderateFactor: numText(body.moderateFactor) }),
-          ...(body.weakFactor === undefined ? {} : { weakFactor: numText(body.weakFactor) }),
-          ...(body.adbReviewThreshold === undefined
-            ? {}
-            : { adbReviewThreshold: String(body.adbReviewThreshold) }),
-          ...(body.nsfReviewThreshold === undefined
-            ? {}
-            : { nsfReviewThreshold: body.nsfReviewThreshold }),
-          ...(body.bankFirstTruckMin === undefined
-            ? {}
-            : { bankFirstTruckMin: body.bankFirstTruckMin }),
-          ...(body.wexCardCutoff === undefined ? {} : { wexCardCutoff: body.wexCardCutoff }),
-        },
-        ctx.userId,
-      );
-      await auditFromContext(ctx, {
-        action: 'verification.flow.policy_updated',
-        status: 'ok',
-        resourceType: 'verification_policy',
-        resourceId: ctx.tenantId,
-        detail: { fields: Object.keys(body) },
-      });
-      return updated;
-    },
-  );
 }

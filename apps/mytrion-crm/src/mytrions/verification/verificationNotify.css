@@ -1,0 +1,29 @@
+/* =====================================================
+   The Verification desk's arrival notices — `ds/Toast`, anchored TOP RIGHT.
+
+   The DS viewport pins bottom-end and argues for it: the top of the screen belongs to the header and
+   to what the user is reading. That is right for a confirmation of something the user just did. These
+   are the opposite — unsolicited, from another desk — and what they must not cover is the case the
+   agent is reading, which on this desk runs down the middle and bottom of the page. `ToastProvider`
+   exposes `className` on the viewport for exactly this.
+
+   Only the ANCHOR changes. The card, the two live regions, the enter/exit motion, the hover pause and
+   the reduced-motion behaviour are all the DS's, untouched.
+   ===================================================== */
+.vf-toasts {
+  /* Clear the app header rather than sitting under it. `--layout-header-h` is theme.css's own. */
+  inset-block-start: calc(var(--layout-header-h) + var(--space-3));
+  /* `auto`, not `unset` — the DS rule sets `inset-block-end` and both would otherwise apply, which
+     stretches the viewport down the full height of the page and turns an empty notice area into a
+     click-blocker over the whole right edge. */
+  inset-block-end: auto;
+  inset-inline-end: var(--space-4);
+}
+
+/* 640 — the structure line. Full width, and clear of the mobile header. */
+@media (width < 640px) {
+  .vf-toasts {
+    inset-inline: var(--space-3);
+    inset-block-start: calc(var(--layout-header-h) + var(--space-2));
+  }
+}

@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
-import { logAutomation } from '@/api/touchpoints';
+import { automationErrorCode, logAutomation } from '@/api/touchpoints';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
@@ -28,6 +28,7 @@ import { AutoReportFilters } from '../AutoReportFilters';
 import type { TxnReportState } from '../txnReport';
 import { useAccessibleDialog } from '../useAccessibleDialog';
 import { AUTO_INPUT } from '../autoControls';
+import { useKpiSearchCompleted } from '../kpiTelemetry';
 
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
@@ -236,6 +237,9 @@ export function AutoTab() {
     if (runInFlight.current) return;
     const bm = autoModal;
     if (!bm) return;
+    const lifecycleRunId = crypto.randomUUID();
+    const lifecycleStartedAt = performance.now();
+    logAutomation(bm.id, { runId: lifecycleRunId, phase: 'started' });
     runInFlight.current = true;
     setAutoRunErr(null); setAutoResult(null); setAutoStep('running'); setTxnReport(null);
     const phases = PHASE_MAP[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
@@ -268,15 +272,25 @@ export function AutoTab() {
     })
       .then((payload) => {
         clearTimeout(watchdog);
+        logAutomation(bm.id, {
+          runId: lifecycleRunId,
+          phase: 'succeeded',
+          durationMs: Math.max(0, Math.round(performance.now() - lifecycleStartedAt)),
+        });
         if (seq !== runSeq.current) return; // cancelled / closed / another run started
         clearInterval(progTimer.current);
         setAutoResult(payload);
         fetchTimer.current = setTimeout(() => setAutoStep('done'), 240);
         if (payload.kind === 'link') window.open(payload.url, '_blank', 'noopener');
-        logAutomation(bm.id);
       })
       .catch((e: unknown) => {
         clearTimeout(watchdog);
+        logAutomation(bm.id, {
+          runId: lifecycleRunId,
+          phase: 'failed',
+          durationMs: Math.max(0, Math.round(performance.now() - lifecycleStartedAt)),
+          errorCode: automationErrorCode(e),
+        });
         if (seq !== runSeq.current) return;
         clearInterval(progTimer.current);
         setAutoRunErr(e instanceof Error ? e.message : 'The action failed — try again.');
@@ -289,6 +303,7 @@ export function AutoTab() {
 
   const aq = autoSearch.toLowerCase();
   const autoCatalog = AUTO_LIST.filter((a) => !aq || `${a.title} ${a.desc} ${a.codes.join(' ')}`.toLowerCase().includes(aq));
+  useKpiSearchCompleted('automations.catalog', autoSearch, autoCatalog.length);
   const b = autoModal;
   const kind = b?.kind;
   const hasDeal = !!autoDeal;

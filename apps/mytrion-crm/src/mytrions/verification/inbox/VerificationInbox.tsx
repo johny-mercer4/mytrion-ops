@@ -17,7 +17,7 @@
  * fetch. Verification messages arrive a handful of times a day; one round trip per arrival buys a
  * row that is complete and cannot drift from the list it joins.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Badge,
   Button,
@@ -31,8 +31,7 @@ import {
 } from '@/ds';
 import { markAllInboxRead, setInboxMessageRead, type InboxMessage } from '@/api/inbox';
 import { PageHead } from '../../_shared/page';
-import { useOctaneRealtime } from '../../sales/redesign/useOctaneRealtime';
-import { useVerificationInbox, VERIFICATION_INBOX_TAG } from '../verificationData';
+import { useVerificationInbox } from '../verificationData';
 import {
   caseIdFromSource,
   fullWhen,
@@ -69,20 +68,14 @@ export function VerificationInbox({
   const now = useMemo(() => Date.now(), [inbox.data]);
 
   /**
-   * A verification message landed on the caller's own topic — refetch.
+   * NO SOCKET OF ITS OWN.
    *
-   * The tag filter matters: the same socket carries retention, collections and carrier events, and
-   * this surface is scoped to one tag on the server. Reloading on somebody else's event would spend
-   * a round trip to render exactly what is already on screen.
+   * This used to subscribe here and refetch on a `verification` frame — but `ModuleShell` unmounts
+   * inactive tabs, so the subscription only existed while the Inbox tab was the open one, and a case
+   * arriving while the agent worked the queue reached nobody. `VerificationNotifications` at the
+   * module root now holds the one subscription and reloads THIS SWR key, so the list, the rail badge
+   * and the popup all move on the same frame — and the desk opens one websocket instead of two.
    */
-  const onInboxEvent = useCallback(
-    (event: { tag: string | null; type: string }) => {
-      if (event.tag !== VERIFICATION_INBOX_TAG && !event.type.startsWith('verification.')) return;
-      void inbox.reload();
-    },
-    [inbox],
-  );
-  useOctaneRealtime({ onInboxEvent });
 
   const visible = useMemo(() => messages.filter((m) => inScope(m, scope)), [messages, scope]);
   const tabs = useMemo(() => scopeTabs(messages), [messages]);

@@ -108,6 +108,24 @@ export const verificationCases = pgTable(
     distributeType: text('distribute_type').$type<VerificationDistributeType>().notNull().default('shared'),
     ownerZohoUserId: text('owner_zoho_user_id').notNull(),
     ownerName: text('owner_name').notNull(),
+    /**
+     * THE CREDIT AGENT on this case — the Verification desk's own assignee, and NOT `owner_*`.
+     *
+     * `owner_zoho_user_id` is the SALES assignee, and it is read as one: `salesOwnership` ORs it into
+     * the Sales list scope, and `assertSalesMayEdit` ORs it into the Sales WRITE gate. So parking a
+     * credit agent there — which the ingest used to do whenever a Deal arrived unowned — put the case
+     * in that credit agent's Sales Verification tab and handed them intake edit rights on it. Stage-0
+     * round-robin assigns EVERY case, so it would have turned three stale rows into all of them.
+     *
+     * Nullable: a case created before Stage-0 routing, or in an environment with no credit agent
+     * configured, has no assignee. `verificationOwnerName` is a snapshot of the directory name at
+     * assignment time, the same way `zoho_owner_name` snapshots the Deal owner's.
+     *
+     * The full assignment history lives in `verification_case_assignments`; this pair is the CURRENT
+     * one, denormalised so a 200-row queue does not need a correlated subquery per row.
+     */
+    verificationOwnerZohoUserId: text('verification_owner_zoho_user_id'),
+    verificationOwnerName: text('verification_owner_name'),
     matchedSnapshotId: text('matched_snapshot_id'),
     matchedVia: text('matched_via').$type<VerificationMatchVia>(),
     carrierOperatingStatus: text('carrier_operating_status'),
@@ -202,6 +220,11 @@ export const verificationCases = pgTable(
     tenantSubmitterIdx: index('verification_cases_tenant_submitter_idx').on(
       table.tenantId,
       table.submittedByZohoUserId,
+    ),
+    /** Serves the desk's "my cases" scope and the round-robin's per-agent load probe. */
+    tenantVerificationOwnerIdx: index('verification_cases_tenant_verification_owner_idx').on(
+      table.tenantId,
+      table.verificationOwnerZohoUserId,
     ),
   }),
 );

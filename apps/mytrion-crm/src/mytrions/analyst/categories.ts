@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  Activity,
   FileSpreadsheet,
   Fuel,
   Headphones,
@@ -8,6 +9,9 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+
+import { canAccess, canSeeTab, isAdmin } from '@/access/resolveAccess';
+import type { UserContext } from '@/context/userContext';
 
 import type { AnalyticsDimension } from './data';
 
@@ -19,6 +23,7 @@ export type AnalyticsCategory =
   | 'finance'
   | 'billing'
   | 'transactions'
+  | 'mytrion'
   | 'reports';
 
 export interface CategoryDef {
@@ -98,6 +103,15 @@ export const ANALYTICS_CATEGORIES: CategoryDef[] = [
     description: 'Gallons, swipes, and fuel spend — filter by agent or date.',
   },
   {
+    id: 'mytrion',
+    label: 'Mytrion',
+    tone: 'var(--tone-sky)',
+    icon: Activity,
+    keywords: ['usage', 'agents', 'online', 'activity', 'automation', 'tickets', 'ai'],
+    filters: ['range', 'dates'],
+    description: 'Sales agent adoption, activity, work outcomes, automation, tickets, and AI usage.',
+  },
+  {
     id: 'reports',
     label: 'Reports',
     tone: 'var(--tone-violet)',
@@ -112,6 +126,31 @@ export const ANALYTICS_CATEGORIES: CategoryDef[] = [
 
 export function categoryById(id: string | null): CategoryDef {
   return ANALYTICS_CATEGORIES.find((c) => c.id === id) ?? ANALYTICS_CATEGORIES[0]!;
+}
+
+/** Applies tab grants plus the two management-only category gates used by the Analyst shell. */
+export function visibleAnalyticsCategories(
+  user: UserContext,
+  principal: UserContext = user,
+): CategoryDef[] {
+  const reports = isAdmin(user) || canAccess(user, 'manager');
+  const mytrionUsage = isAdmin(principal) || canAccess(principal, 'analyst');
+  return ANALYTICS_CATEGORIES.filter(
+    (category) =>
+      canSeeTab(category.id === 'mytrion' ? principal : user, 'analyst', category.id) &&
+      (category.id !== 'reports' || reports) &&
+      (category.id !== 'mytrion' || mytrionUsage),
+  );
+}
+
+/** Hidden, forbidden, and stale category deep links land on the first reachable dashboard. */
+export function resolveAnalyticsCategory(
+  user: UserContext,
+  requested: AnalyticsCategory,
+  principal: UserContext = user,
+): CategoryDef {
+  const visible = visibleAnalyticsCategories(user, principal);
+  return visible.find((category) => category.id === requested) ?? visible[0] ?? ANALYTICS_CATEGORIES[0]!;
 }
 
 /** Preset date windows for the filter bar. */

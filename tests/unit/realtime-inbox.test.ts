@@ -240,11 +240,33 @@ describe('realtime hub — frame envelope', () => {
     realtimeHub.subscribe(owner, 'inbox:worker:42');
     realtimeHub.subscribe(firehose, INBOX_ALL_TOPIC);
 
-    expect(publishInboxEvent({ ownerKind: 'worker', ownerId: '42' })).toBe(2);
+    /**
+     * The WHOLE frame, because that is what the wire carries and what `RealtimeInboxEvent` now
+     * declares. The two fields this function reads used to be the whole parameter type, which let a
+     * caller passing a literal fail to compile while four passing variables sailed through.
+     */
+    const frame = {
+      id: 'inb_1',
+      type: 'verification.application.created',
+      tag: 'verification',
+      ownerKind: 'worker' as const,
+      ownerId: '42',
+      title: 'New application',
+      detail: 'caseId=vc_1',
+      priority: 'low',
+      readAt: null,
+      createdAt: '2026-08-19T10:00:00.000Z',
+      updatedAt: '2026-08-19T10:00:00.000Z',
+    };
+
+    expect(publishInboxEvent(frame)).toBe(2);
     expect(firehose.frames).toHaveLength(1);
+    // The frame goes out intact — the owner's copy is the same object the CRM types as
+    // `OctaneInboxEvent`, not a two-field stub.
+    expect(JSON.parse(owner.frames[0]!)).toMatchObject({ kind: 'event', event: frame });
 
     // High-volume feeds (chat) must not put every message on the admin topic.
-    expect(publishInboxEvent({ ownerKind: 'worker', ownerId: '42' }, { firehose: false })).toBe(1);
+    expect(publishInboxEvent(frame, { firehose: false })).toBe(1);
     expect(firehose.frames).toHaveLength(1);
     expect(owner.frames).toHaveLength(2);
 

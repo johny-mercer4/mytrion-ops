@@ -621,6 +621,23 @@
     background: color-mix(in srgb, var(--cs-accent, currentColor) 12%, transparent);
 }
 
+/* Delete button in the case modal's footer (test-case cleanup only, 2026-08-19) — same shape as
+   CitiFuel's .cs-citi-delete-modal-btn, named for this module instead of duplicating it. */
+.cs-root .cs-mt-delete-modal-btn {
+    background: transparent;
+    color: var(--cs-danger);
+    border: 1px solid rgba(220, 38, 38, 0.35);
+    margin-right: auto;
+}
+.cs-root .cs-mt-delete-modal-btn:hover {
+    background: rgba(220, 38, 38, 0.06);
+    border-color: var(--cs-danger);
+}
+.cs-root .cs-mt-delete-modal-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* ── Kanban view (CS feedback 2026-08-07 — read-only columns, no drag/drop) ── */
 .cs-root .cs-mt-kanban {
     display: flex;

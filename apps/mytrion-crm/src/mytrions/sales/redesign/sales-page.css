@@ -464,6 +464,13 @@
 
 @media (width < 640px) {
   .ss-root .ss-page-head-row { flex-direction: column; align-items: stretch; }
+  /* `flex: 1 1 320px` on the copy is a WIDTH basis while the row is a row. The line above turns the
+     row into a column, where flex-basis is resolved against the BLOCK axis — so the 320px became a
+     320px floor on the copy's height and opened a screen of dead space between a one-line
+     description and the actions under it. Measured at 375: copy 320px tall around 42px of text.
+     `auto` restores content height; `flex-grow` cannot expand it because the row has no definite
+     height of its own. */
+  .ss-root .ss-page-head-copy { flex-basis: auto; }
   .ss-root .ss-page-actions { justify-content: flex-start; }
   .ss-root .ss-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ss-root .ss-pager { flex-direction: column; align-items: stretch; }

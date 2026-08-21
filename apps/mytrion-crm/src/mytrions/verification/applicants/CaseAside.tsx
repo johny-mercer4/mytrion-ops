@@ -1,24 +1,43 @@
 /**
  * The case aside: what to check, what is attached, and what has happened.
  *
- * THE CHECKLIST IS DERIVED, NOT STORED. There is no per-item column — the design binds each box to
- * the phase's own status and gives it a no-op handler, and that is the honest reading: a tick here
- * means "this phase was signed off", not "someone ticked this line". So the boxes are `readOnly`
- * and announce themselves that way rather than offering an affordance that saves nothing.
+ * THE CHECKLIST IS DERIVED, NOT STORED — but it is derived from the RIGHT thing now. Every line used to
+ * be a `readOnly` checkbox bound to `phase.status === 'passed'`, which on Identity and Screening
+ * contradicted the pane beside it: the reviewer could mark six of seven checks OK and still see seven
+ * empty boxes, then all seven fill the moment the phase passed. `caseChecklist.ts` gives each line its
+ * own state from the marks the reviewer has set, including `attention` — which a tick box cannot express
+ * at all, and which is the state that actually needs the reviewer's eye. Phases with no per-check marks
+ * keep the old reading, and say so in their own note instead of a footnote under every phase.
  *
  * THE PHASE LOG IS COMPOSED. `verification_case_events.notes` is nullable — it only carries an
  * operator's free text — so the sentence is built from the always-present `eventType` plus the
  * phase and status it moved between. An event with no note still reads as a sentence.
  */
 import { useState } from 'react';
-import { Button, Checkbox, EmptyState, Icon, Select } from '@/ds';
+import { Button, EmptyState, Icon, Select } from '@/ds';
 import {
   openDocument,
   type VerificationDeskDetail,
   type VerificationDocType,
   type VerificationRailPhase,
 } from '@/api/verificationFlow';
+import { DOC_ACCEPT, DOC_ACCEPT_HINT } from '../../_shared/verificationDocUpload';
 import { PHASE_SHORT, STATUS_LABEL } from './applicantsModel';
+import {
+  checklistIsLive,
+  checklistLines,
+  checklistProgress,
+  type ChecklistLine,
+} from './caseChecklist';
+import { type AuthorityMarks } from './caseAuthority';
+import { identityChecklistLines, type IdentityMark } from './caseIdentity';
+import { SCREENING_CHECKLIST, type ScreeningMarks } from './caseScreening';
+import { authorityChecklistLines } from './caseAuthority';
+import { creditBankingChecklistLines } from './caseCreditBanking';
+import { deskReviewOrder, routingChecklistLines } from './caseRouting';
+// `.va-check-*` lives with the mark control it reports on. Imported here too rather than relying on
+// `CaseMarkGroup` being mounted — the checklist renders on phases that have no marks at all.
+import './caseMarks.css';
 
 /** The SOP's per-phase checks. Judgement calls the desk makes against the file, in its own words. */
 const CHECKLISTS: Record<string, readonly string[]> = {
@@ -26,19 +45,6 @@ const CHECKLISTS: Record<string, readonly string[]> = {
     'Application complete for the applicant type',
     'Fuel cards requested vs Octane / WEX route',
     'Documents attached or Plaid connected',
-  ],
-  p2_identity: [
-    'Name, address and contact consistent across application and ID',
-    'Bank account ownership matches the applicant',
-    'Company name, EIN and principals consistent (carrier)',
-    'Authority status and business / authority age',
-  ],
-  p4_authority: [
-    'MC status active',
-    'USDOT status active',
-    'Operating authority and insurance current',
-    'Related-company structure — Corporate Guarantee needed?',
-    'Third-party carrier — signed Lease Agreement and unit info?',
   ],
   p8_highway: [
     'Safety score and alerts',
@@ -116,17 +122,31 @@ export function CaseAside({
   caseId,
   phase,
   canAct,
-  busy,
+  requesting,
+  uploading,
+  error,
   onRequestDocs,
   onUpload,
   canAttach,
+  identityMarks,
+  screeningMarks,
+  authorityMarks,
 }: {
   detail: VerificationDeskDetail;
   caseId: string;
   phase: VerificationRailPhase;
   canAct: boolean;
-  /** A request is in flight — reported on the control, not folded into `canAct`. */
-  busy: boolean;
+  /**
+   * TWO flags, not one `busy`.
+   *
+   * They are two different controls a foot apart, and one shared boolean made attaching a file spin
+   * the request button as well — plus the three decision buttons below, which is the triple-loader
+   * this pair exists to end. Each control reports only its own request.
+   */
+  requesting: boolean;
+  uploading: boolean;
+  /** A refused attach or request, rendered HERE rather than in a banner above the phase spine. */
+  error: string | null;
   onRequestDocs: (items: Array<{ docType: VerificationDocType }>, note?: string) => void;
   /** The desk attaching a file itself — see the Attach control below. */
   onUpload: (file: File, docType: VerificationDocType) => void;
@@ -139,12 +159,42 @@ export function CaseAside({
    * attaching is the same kind of act. Only a DECIDED case refuses.
    */
   canAttach: boolean;
+  /** The reviewer's live marks, so "What to check" agrees with the pane rather than with the clock. */
+  identityMarks: Record<string, IdentityMark>;
+  screeningMarks: ScreeningMarks;
+  authorityMarks: AuthorityMarks;
 }) {
   const [asking, setAsking] = useState(false);
-  const [attachType, setAttachType] = useState<VerificationDocType>('bank_statement');
+  const [attachType, setAttachType] = useState<VerificationDocType>('other');
   const [docType, setDocType] = useState<VerificationDocType>('bank_statement');
 
-  const checklist = CHECKLISTS[phase.code] ?? [];
+  const labels = !phase.applies
+    ? []
+    : phase.code === 'p2_identity'
+      ? identityChecklistLines(detail.case.applicantType)
+      : phase.code === 'p3_screening'
+        ? SCREENING_CHECKLIST
+        : phase.code === 'p4_authority'
+          ? authorityChecklistLines()
+          : phase.code === 'p5_routing'
+            ? routingChecklistLines(deskReviewOrder(detail).order)
+            : phase.code === 'p6_credit_banking'
+              ? creditBankingChecklistLines()
+              : (CHECKLISTS[phase.code] ?? []);
+  const checklist: ChecklistLine[] =
+    labels.length === 0
+      ? []
+      : checklistLines({
+          phaseCode: phase.code,
+          phasePassed: phase.status === 'passed',
+          labels,
+          applicantType: detail.case.applicantType,
+          identityMarks,
+          screeningMarks,
+          authorityMarks,
+        });
+  const progress = checklistProgress(checklist);
+  const live = checklistIsLive(phase.code);
   const documents = detail.documents;
   const received = documents.filter((d) => d.status === 'received').length;
 
@@ -152,24 +202,65 @@ export function CaseAside({
     <aside className="va-aside">
       {checklist.length > 0 ? (
         <section className="va-aside-block">
-          <h3 className="t-eyebrow va-aside-title">What to check</h3>
-          <div className="va-checks">
-            {checklist.map((item) => (
-              <Checkbox
-                key={item}
-                className="va-check"
-                label={item}
-                checked={phase.status === 'passed'}
-                readOnly
-                // A tick here reports the phase's own state; nothing persists per line, so the
-                // control must not pretend to be settable (CONVENTIONS §5).
-                aria-disabled="true"
-                aria-describedby="va-check-note"
-              />
-            ))}
+          <div className="va-aside-head">
+            <h3 className="t-eyebrow va-aside-title">What to check</h3>
+            {/* The count is over the lines SHOWN, and it is the reason this block earns a head: on a
+                live phase it is the reviewer's own progress, not a restatement of the phase chip. */}
+            <span className="va-aside-count num">
+              {progress.attention > 0
+                ? `${progress.attention} need${progress.attention === 1 ? 's' : ''} work`
+                : `${progress.done} of ${progress.total}`}
+            </span>
           </div>
+          {/* NOT checkboxes. A box has two states and these lines have three — and a `readOnly` box is
+              an affordance that saves nothing, which is what the old one was. A glyph per state, so the
+              list reads at a glance and `attention` can exist at all. */}
+          <ul className="va-checks" aria-describedby="va-check-note">
+            {checklist.map((line) => (
+              <li
+                className="va-check-line"
+                key={line.id}
+                data-state={line.state}
+                data-tone={line.tone ?? undefined}
+              >
+                <span className="va-check-glyph" aria-hidden="true">
+                  <Icon
+                    name={
+                      line.state === 'done'
+                        ? 'check_circle'
+                        : line.state === 'attention'
+                          ? line.tone === 'bad'
+                            ? 'block'
+                            : 'warning'
+                          // An empty box for "outstanding": `schedule` reads as waiting on someone
+                          // else, and these are the reviewer's own to work through.
+                          : 'check_box_outline_blank'
+                    }
+                    size="sm"
+                  />
+                </span>
+                <span className="va-check-text">
+                  <span className="va-check-label">
+                    {/* The state in words as well as in colour and glyph — a screen reader gets
+                        "Done", "Needs work" or nothing, in the same order the eye does. */}
+                    <span className="sr-only">
+                      {line.state === 'done'
+                        ? 'Done: '
+                        : line.state === 'attention'
+                          ? 'Needs work: '
+                          : 'Outstanding: '}
+                    </span>
+                    {line.label}
+                  </span>
+                  {line.note ? <span className="va-check-why">{line.note}</span> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
           <p className="va-aside-note" id="va-check-note">
-            Ticks follow the phase — not a saved list.
+            {live
+              ? 'Follows the marks you set beside each check. Nothing is saved until the phase is decided.'
+              : 'Follows the phase — this list is not saved line by line.'}
           </p>
         </section>
       ) : null}
@@ -212,9 +303,9 @@ export function CaseAside({
                   // A `requested` row carries no bytes — the download route 409s on it, so the
                   // affordance is withheld rather than offered and then refused.
                   aria-disabled={pending ? 'true' : undefined}
-                  aria-label={pending ? `${name} — requested, not yet received` : `Open ${name}`}
+                  aria-label={pending ? `${name} — requested, not yet received` : `Preview ${name}`}
                   onClick={() => {
-                    if (!pending) void openDocument('verification', caseId, doc.id);
+                    if (!pending) void openDocument('verification', caseId, doc.id, name);
                   }}
                 >
                   <span className="va-doc-glyph" aria-hidden="true">
@@ -224,9 +315,11 @@ export function CaseAside({
                     <span className="va-doc-name">{name}</span>
                     <span className="va-doc-meta">{meta}</span>
                   </span>
+                  {/* `visibility`, not `download`: the route now serves these bytes inline, so the
+                      click opens a viewer. The old glyph promised a file on disk. */}
                   {pending ? null : (
                     <span className="va-doc-open" aria-hidden="true">
-                      <Icon name="download" size="sm" />
+                      <Icon name="visibility" size="sm" />
                     </span>
                   )}
                 </button>
@@ -249,7 +342,7 @@ export function CaseAside({
                 variant="primary"
                 size="sm"
                 icon="send"
-                loading={busy}
+                loading={requesting}
                 disabled={!canAct}
                 onClick={() => {
                   onRequestDocs([{ docType }]);
@@ -271,12 +364,39 @@ export function CaseAside({
                 until this existed the only way to file it was to ask Sales to upload what the
                 reviewer was looking at. The same service, gate re-evaluation and audit trail as the
                 Sales upload; only the door differs. */}
-            <label className="va-doc-attach" data-disabled={!canAttach}>
-              <Icon name="attach_file" size="sm" />
-              Attach a file
+            {/* The control reports its OWN upload. `aria-busy` rather than a second spinner: the
+                label is the affordance and the region already has one loading signal. */}
+            {/* TYPE FIRST, and this order is load-bearing. Choosing a file uploads it immediately with
+                whatever `attachType` currently holds, and that defaults to "Something else" — so a
+                reviewer working down the panel in reading order filed every document untyped, then had
+                to ask Sales to re-upload it under the right one. The label says what the picker will do
+                with the choice rather than naming the field. */}
+            <Select
+              label="Attach as"
+              size="sm"
+              value={attachType}
+              onChange={(v) => setAttachType((v ?? 'other') as VerificationDocType)}
+              disabled={!canAttach}
+              options={DOC_TYPE_OPTIONS}
+            />
+            <label
+              className="va-doc-attach"
+              data-disabled={!canAttach || uploading}
+              data-busy={uploading || undefined}
+              aria-busy={uploading || undefined}
+            >
+              <Icon name={uploading ? 'cloud_upload' : 'attach_file'} size="sm" />
+              {/* Names the CHOICE, so the reviewer can see what the picker will file without reopening
+                  the select — except on the catch-all, where "Attach something else" is not a sentence. */}
+              {uploading
+                ? 'Uploading…'
+                : attachType === 'other'
+                  ? 'Attach a file'
+                  : `Attach ${DOC_LABEL[attachType]?.toLowerCase() ?? 'a file'}`}
               <input
                 type="file"
-                disabled={!canAttach}
+                accept={DOC_ACCEPT}
+                disabled={!canAttach || uploading}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) onUpload(file, attachType);
@@ -284,14 +404,6 @@ export function CaseAside({
                 }}
               />
             </label>
-            <Select
-              label="Type"
-              size="sm"
-              value={attachType}
-              onChange={(v) => setAttachType((v ?? 'other') as VerificationDocType)}
-              disabled={!canAttach}
-              options={DOC_TYPE_OPTIONS}
-            />
             <Button
               variant="secondary"
               size="sm"
@@ -302,8 +414,26 @@ export function CaseAside({
             >
               Request a document
             </Button>
+            {/* WHY it is off, not just that it is. Requesting parks the case until the file lands, and
+                a case that is already waiting on Sales — or already decided — has nothing to park. A
+                disabled control with no reason is the reviewer's dead end. */}
+            <p className="va-aside-note">
+              {canAct
+                ? DOC_ACCEPT_HINT
+                : 'Requesting is unavailable — this case is already waiting on Sales, or has been decided. You can still attach a file yourself.'}
+            </p>
           </div>
         )}
+
+        {/* The refusal, where the click was. An unsupported file type comes back as a 415 naming the
+            file and what is accepted; it used to reach a banner above the phase spine, which on a
+            tall case is off screen from the control that caused it. */}
+        {error ? (
+          <p className="va-aside-error" role="alert">
+            <Icon name="error" size="sm" />
+            <span>{error}</span>
+          </p>
+        ) : null}
       </section>
 
       <section className="va-aside-block" data-divided="true">

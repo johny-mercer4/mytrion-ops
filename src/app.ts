@@ -43,9 +43,16 @@ import { verificationClientsRoutes } from './routes/v1/verificationClients.route
 import { verificationCaseQueueRoutes } from './routes/v1/verificationCaseQueue.routes.js';
 import { verificationCasesRoutes } from './routes/v1/verificationCases.routes.js';
 import { verificationApplicationsRoutes } from './routes/v1/verificationApplications.routes.js';
+import { verificationDocumentPreviewRoutes } from './routes/v1/verificationDocumentPreview.routes.js';
+import { verificationAuthorityRoutes } from './routes/v1/verificationAuthority.routes.js';
 import { verificationFlowRoutes } from './routes/v1/verificationFlow.routes.js';
+import { verificationPolicyRoutes } from './routes/v1/verificationPolicy.routes.js';
 import { mytrionWatchRoutes } from './routes/v1/mytrionWatch.routes.js';
 import { collectionRoutes } from './routes/v1/collection.routes.js';
+import { collectionActionRoutes } from './routes/v1/collectionActions.routes.js';
+import { collectionAgencyRoutes } from './routes/v1/collectionAgency.routes.js';
+import { collectionAttachmentRoutes } from './routes/v1/collectionAttachments.routes.js';
+import { collectionCaseFieldRoutes } from './routes/v1/collectionCaseFields.routes.js';
 import { verificationFirstRunRoutes } from './routes/v1/verificationFirstRun.routes.js';
 import { verificationStrategiesRoutes } from './routes/v1/verificationStrategies.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
@@ -62,6 +69,9 @@ import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
 import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
 import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
+import { commsAgentRoutes } from './routes/v1/commsAgent.routes.js';
+import { commsAnalyticsRoutes } from './routes/v1/commsAnalytics.routes.js';
+import { commsCannedRepliesRoutes } from './routes/v1/commsCannedReplies.routes.js';
 import { commsQueueRoutes } from './routes/v1/commsQueue.routes.js';
 import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
 import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
@@ -465,6 +475,9 @@ export async function buildApp(): Promise<FastifyInstance> {
         await comms.register(commsAttachmentsRoutes);
         await comms.register(commsEscalationsRoutes);
         await comms.register(commsQueueRoutes);
+        await comms.register(commsAnalyticsRoutes);
+        await comms.register(commsAgentRoutes);
+        await comms.register(commsCannedRepliesRoutes);
         await comms.register(commsAdminRoutes);
       });
       await v1.register(dataCenterRoutes);
@@ -479,8 +492,20 @@ export async function buildApp(): Promise<FastifyInstance> {
       // plugin's `/verification/cases/:id` style params. Same ordering reason as the queue routes.
       await v1.register(verificationApplicationsRoutes);
       await v1.register(verificationFlowRoutes);
+      await v1.register(verificationAuthorityRoutes);
+      await v1.register(verificationPolicyRoutes);
+      // The inline-preview byte routes for BOTH desks — see the file header for why they are not in
+      // their siblings' plugins.
+      await v1.register(verificationDocumentPreviewRoutes);
       await v1.register(mytrionWatchRoutes);
+      // Order matters. All three plugins live under /collection; the agency queue goes first so
+      // `/collection/placement-queue` is matched before the parameterised `/collection/cases/:id`
+      // routes get a chance to read "placement-queue" as an id.
+      await v1.register(collectionAgencyRoutes);
       await v1.register(collectionRoutes);
+      await v1.register(collectionActionRoutes);
+      await v1.register(collectionCaseFieldRoutes);
+      await v1.register(collectionAttachmentRoutes);
       await v1.register(verificationCasesRoutes);
       await v1.register(verificationFirstRunRoutes);
       await v1.register(verificationStrategiesRoutes);

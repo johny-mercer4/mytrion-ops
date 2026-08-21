@@ -217,3 +217,17 @@ Production serves the **committed** bundle in `apps/mytrion-crm/app`; Render nev
 that changes `apps/mytrion-crm/src` without rebuilding merges green and changes nothing on the live
 site. Run `pnpm build:widget` and commit `app/` in the same PR. CI now fails the PR if `src` moved
 and `app/` did not.
+
+## 10. Browser verify — a green suite is not done
+
+jsdom does no layout (see §8). Collection gutters (`--co-pad`) shipped as a screenshot bug.
+
+UI work on a Mytrion is **not done** until a **desktop** and a **narrow** screenshot of the live
+surface, or an Impeccable `audit` pass.
+
+- **cursor-ide-browser:** `lock` → `snapshot` / `screenshot` → `unlock`. ~1280 and ~375.
+- **Impeccable:** `audit` and `polish` playbooks in this repo's `impeccable` skill. Live iterate
+  with `/impeccable live`. Do not restyle a Mytrion while verifying.
+- Responsive changes still run `pnpm audit:mobile` / `audit:shots`.
+
+Do not add a browser SaaS. Cursor rule (non-always): `.cursor/rules/ui-verify.mdc`.

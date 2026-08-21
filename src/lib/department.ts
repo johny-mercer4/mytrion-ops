@@ -22,6 +22,7 @@ export const KNOWN_DEPARTMENTS = [
   'retention',
   'c-level',
   'management',
+  'analytics',
   /**
    * HR. Already granted as a tag (MYTRION_DEPARTMENT.hr = 'hr'), but it was missing here — which meant
    * `requireDepartment(request, 'hr', …)` did not even typecheck, so the HR routes fell back to an
@@ -35,6 +36,7 @@ export const KNOWN_DEPARTMENTS = [
    */
   'hr',
   'recruit',
+  'desk',
 ] as const;
 
 export type KnownDepartment = (typeof KNOWN_DEPARTMENTS)[number];

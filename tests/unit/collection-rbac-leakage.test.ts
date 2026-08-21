@@ -9,7 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { canReadCollectionSnapshot } from '../../src/repos/collectionAccess.js';
 import { arrayReportRepo, buildArrayListQuery, buildArrayWhere } from '../../src/repos/arrayReportRepo.js';
+import { collectionActivityRepo } from '../../src/repos/collectionActivityRepo.js';
 import { collectionCaseRepo, buildCaseListQuery, buildCaseWhere } from '../../src/repos/collectionCaseRepo.js';
+import { collectionPlacementRepo } from '../../src/repos/collectionPlacementRepo.js';
+import { collectionPlanRepo } from '../../src/repos/collectionPlanRepo.js';
+import { collectionWorklistRepo } from '../../src/repos/collectionWorklistRepo.js';
 import { normalizePagination } from '../../src/repos/util.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
@@ -58,6 +62,52 @@ describe('octane-only snapshot gate', () => {
       accountStatuses: [],
       agencies: [],
     });
+  });
+});
+
+/**
+ * The desk tables added in 0129 have no tenant_id either, so every new read has to short-circuit
+ * on the SAME gate. Written as a table rather than five near-identical `it`s: the point is that
+ * NONE of them is missing the check, and a list is what makes an omission visible.
+ */
+describe('desk tables are behind the same gate', () => {
+  const rival = ctxOf({ tenantId: OTHER });
+
+  it('returns nothing for a rival tenant, on every desk read', async () => {
+    await expect(collectionActivityRepo.listByCase(rival, 'cc_1')).resolves.toEqual({
+      items: [],
+      total: 0,
+    });
+    await expect(collectionActivityRepo.lastContactByCase(rival, ['cc_1'])).resolves.toEqual(new Map());
+    await expect(collectionPlanRepo.listPromises(rival, 'cc_1')).resolves.toEqual([]);
+    await expect(collectionPlanRepo.openPromisesByCase(rival, ['cc_1'])).resolves.toEqual(new Map());
+    await expect(collectionPlanRepo.activePlan(rival, 'cc_1')).resolves.toBeNull();
+    await expect(collectionPlanRepo.planProgressByCase(rival, ['cc_1'])).resolves.toEqual(new Map());
+    await expect(collectionWorklistRepo.deskInfoByCase(rival, ['cc_1'])).resolves.toEqual(new Map());
+  });
+
+  it('the worklist and the placement queue are empty for a rival tenant', async () => {
+    await expect(collectionWorklistRepo.worklist(rival)).resolves.toMatchObject({
+      items: [],
+      total: 0,
+      scanTruncated: false,
+    });
+    await expect(collectionWorklistRepo.recovery(rival)).resolves.toEqual({
+      recoveredMtd: '0',
+      openCases: 0,
+      remainingDebt: '0',
+      agencyPlaced: 0,
+    });
+    await expect(collectionPlacementRepo.queue(rival)).resolves.toMatchObject({ items: [], total: 0 });
+    await expect(collectionPlacementRepo.latestForCarrier(rival, '5104821')).resolves.toBeNull();
+  });
+
+  it('an empty id list never reaches Postgres, even for the default tenant', async () => {
+    const octane = ctxOf();
+    await expect(collectionActivityRepo.lastContactByCase(octane, [])).resolves.toEqual(new Map());
+    await expect(collectionPlanRepo.openPromisesByCase(octane, [])).resolves.toEqual(new Map());
+    await expect(collectionPlanRepo.planProgressByCase(octane, [])).resolves.toEqual(new Map());
+    await expect(collectionWorklistRepo.deskInfoByCase(octane, [])).resolves.toEqual(new Map());
   });
 });
 

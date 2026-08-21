@@ -7,6 +7,7 @@ import { VerificationInbox } from './inbox/VerificationInbox';
 import { isUnread } from './inbox/inboxModel';
 import { VerificationMain } from './main/VerificationMain';
 import { useVerificationInbox } from './verificationData';
+import { VerificationNotifications } from './verificationNotify';
 import { MytrionWatch } from './watch/MytrionWatch';
 import './verification.css';
 import './verificationModal.css';
@@ -157,7 +158,16 @@ export default function VerificationMytrion() {
   const tabs = tabsFor(pendingCase, () => setPendingCase(null), openCase, inboxUnread);
 
   return (
-    <ModuleShell
+    <>
+      {/*
+        ONE socket for the desk, at the module root.
+        `ModuleShell` unmounts inactive tabs, so the Inbox tab's own subscription reached nobody while
+        the agent was on a case or the queue — a new application arrived and nothing on screen moved.
+        It also owns the arrival popup (top right); the rail badge below reads the same SWR key, so
+        `inbox.reload` here is what keeps the count and the notice in step.
+      */}
+      <VerificationNotifications onOpenCase={openCase} onEvent={() => void inbox.reload()} />
+      <ModuleShell
       id="verification"
       kicker="Decisioning"
       heroLead="Verification "
@@ -170,6 +180,7 @@ export default function VerificationMytrion() {
       renderMain={({ open, launchers }) => (
         <VerificationMain open={open} launchers={launchers} onOpenCase={openCase} />
       )}
-    />
+      />
+    </>
   );
 }

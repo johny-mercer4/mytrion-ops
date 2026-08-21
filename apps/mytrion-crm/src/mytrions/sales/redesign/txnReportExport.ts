@@ -5,6 +5,7 @@
 import { deliverExport, deliverVendorDownload } from '@/lib/deliverExport';
 import { CARD_MASK_DIGITS } from './autoLive';
 import { ensureTxnPdfLibs } from './txnExportLibs';
+import { emitKpiActivity } from './kpiTelemetry';
 import {
   ensureTxnInvoices,
   groupTransactions,
@@ -315,6 +316,18 @@ export async function downloadTxnReport(
 
   const carrierId = withInv.carrierId || 'carrier';
   const filenameBase = `transactions_${safeFilePart(carrierId)}_${safeFilePart(withInv.from)}_${safeFilePart(withInv.to)}`;
+  const reportCompleted = (): void => {
+    emitKpiActivity('report.export_completed', {
+      entityType: 'report',
+      entityId: 'transactions',
+      outcome: 'success',
+      metadata: {
+        format:
+          opts.format === 'excel' ? 'xlsx' : opts.format === 'text' ? 'txt' : opts.format,
+        rowCount: list.length,
+      },
+    });
+  };
 
   if (opts.format === 'pdf') {
     await ensureTxnPdfLibs();
@@ -351,6 +364,7 @@ export async function downloadTxnReport(
         },
       }),
     );
+    reportCompleted();
     return;
   }
 
@@ -360,6 +374,7 @@ export async function downloadTxnReport(
       `${filenameBase}.xlsx`,
       efsColumns(opts).map((c) => c.w),
     );
+    reportCompleted();
     return;
   }
 
@@ -371,6 +386,7 @@ export async function downloadTxnReport(
     };
     const csv = aoa.map((r) => r.map(esc).join(',')).join('\r\n');
     await deliverExport(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' }), `${filenameBase}.csv`);
+    reportCompleted();
     return;
   }
 
@@ -420,4 +436,5 @@ export async function downloadTxnReport(
     out.push(row.map((c) => String(c ?? '')).join('  '));
   });
   await deliverExport(new Blob([out.join('\n')], { type: 'text/plain;charset=utf-8' }), `${filenameBase}.txt`);
+  reportCompleted();
 }

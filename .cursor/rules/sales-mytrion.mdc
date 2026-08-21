@@ -1,0 +1,16 @@
+---
+description: When Sales schema, routes, nav, tabs, parking, or API caps change, update the Sales skill in the same PR
+globs: src/lib/mytrions.ts,apps/mytrion-crm/src/access/mytrions.config.ts,apps/mytrion-crm/src/mytrions/sales/**/*,apps/mytrion-crm/src/api/dataCenter.ts,apps/mytrion-crm/src/api/inbox.ts,apps/mytrion-crm/src/api/callHub.ts,apps/mytrion-crm/src/api/salesKpi.ts,apps/mytrion-crm/src/api/desk.ts,apps/mytrion-crm/src/api/touchpoints.ts,apps/mytrion-crm/src/api/verificationFlow.ts,apps/mytrion-crm/src/api/carrierUsers.ts,src/routes/v1/dataCenter.routes.ts,src/routes/v1/inboxMessages.routes.ts,src/routes/v1/callHub.routes.ts,src/routes/v1/salesKpi.routes.ts,src/routes/v1/desk.routes.ts,src/routes/v1/retention.routes.ts,src/routes/v1/verificationApplications.routes.ts,src/routes/v1/verificationWriteback.routes.ts,src/routes/v1/rejectionReports.routes.ts,src/routes/v1/salesInvoices.routes.ts,src/routes/v1/salesCardReports.routes.ts,src/routes/v1/salesBootstrap.routes.ts,src/modules/touchpoints/catalog/**/*,src/integrations/salesDataCenter.ts
+alwaysApply: false
+---
+
+# Sales skill stays in sync
+
+You are on Sales paths. Product facts an agent cannot infer live in
+`.claude/skills/sales-mytrion/SKILL.md` (mirrored to `.cursor/skills/` and `.agents/skills/`).
+
+If this change touches **nav, parking, tabs, routes, caps, or which store a write hits**, update
+that skill in the **same PR** (all three mirrors). Read the skill before editing Sales UI or APIs.
+
+Do not invent CS / Billing workspace skills. Do not write Verification Mytrion. Do not restyle
+`MytrionShell` sidebar/header.

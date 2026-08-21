@@ -71,6 +71,12 @@
   border-color: var(--intent-success-bd);
   background: var(--intent-success-bg);
 }
+/* Warning is the SALES side of this vocabulary — "the desk has asked you for documents" is neither a
+   refusal nor a decision. Declared beside its siblings so the three tones stay one rule set. */
+[data-mytrion='verification'] .va-banner[data-tone='warning'] {
+  border-color: var(--intent-warning-bd);
+  background: var(--intent-warning-bg);
+}
 [data-mytrion='verification'] .va-banner-glyph {
   display: grid;
   place-items: center;
@@ -87,6 +93,10 @@
 [data-mytrion='verification'] .va-banner[data-tone='success'] .va-banner-glyph {
   background: var(--intent-success-bg);
   color: var(--success);
+}
+[data-mytrion='verification'] .va-banner[data-tone='warning'] .va-banner-glyph {
+  background: var(--intent-warning-bg);
+  color: var(--warning);
 }
 [data-mytrion='verification'] .va-banner-text {
   min-width: 0;
@@ -105,12 +115,35 @@
 [data-mytrion='verification'] .va-banner[data-tone='success'] .va-banner-title {
   color: var(--success);
 }
+[data-mytrion='verification'] .va-banner[data-tone='warning'] .va-banner-title {
+  color: var(--warning);
+}
 [data-mytrion='verification'] .va-banner-body {
   margin: 0;
   font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--text-secondary);
   text-wrap: pretty;
+}
+/* The sources a screening run could not reach, one per line.
+   A real <ul> rather than sentences joined with a separator: the count is the point ("both lists were
+   down" vs "one was"), and a list states it without the reviewer parsing punctuation. Marker inside
+   the padding it already has, so a wrapped line stays aligned under its own text and not under the
+   bullet. */
+[data-mytrion='verification'] .va-banner-list {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+[data-mytrion='verification'] .va-banner-list strong {
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
 }
 
 /* ── Queue head + filters ─────────────────────────────────────────────────── */

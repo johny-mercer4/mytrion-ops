@@ -21,6 +21,7 @@ import {
   dropboxStorage,
   dropboxVerificationStorage,
   dropboxHrStorage,
+  dropboxRecruitStorage,
 } from './dropboxStorage.js';
 import { s3Storage } from './s3Storage.js';
 
@@ -39,6 +40,7 @@ export type CommsStorageProvider = 's3' | 'dropbox';
 export type MaintenanceStorageProvider = 's3' | 'dropbox_maintenance';
 export type VerificationStorageProvider = 's3' | 'dropbox_verification';
 export type HrStorageProvider = 's3' | 'dropbox_hr';
+export type RecruitStorageProvider = 's3' | 'dropbox_recruit';
 /**
  * What `file_assets.storage_provider` may hold.
  *
@@ -50,7 +52,8 @@ export type StorageProvider =
   | CommsStorageProvider
   | MaintenanceStorageProvider
   | VerificationStorageProvider
-  | HrStorageProvider;
+  | HrStorageProvider
+  | RecruitStorageProvider;
 
 let override: ObjectStorage | null = null;
 
@@ -60,6 +63,7 @@ const ADAPTERS: Record<StorageProvider, ObjectStorage> = {
   dropbox_maintenance: dropboxMaintenanceStorage,
   dropbox_verification: dropboxVerificationStorage,
   dropbox_hr: dropboxHrStorage,
+  dropbox_recruit: dropboxRecruitStorage,
 };
 
 /**
@@ -125,6 +129,14 @@ export function fileStorageProvider(): CommsStorageProvider {
  */
 export function hrStorageProvider(): HrStorageProvider {
   return env.HR_STORAGE_PROVIDER;
+}
+
+/**
+ * Where a NEW candidate resume goes. Its own Recruit folder, never the HR or comms roots — so a
+ * change to another domain's storage env can never redirect resumes.
+ */
+export function recruitStorageProvider(): RecruitStorageProvider {
+  return env.RECRUIT_STORAGE_PROVIDER;
 }
 
 export function setStorageForTests(storage: ObjectStorage | null): void {

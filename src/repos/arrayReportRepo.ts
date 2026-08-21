@@ -2,14 +2,16 @@
  * Array tradeline snapshots — one row per (carrier_id, report_period).
  *
  * 9k+ rows. Every list is limit+offset with a hard cap; there is no path that dumps the table.
- * Sort is report_period DESC, updated_at DESC, id DESC so an offset page cannot skip or
- * duplicate when many filings share a period. Facets are distinct values for the filter bar
+ * Sort is newest period first, then updated_at DESC, id DESC so an offset page cannot skip or
+ * duplicate when many filings share a period. `report_period` is a human string that does not
+ * sort — see repos/arrayPeriod.ts — so the ordering runs on the derived key, never the column. Facets are distinct values for the filter bar
  * (a handful of periods / Metro 2 codes / agencies), not another page of rows.
  */
 import { and, desc, eq, ilike, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arrayReports, type ArrayReport } from '../db/schema/collection.js';
 import type { TenantContext } from '../types/tenantContext.js';
+import { reportPeriodSortKey } from './arrayPeriod.js';
 import { canReadCollectionSnapshot } from './collectionAccess.js';
 import { firstOrUndefined, normalizePagination } from './util.js';
 
@@ -167,7 +169,7 @@ export function buildArrayListQuery(filter: ArrayReportListFilter) {
     .select()
     .from(arrayReports)
     .where(where)
-    .orderBy(desc(arrayReports.reportPeriod), desc(arrayReports.updatedAt), desc(arrayReports.id))
+    .orderBy(desc(reportPeriodSortKey), desc(arrayReports.updatedAt), desc(arrayReports.id))
     .limit(limit)
     .offset(offset);
 }
@@ -214,10 +216,12 @@ export const arrayReportRepo = {
   async facets(ctx: TenantContext): Promise<ArrayReportFacets> {
     if (!canReadCollectionSnapshot(ctx)) return { periods: [], accountStatuses: [], agencies: [] };
     const [periods, statuses, agencies] = await Promise.all([
+      // The sort key has to be SELECTed as well as ordered on: SELECT DISTINCT can only order by
+      // expressions that appear in the select list.
       db
-        .selectDistinct({ v: arrayReports.reportPeriod })
+        .selectDistinct({ v: arrayReports.reportPeriod, k: reportPeriodSortKey })
         .from(arrayReports)
-        .orderBy(desc(arrayReports.reportPeriod)),
+        .orderBy(desc(reportPeriodSortKey)),
       db
         .selectDistinct({ v: arrayReports.accountStatus })
         .from(arrayReports)

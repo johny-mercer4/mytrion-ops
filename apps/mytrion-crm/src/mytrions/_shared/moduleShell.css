@@ -54,8 +54,23 @@
   --ms-r-pill: var(--radius-full);
   --ms-tone-fallback: var(--accent);
 
-  height: 100%;
-  overflow: auto;
+  /* MIN-height, not height, and not a scroller.
+
+     `min-height: 100%` fills the viewport when a page is SHORT — without it the shell stops at the
+     content and `html`'s own background (#E0E4F0 in light) shows through as a grey slab below the
+     case. `height: 100%` instead would cap the box at the viewport, which is the other half of the
+     bug: content taller than that got clipped.
+
+     NOT a scroller.
+     `.center` in the app shell is the one `overflow-y: auto` region (FOUNDATIONS' "one scroller"
+     rule). `.ms-root` used to carry `height: 100%; overflow: auto` on top of it, which produced
+     THREE competing scroll surfaces on a long page: this box scrolled internally, `.center` could
+     not grow past it, and the document picked up the remainder. Measured on the Verification case
+     detail at 900px tall: `.ms-root` scrollHeight 1285 in an 836px box, `.center` stuck at 836,
+     and the document scrolling 159px — so the last 256px of the case was unreachable and the page
+     ended in a void below the content. Height now comes from the content, and the scroll from
+     `.center`. */
+  min-height: 100%;
   color: var(--text-primary);
 }
 

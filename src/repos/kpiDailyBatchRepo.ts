@@ -23,6 +23,7 @@ export const kpiDailyBatchRepo = {
     timezone: string,
     workers: KpiWorkerDailyValues[],
     sourceWatermarks: Record<string, string>,
+    calculationVersion = 1,
   ): Promise<number> {
     if (workers.length === 0) return 0;
     return db.transaction(async (tx) => {
@@ -33,6 +34,7 @@ export const kpiDailyBatchRepo = {
           workerId: worker.workerId,
           reportingDate,
           timezone,
+          calculationVersion,
           sourceWatermarks,
         })))
         .onConflictDoUpdate({

@@ -13,6 +13,11 @@ import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
+  APPLICATION_DOCUMENTS_UPLOADED,
+  APPLICATION_UPDATED,
+  publishVerificationApplicationEvent,
+} from '../../modules/verification/caseNotify.js';
+import {
   applicationService,
   type IntakePatch,
 } from '../../modules/verificationFlow/applicationService.js';
@@ -166,8 +171,9 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       request.ctx = await buildCallerContext(request, {});
       const ctx = requireSales(request);
       const { id } = idParams.parse(request.params);
-      const detail = await applicationService.get(ctx, id);
-      const c = detail.case;
+      // The lean read, not `get`: the prefill needs the case's own contact keys and a principal
+      // count, and `get` would run the whole gate refresh — including a possible write — first.
+      const { case: c, principalCount } = await applicationService.prefillInputs(ctx, id);
       try {
         const match = await findBrokerSnapshot({
           phones: [c.phone, (c as { cell?: string | null }).cell],
@@ -186,7 +192,7 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
                   businessAddress: c.businessAddress,
                   residentialAddress: c.residentialAddress,
                   trucksCount: c.trucksCount,
-                  principalCount: detail.principals.length,
+                  principalCount,
                 },
                 match,
               )
@@ -244,12 +250,27 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
     const body = patchBody.parse(request.body ?? {});
     // The global empty-JSON-body parser accepts `{}`; an empty patch is a no-op read, not an error.
     const detail = await applicationService.patch(ctx, id, body as IntakePatch);
-    await auditFromContext(ctx, {
+    /**
+     * NOT awaited, and this is the one route where that matters.
+     *
+     * This is the handler behind the applicant-type click, the slowest interaction on the intake
+     * form, and the audit write is a whole round trip to Oregon that the agent waits out AFTER the
+     * work is done. `auditFromContext` already swallows every failure of its own, so awaiting it
+     * cannot make the response more correct — only later. The other verification routes await
+     * because they are not on a latency-visible path.
+     */
+    void auditFromContext(ctx, {
       action: 'verification.application.updated',
       status: 'ok',
       resourceType: 'verification_case',
       resourceId: id,
       detail: { fields: Object.keys(body), complete: detail.intake.complete },
+    });
+    publishVerificationApplicationEvent({
+      caseId: id,
+      type: APPLICATION_UPDATED,
+      verificationOwnerZohoUserId: detail.case.verificationOwnerZohoUserId,
+      title: 'Application updated',
     });
     return detail;
   });
@@ -292,7 +313,9 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
     async (request, reply) => {
       const ctx = requireSales(request);
       const { id } = idParams.parse(request.params);
-      await applicationService.assertSalesMayEdit(ctx, id);
+      // ATTACH, not edit: adding a file is allowed for as long as the case is open, which is what
+      // makes Pending Documents work. Changing the form after submit is not — see the two gates.
+      await applicationService.assertSalesMayAttach(ctx, id);
 
       const files: Array<{ name: string; mime: string; buffer: Buffer }> = [];
       const fields: Record<string, string> = {};
@@ -348,6 +371,12 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       // Uploading a bank statement can complete the application, so the caller gets the refreshed
       // gate rather than having to re-fetch to learn the card turned green.
       const detail = await applicationService.get(ctx, id);
+      publishVerificationApplicationEvent({
+        caseId: id,
+        type: APPLICATION_DOCUMENTS_UPLOADED,
+        verificationOwnerZohoUserId: detail.case.verificationOwnerZohoUserId,
+        title: 'Application documents updated',
+      });
       return reply.code(201).send(detail);
     },
   );
@@ -370,7 +399,14 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       const { id, documentId } = docParams.parse(request.params);
       await applicationService.assertSalesMayEdit(ctx, id);
       await documentService.remove(ctx, id, documentId);
-      return applicationService.get(ctx, id);
+      const detail = await applicationService.get(ctx, id);
+      publishVerificationApplicationEvent({
+        caseId: id,
+        type: APPLICATION_UPDATED,
+        verificationOwnerZohoUserId: detail.case.verificationOwnerZohoUserId,
+        title: 'Application document removed',
+      });
+      return detail;
     },
   );
 

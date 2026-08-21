@@ -3,7 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
-  process.env.FF_KPI_COLLECTION_ENABLED = '1';
+  process.env.FF_KPI_COLLECTION_ENABLED = '0';
+  process.env.FF_MYTRION_USAGE_COLLECTION_ENABLED = '1';
   process.env.MYTRION_TASK_WEBHOOK_KEY_ID = 'automation-1';
   process.env.MYTRION_TASK_WEBHOOK_SECRET = 'webhook-secret';
 });
@@ -87,6 +88,10 @@ vi.mock('../../src/repos/kpiAdminRepo.js', async (importOriginal) => {
 vi.mock('../../src/repos/kpiTelemetryRepo.js', () => ({
   KPI_ACTIVITY_EVENT_NAMES: [
     'navigation.tab_open',
+    'navigation.view_open',
+    'ui.record_open',
+    'ui.search_completed',
+    'report.export_completed',
     'crm.lead_open',
     'crm.deal_open',
     'crm.call_click',
@@ -281,6 +286,21 @@ describe('Sales KPI route boundaries', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(telemetry.recordActivity).not.toHaveBeenCalled();
+  });
+
+  it('keeps other Sales profiles outside the v1 usage population', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/kpi/presence',
+      headers: bearer(await token('Sales Agent Plus')),
+      payload: {
+        sessionId: 'session-profile-excluded',
+        events: [{ clientEventId: 'event-profile-excluded', state: 'active' }],
+      },
+    });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({ accepted: 0, eligible: false });
+    expect(telemetry.recordPresence).not.toHaveBeenCalled();
   });
 });
 

@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { ringcentral } from '../../integrations/ringcentral.js';
 import { NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { collectionActivityRepo } from '../../repos/collectionActivityRepo.js';
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import type { MytrionCallSourceType } from '../../db/schema/index.js';
@@ -72,13 +73,16 @@ const callEventSchema = z.object({
   leadId: z.string().max(64).optional(),
   dealId: z.string().max(64).optional(),
   retentionCaseId: z.string().max(64).optional(),
+  collectionCaseId: z.string().max(80).optional(),
 });
 
 type CallEventBody = z.infer<typeof callEventSchema>;
 
-/** Map a finished outbound call's dial context to its source record. Lead first, then deal, then
- *  retention case (a retention call to a deal carries both — the case is the more specific owner). */
+/** Map a finished outbound call's dial context to its source record. Most specific owner first:
+ *  a collection or retention call to a deal carries both ids, and the case is what the agent was
+ *  actually working. Then lead, then deal. */
 function callSource(body: CallEventBody): { sourceType: MytrionCallSourceType; sourceId: string } | null {
+  if (body.collectionCaseId) return { sourceType: 'collection_case', sourceId: body.collectionCaseId };
   if (body.retentionCaseId) return { sourceType: 'retention_case', sourceId: body.retentionCaseId };
   if (body.leadId) return { sourceType: 'lead', sourceId: body.leadId };
   if (body.dealId) return { sourceType: 'deal', sourceId: body.dealId };
@@ -179,6 +183,40 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         request.log.warn({ err }, 'mytrion_calls insert failed (call event still audited)');
+      }
+
+      /**
+       * A collection call writes itself onto the case timeline.
+       *
+       * Everywhere else in the desk a contact entry is typed by hand, and it still can be — the Log
+       * contact dialog is how a call placed on a mobile, or one that needs an outcome more precise
+       * than "answered", gets recorded. But a collector who dials from the desk should not then have
+       * to tell the desk they dialled. This entry carries the two things only the softphone knows:
+       * how long it lasted, and whether anyone picked up.
+       *
+       * `reached` vs `no_answer` is the honest limit of what a call event can tell us — voicemail,
+       * wrong number and refusal are judgements, and they stay with the human.
+       */
+      if (body.collectionCaseId) {
+        try {
+          const minutes = Math.floor(durationMs / 60_000);
+          const seconds = Math.round((durationMs % 60_000) / 1000);
+          const spoken = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+          await collectionActivityRepo.insert({
+            caseId: body.collectionCaseId,
+            kind: 'contact',
+            channel: 'call',
+            outcome: pickedUp ? 'reached' : 'no_answer',
+            summary: pickedUp
+              ? `Called ${body.to ?? 'the debtor'} — answered, ${spoken}`
+              : `Called ${body.to ?? 'the debtor'} — no answer`,
+            meta: { via: 'ringcentral', sessionId: body.sessionId, durationMs },
+            ...(ctx.userId !== undefined ? { actorUserId: ctx.userId } : {}),
+            ...(ctx.userName !== undefined ? { actorName: ctx.userName } : {}),
+          });
+        } catch (err) {
+          request.log.warn({ err }, 'collection activity insert failed (call still logged)');
+        }
       }
 
       // Increment the dialed Lead/Deal's "calls from Mytrion" counter (read current + 1). This field

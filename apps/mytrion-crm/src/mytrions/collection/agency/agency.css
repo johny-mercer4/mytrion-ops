@@ -1,0 +1,152 @@
+/* =====================================================
+   Placement queue. Scoped under [data-mytrion='collection'].
+
+   A hand-written <table> rather than ds/DataTable: the readiness column pairs a graphic with a
+   count, and the row's identity cell is a button that navigates — neither fits DataTable's
+   column contract cleanly, and the queue is one screen rather than a pattern.
+   Every dimension is Table.module.css's own, so it sits beside the case list unchanged.
+   ===================================================== */
+
+[data-mytrion='collection'] .ar-queue {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  background: var(--ui-table-row-bg);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+}
+[data-mytrion='collection'] .ar-queue-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+[data-mytrion='collection'] .ar-queue th[scope='col'] {
+  padding: var(--space-2_5) var(--space-4);
+  background: var(--ui-table-head-bg);
+  color: var(--ui-table-head-fg);
+  border-bottom: 1px solid var(--ui-table-rule);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  text-align: start;
+  white-space: nowrap;
+}
+[data-mytrion='collection'] .ar-queue td,
+[data-mytrion='collection'] .ar-queue th[scope='row'] {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--ui-table-rule);
+  vertical-align: middle;
+  text-align: start;
+  font-weight: var(--fw-body);
+}
+[data-mytrion='collection'] .ar-queue tbody tr:last-child > * {
+  border-bottom: 0;
+}
+/* The rows that can actually go on the file, lifted off the ones that cannot. */
+[data-mytrion='collection'] .ar-queue tbody tr[data-ready] {
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+[data-mytrion='collection'] .ar-queue .ar-end {
+  text-align: end;
+}
+
+/* Column widths. `Blocking` gets the most room — it is the sentence that decides the next move. */
+[data-mytrion='collection'] .ar-queue th:nth-child(1) { width: 24%; }
+[data-mytrion='collection'] .ar-queue th:nth-child(2) { width: 11%; }
+[data-mytrion='collection'] .ar-queue th:nth-child(3) { width: 9%; }
+[data-mytrion='collection'] .ar-queue th:nth-child(4) { width: 11%; }
+[data-mytrion='collection'] .ar-queue th:nth-child(5) { width: 14%; }
+[data-mytrion='collection'] .ar-queue th:nth-child(6) { width: 23%; }
+[data-mytrion='collection'] .ar-queue th:nth-child(7) { width: 8%; }
+
+[data-mytrion='collection'] .ar-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+[data-mytrion='collection'] .ar-name .cc-ident-label {
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+[data-mytrion='collection'] .ar-name:hover .cc-ident-label {
+  color: var(--accent);
+}
+[data-mytrion='collection'] .ar-name:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  border-radius: var(--radius-sm);
+}
+
+[data-mytrion='collection'] .ar-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+[data-mytrion='collection'] .ar-dots-count {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='collection'] .ar-blocking {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+[data-mytrion='collection'] .ar-blocking[data-tone='danger'] {
+  color: var(--danger);
+}
+
+[data-mytrion='collection'] .ar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='collection'] .ar-legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+}
+
+/* Below the density line, DROP two columns rather than pin a scroll width.
+   Age and the readiness dots are context; the state and the blocking sentence are the decision,
+   and the dots' information survives in the words beside them. A 880px scroller would have been
+   a fixed track that no phone fits — see styles/breakpoints.test.ts. */
+@media (width < 900px) {
+  [data-mytrion='collection'] .ar-queue :is(th, td):nth-child(3),
+  [data-mytrion='collection'] .ar-queue :is(th, td):nth-child(4) {
+    display: none;
+  }
+  [data-mytrion='collection'] .ar-queue th:nth-child(1) { width: 34%; }
+  [data-mytrion='collection'] .ar-queue th:nth-child(2) { width: 14%; }
+  [data-mytrion='collection'] .ar-queue th:nth-child(5) { width: 18%; }
+  [data-mytrion='collection'] .ar-queue th:nth-child(6) { width: 24%; }
+  [data-mytrion='collection'] .ar-queue th:nth-child(7) { width: 10%; }
+}

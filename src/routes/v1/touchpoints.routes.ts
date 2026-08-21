@@ -22,6 +22,7 @@ import {
   TOUCHPOINT_READ_TTL_MS,
 } from '../../lib/touchpointReadCache.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { redactAuditParams } from '../../modules/audit/redactParams.js';
 import {
   dispatchPreparedTouchpoint,
   listTouchpointsFor,
@@ -114,16 +115,6 @@ function dispatchMutation(
     mutationReplays.delete(oldest);
   }
   return result;
-}
-
-/** Mask full card numbers (PAN) in audited params — keep the last 4 for traceability. */
-function redactParams(params: unknown): unknown {
-  if (typeof params !== 'object' || params === null) return params;
-  const out: Record<string, unknown> = { ...(params as Record<string, unknown>) };
-  if (typeof out.cardNumber === 'string' && out.cardNumber.length > 4) {
-    out.cardNumber = `•••• ${out.cardNumber.slice(-4)}`;
-  }
-  return out;
 }
 
 async function auditInvocation(
@@ -292,7 +283,7 @@ export async function touchpointsRoutes(app: FastifyInstance): Promise<void> {
         invalidateTouchpointReadCache(ctx.tenantId);
       }
       if (shouldAudit) {
-        await auditInvocation(ctx, key, 'ok', { ...baseDetail, params });
+        await auditInvocation(ctx, key, 'ok', { ...baseDetail, params: redactAuditParams(params) });
       }
       return {
         key: result.key,
@@ -316,7 +307,7 @@ export async function touchpointsRoutes(app: FastifyInstance): Promise<void> {
       } else if (shouldAudit) {
         await auditInvocation(ctx, key, 'error', {
           ...baseDetail,
-          params: redactParams(params),
+          params: redactAuditParams(params),
           error: err instanceof AppError ? err.message : 'internal error',
         });
       }

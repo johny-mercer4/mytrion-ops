@@ -1,0 +1,18 @@
+---
+description: When Admin tabs, gates, caps, parked flags, or which store a write hits change, update the Admin skill in the same PR
+globs: src/lib/mytrions.ts,src/lib/department.ts,src/modules/access/**/*,src/modules/auth/workerRole.ts,src/modules/dataLoader/**/*,src/repos/mytrionProfileDefaultsRepo.ts,src/repos/mytrionRoleDefaultsRepo.ts,src/repos/workerMytrionAccessRepo.ts,src/repos/mytrionPermissionSetsRepo.ts,src/repos/bulkChangeLogRepo.ts,src/routes/v1/admin.routes.ts,src/routes/v1/mytrionAccess.routes.ts,src/routes/v1/mytrionPermissionSets.routes.ts,src/routes/v1/auditLogs.routes.ts,src/routes/v1/dataLoader.routes.ts,src/routes/v1/kpiAdmin.routes.ts,src/routes/v1/commsAdmin.routes.ts,src/routes/v1/mytrionSchema.routes.ts,src/routes/v1/cmpSchema.routes.ts,src/routes/v1/dwhSchema.routes.ts,src/routes/v1/verificationSchema.routes.ts,src/routes/v1/clientNews.routes.ts,src/routes/v1/knowledge.routes.ts,src/routes/v1/scope.routes.ts,src/routes/v1/horizonTelegramLink.routes.ts,src/routes/v1/carrierMiniApp.routes.ts,src/routes/v1/tasks.routes.ts,apps/mytrion-crm/src/mytrions/admin/**/*,apps/mytrion-crm/src/api/mytrionAccess.ts,apps/mytrion-crm/src/api/permissionSets.ts,apps/mytrion-crm/src/api/audit.ts,apps/mytrion-crm/src/api/automationLogs.ts,apps/mytrion-crm/src/api/adminDeals.ts,apps/mytrion-crm/src/api/adminKpi.ts,apps/mytrion-crm/src/api/dataLoader.ts,apps/mytrion-crm/src/api/commsAdmin.ts,apps/mytrion-crm/src/api/carrierUsers.ts,apps/mytrion-crm/src/api/clientNews.ts,apps/mytrion-crm/src/api/jobs.ts,apps/mytrion-crm/src/api/knowledge.ts,apps/mytrion-crm/src/api/mytrionSchema.ts,apps/mytrion-crm/src/api/cmpSchema.ts,apps/mytrion-crm/src/api/dwhSchema.ts,apps/mytrion-crm/src/api/verificationSchema.ts,apps/mytrion-crm/src/api/octaneTelegramUsers.ts,apps/mytrion-crm/src/access/mytrions.config.ts,apps/mytrion-crm/src/access/tabRegistry.ts,tests/unit/admin*.ts,tests/unit/mytrion-access*.ts
+alwaysApply: false
+---
+
+# Admin skill stays in sync
+
+You are on Admin paths. Product facts an agent cannot infer live in
+`.claude/skills/admin-mytrion/SKILL.md` (mirrored to `.cursor/skills/` and `.agents/skills/`).
+
+If this change touches **tabs, gates (`allDepartmentAccess` vs role), caps, parked flags, or
+which store a write hits**, update that skill in the **same PR** (all three mirrors). Read
+the skill before editing Admin UI or APIs.
+
+`department: 'admin'` is not a `department_access` tag. Escalation routing, carrier
+invitations, and logs export are live and mounted. Kitchen (`/kitchen`) and header View-as
+are not Admin tabs. Do not restyle `MytrionShell` sidebar/header.

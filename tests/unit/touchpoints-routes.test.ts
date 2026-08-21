@@ -157,9 +157,14 @@ describe('POST /v1/touchpoints/:key', () => {
         action: 'touchpoint.cards.status',
         status: 'ok',
         resourceType: 'touchpoint',
-        detail: expect.objectContaining({ riskClass: 'destructive', carrierId: '9' }),
+        detail: expect.objectContaining({
+          riskClass: 'destructive',
+          carrierId: '9',
+          params: expect.objectContaining({ cardNumber: '•••• 1234' }),
+        }),
       }),
     );
+    expect(JSON.stringify(vi.mocked(auditFromContext).mock.calls)).not.toContain('7083051234');
   });
 
   it('404s an unknown key and 400s invalid params', async () => {

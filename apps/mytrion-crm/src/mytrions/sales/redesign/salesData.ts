@@ -152,7 +152,14 @@ export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
  * `comingSoon: true` in NAV_GROUPS parks a tab for EVERYONE and stays the right tool for that. This
  * is the narrower case: parked by default, open to admins.
  */
-const ADMIN_ONLY_SECTIONS = new Set<string>(['verification']);
+const ADMIN_ONLY_SECTIONS = new Set<string>([
+  // Verification opened to Sales agents 2026-08-18: the gate said "still settling", and the
+  // Sales-side surface it was protecting them from is now built — roster with stage/ask/decision,
+  // the two-type applicant picker, three statement slots, the identity documents and the warehouse
+  // prefill. Keeping the set (and this note) rather than deleting the mechanism: the next tab that
+  // needs parking-for-agents-but-open-to-admins wants exactly this, and `comingSoon` in NAV_GROUPS
+  // is still the tool for parking one for EVERYONE.
+]);
 
 /**
  * Is this section parked for THIS user?
@@ -192,7 +199,7 @@ export const NAV_DESC = {
   tasks: 'Drag cards across columns to update status. Open any card for full detail and history.',
   tickets: 'Tickets and escalations you raised. Coming soon — file them from Create; the team works them in Zoho Desk.',
   retention: 'Quiet clients that need winning back — your cases and the shared open pool.',
-  verification: 'Newest applications first. Review live compliance stages and answer Verification requests.',
+  verification: 'Complete intake, attach files, and watch underwriting.',
   records: 'Everything about your pipeline — clients, leads, deals, rejections and money codes.',
   create: 'Raise a ticket, escalate a request, or add a lead.',
   auto: 'Handle Customer Service, Billing and Verification yourself — no ticket needed.',

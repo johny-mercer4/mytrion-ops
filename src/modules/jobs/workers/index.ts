@@ -17,6 +17,8 @@ import {
   kpiSalesHourlySyncJob,
   kpiSalesMonthCloseJob,
   kpiSalesReconcileJob,
+  mytrionUsageDailyJob,
+  mytrionUsageRetentionJob,
   salesBocaRequestJob,
   platformKnowledgeSyncJob,
   billingLedgerSnapshotJob,
@@ -45,6 +47,10 @@ import {
   runKpiMonthClose,
   runKpiReconcile,
 } from './salesKpi.js';
+import {
+  runMytrionUsageDaily,
+  runMytrionUsageRetention,
+} from './mytrionUsage.js';
 import { runBocaRequest } from '../../browserAutomation/bocaRequest.js';
 import { runPlatformKnowledgeSync } from './platformKnowledgeSync.js';
 import { runMytrionWatchScoring } from './mytrionWatchScoring.js';
@@ -120,6 +126,16 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     const job = jobs[0];
     if (!job) return undefined;
     return runKpiMonthClose(kpiSalesMonthCloseJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(mytrionUsageDailyJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runMytrionUsageDaily(mytrionUsageDailyJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(mytrionUsageRetentionJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runMytrionUsageRetention(mytrionUsageRetentionJob.schema.parse(job.data ?? {}));
   });
   await boss.work(salesBocaRequestJob.name, { batchSize: 1 }, async (jobs) => {
     const job = jobs[0];
