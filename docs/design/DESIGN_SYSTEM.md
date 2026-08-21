@@ -1,3 +1,9 @@
+> **How to read this file (2026-08-21).**
+> **Incumbent** = shipped CSS in `apps/mytrion-crm/src/styles/` + `apps/mytrion-crm/src/ds/`.
+> **Target / exploratory** = sections labeled Phase 2 / Redesigner — not implemented unless HEAD already shipped them.
+> Do not treat AUDIT "Phase 2 target untouched" as current blockers without re-checking the CSS.
+> `feature/Redesigner` was a 2026-08 session branch, not the incumbent source of truth.
+
 # Mytrion Horizon — Design System
 
 **Self-contained.** Everything needed to design or build with Horizon is in this file. No repo access required.

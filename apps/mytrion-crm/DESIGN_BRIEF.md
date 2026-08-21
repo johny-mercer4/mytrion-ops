@@ -38,7 +38,7 @@ efficiency, and low eye-fatigue over long sessions. This is a professional tool,
 premium means *Linear / Stripe Dashboard / Vercel / Height*, **not** flashy or playful.
 
 **Brand:** Fuel/energy. Logo `FuelMark` = orange gradient gem + sparkle. Wordmark "MYTRION AI"
-(Rajdhani, uppercase). The AI assistant uses a "Gem" tri-color gradient mark. Each Mytrion has its own
+(Space Grotesk, uppercase). The AI assistant uses a "Gem" tri-color gradient mark. Each Mytrion has its own
 accent hue (see token tables). Tone: confident, precise, quietly high-end.
 
 **Tech stack (respect these — they shape *how* you implement):**
@@ -56,7 +56,19 @@ accent hue (see token tables). Tone: confident, precise, quietly high-end.
 
 **Repo location:** `/Users/user/Desktop/mytrion-ops/apps/mytrion-crm`.
 **Verify commands (run from that dir):** `corepack pnpm build` (tsc + vite build) and `corepack pnpm dev`
-(Vite on **:5173**). All data is **mock** (`data.ts` / `dashboardData.ts` per module) — do not wire APIs.
+(Vite on **:5173**). Record data is **live API-backed**, not mock:
+
+| Mytrion | Data |
+| --- | --- |
+| Sales · Billing · Customer Service · Finance · Admin | live `/v1` + servercrm / Desk / DWH |
+| Collection | live `/v1/collection/*` (finder-owned Postgres snapshots) |
+| Verification | live 10-phase rail · `/v1/verification/flow/*` + `/v1/verification/applications*` |
+| Manager | live EFS Console · `/v1/manager/efs/*` |
+| Analyst | live `/v1/analytics/*` (warehouse snapshot) |
+
+Leftover `data.ts` files are view-model types / static catalogs (CTA labels), not seed rows. Do not
+reintroduce fixtures. Fonts: `src/styles/theme.css` + `docs/design/` — **Space Grotesk** (`--face-ui`)
+and **Space Mono** (`--face-mono`). Not Rajdhani / Inter.
 
 </context>
 
@@ -134,13 +146,14 @@ accents too). *Note: base `--accent` `#38bef0` vs sales `#38bdf8` are near-dupes
 
 ### Type / radii / shadow / motion
 
-- **Fonts** (currently loaded from **Google Fonts CDN** in `index.html` — **self-host them** to satisfy
-  CSP/offline; the bundle ships into a Zoho widget): **Rajdhani** 500/600/700 (`--font-head`, headings +
-  numerals), **Inter** 400/500/600/700/800 (`--font-body`), **JetBrains Mono** 400/500 (`--font-mono`, IDs).
+- **Fonts** (self-hosted in `src/styles/fonts.css`; tokens in `src/styles/theme.css`; rules in
+  `docs/design/DESIGN_SYSTEM.md`): **Space Grotesk** (`--face-ui` → `--font-body` / `--font-head` /
+  `--font-figure`) and **Space Mono** (`--face-mono` → `--font-mono` / `--font-num` for ids, codes,
+  timestamps). Not Rajdhani, Inter, or JetBrains Mono.
 - **Radii:** `--radius-sm 5px`, `-md 9px`, `-lg 13px`, `-full 999px` (note `rounded-xl` is aliased to
   `-lg`; a stray `rounded-4xl`/32px exists on badges — normalize).
 - **Shadows:** `--shadow-sm/md/lg` tokenized (dark uses deep `rgba(0,0,0,…)`, light uses soft blue-gray).
-- Base body: Inter, `14px`, line-height `1.5`.
+- Base body: Space Grotesk, `14px`, line-height `1.5`.
 
 ### What is NOT tokenized yet (you must add these — highest-value work)
 
@@ -238,7 +251,8 @@ From an interaction audit (fix these as part of the pass; P0 = most impactful):
   two icon systems). Standardize.
 - **P2 — Hardcoded values:** `#fff` inline in BrandMark/Gem/Screen; `--danger` fallback `#d64545`
   matches neither theme; radii sprawl (`7px`, `10px`, `18px`, `rounded-4xl`); tint opacity drift.
-- **P2 — Stale references** to a non-existent `docs/design-mockups/design-tokens.md` in comments.
+- **P2 — Stale references** — point comments at `src/styles/theme.css` / `docs/design/`, not
+  `docs/design-mockups/design-tokens.md` (deleted).
 - **P2 — Fonts via CDN** — self-host.
 - **Config drift:** `mytrions.config.ts` marks collection/retention/verification as `status:'new'` though
   they're fully built; ensure "New/Ported" badges in the picker reflect reality.
@@ -250,8 +264,8 @@ From an interaction audit (fix these as part of the pass; P0 = most impactful):
 <constraints>
 
 **Do:**
-- Keep it a **polish pass** — preserve all routes, auth gate, RBAC, `useUserContext`, chat wiring, and the
-  mock-data contracts (`data.ts`, `dashboardData.ts`). Change presentation, not behavior.
+- Keep it a **polish pass** — preserve all routes, auth gate, RBAC, `useUserContext`, chat wiring, and
+  the live API contracts. Change presentation, not behavior. Do not reintroduce seed fixtures.
 - Work **token-first**: extend `theme.css` + the `@theme inline` bridge in `global.css`, then refactor
   components to consume tokens. Output developer-ready values (hex, CSS custom properties, and a
   JSON/TS token map if helpful).
@@ -283,8 +297,8 @@ Work in phases. After each phase, `corepack pnpm build` must stay green and both
    the missing scales — **type** (size + line-height + weight, e.g. `2xs…3xl`), **spacing** (4px rhythm),
    **motion** (`--dur-fast/base/slow`, `--ease-*`), **z-index**, **breakpoints**, and **status-tint**
    (good/warn/bad/info/neutral bg + fg). Reconcile radii; fix the `--danger` fallback and near-dupe
-   accents; self-host fonts. Document the full token set at the top of `theme.css` (kill the stale
-   `design-mockups` references).
+  accents; fonts are already self-hosted (Space Grotesk / Space Mono). Document the full token set
+  at the top of `theme.css` and `docs/design/` — do not revive `design-mockups`.
 2. **Primitive library.** Bring `components/ui/*` and `components/mytrion/*` to a gold standard, and add
    the missing primitives: **input, select, dropdown/menu, tooltip, tabs, card, table, toggle/switch,
    checkbox, skeleton, and ONE shared toast**. Every primitive ships all states (hover/focus-visible/

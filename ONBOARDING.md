@@ -1,9 +1,10 @@
 # ONBOARDING.md — Mytrion Horizon / Octane Assistant
 
-> System brief for a new engineer or agent joining this repo. Written 2026-07-26 against
-> `feature/MytrionOrganize` @ `49b1d8a`. Companion docs: `CLAUDE.md` (hard rules — read first),
+> System brief for a new engineer or agent joining this repo. Updated 2026-08-21 against
+> `feature/Cleanser` (from `origin/build`). Companion docs: `CLAUDE.md` (hard rules — read first),
 > `AGENTS.md` (same rules for non-Claude agents), `ORCHESTRATION.md` (multi-agent delegation),
-> `WORKING_NOTES.md` (383 KB session log — the real changelog), `apps/mytrion-crm/ARCHITECTURE.md`.
+> `apps/mytrion-crm/ARCHITECTURE.md`. `WORKING_NOTES.md` is local scratch only; do not load
+> wholesale; prefer this file + product skills + `docs/design`.
 
 ---
 
@@ -98,14 +99,14 @@ remove it or adopt it, don't leave it.) Data flows through:
 | **Billing** | production, daily use | Data Center · Transactions · Debtors · Prepay · Returns · BillingCopilot |
 | **Customer Service** | production | Home · Applications · Retention Cases · Open Pool · CITI Folder · Citifuel · Analytics · Data Center · Inbox · Service Center |
 | **Admin** | production, 16 tabs | Horizon AI · Knowledge Base · Train · Knowledge Browser · User Mgmt · Carrier Users/Invitations · Client News · Deals · Audit Log · Jobs · CMP/DWH/Verification schema browsers · Octane Scope |
-| **Finance** | built, gated | redesign/ Home · Transactions · Clients · Dashboard — **but flagged coming-soon** |
-| **Collection** | built, static fixtures | Cases · Array Report · Inbox (`collection/data.ts` is seed data) |
-| **Verification** | built, static fixtures | Applications · Inbox · Configuration |
-| **Manager** | new | Referrals card only |
+| **Finance** | built, enterable | redesign/ Home · Transactions · Clients · Dashboard |
+| **Collection** | live API (`/v1/collection/*`) | Home · Collection Cases · Placement queue · Array Reports (finder-owned Postgres snapshots; not `collection/data.ts`) |
+| **Verification** | live 10-phase rail | Main · Inbox · Verification Case · Mytrion Watch · Existing clients. Desk: `/v1/verification/flow/*`. Sales intake: `/v1/verification/applications*`. *Soon:* Tickets |
+| **Manager** | new | EFS Console + department cards (Referrals moved to Marketing) |
 | **Analyst** | new | single Overview dashboard |
 
-⚠️ `COMING_SOON_MYTRION_IDS = ['collection','finance','verification','analyst']` — shown on the
-picker, filtered out of `resolveAccessibleMytrions`, **not enterable** even though the code exists.
+⚠️ `COMING_SOON_MYTRION_IDS` is **empty** (`apps/mytrion-crm/src/access/mytrions.config.ts`) — every
+Mytrion is enterable. Unfinished surfaces use per-tab `<ComingSoon />`, not a workspace-level gate.
 
 **Two visual languages coexist:** Admin/CS/Billing use Horizon tokens + CSS Modules; Sales and
 Finance redesigns style with inline `style={s('css-string')}` helpers. `DESIGN_BRIEF.md` exists to
@@ -355,8 +356,9 @@ From `CLAUDE.md` — restated because each one has a real failure behind it:
    commit the `.ts`, the generated `.sql`, and `meta/_journal.json` together. `push` is exactly how
    `carrier_invitations` and `registered_mini_app_companies` ended up with schema files and no CREATE
    migration; `0022_bent_invisible_woman` is the idempotent repair.
-10. **UI/UX work → consult the `modern-web-guidance` skill first.** Horizon aesthetic: glassmorphism,
-    per-Mytrion accent hue, one loader per surface (never double loaders).
+10. **UI/UX work → consult the `modern-web-guidance` skill first.** Glass is for chrome only
+    (header, rail, modals, drawers); data surfaces are flat and opaque. One loader per surface
+    (never double loaders).
 
 ---
 
@@ -368,8 +370,8 @@ use), the light-mode contrast pass, and the workspace picker rebuild.
 
 **Known open items:**
 
-- Four Mytrions are built but gated coming-soon (collection, finance, verification, analyst);
-  Collection and Verification are still on static fixtures.
+- Workspace-level coming-soon is empty. Collection is live `/v1/collection/*`. Verification is
+  the live 10-phase rail + `/v1/verification/flow/*` (not static fixtures).
 - Sales/Finance use inline-style helpers while everything else uses Horizon tokens.
 - Duplicated Finance module (`finance/redesign/` live, old `finance/*.tsx` not deleted).
 - Three pagination paradigms in Admin — a product decision, not a cleanup.
@@ -387,7 +389,7 @@ use), the light-mode contrast pass, and the workspace picker rebuild.
 | What vendors are registered? | `src/integrations/core/registerAll.ts` |
 | What jobs exist? | `src/modules/jobs/catalog.ts` |
 | What touchpoints exist? | `apps/mytrion-crm/src/api/touchpointTypes.ts` |
-| Why is it like this? | `WORKING_NOTES.md` — search by date |
+| Why is it like this? | ONBOARDING + product skills + `docs/design` (not `WORKING_NOTES.md`) |
 
 ---
 

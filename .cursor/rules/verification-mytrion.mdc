@@ -1,0 +1,18 @@
+---
+description: When Verification tabs, gates, phases, routes, vendors, or write stores change, update the Verification skill in the same PR
+globs: src/modules/verificationFlow/**/*,src/modules/verification/killSwitches.ts,src/routes/v1/verification*.ts,apps/mytrion-crm/src/mytrions/verification/**/*,apps/mytrion-crm/src/api/verificationFlow.ts,apps/mytrion-crm/src/api/verificationDeskWrites.ts,apps/mytrion-crm/src/mytrions/sales/redesign/tabs/VerificationTab.tsx,apps/mytrion-crm/src/mytrions/sales/redesign/salesVerificationQueue.ts,src/lib/mytrions.ts,apps/mytrion-crm/src/access/mytrions.config.ts
+alwaysApply: false
+---
+
+# Verification skill stays in sync
+
+You are on Verification paths. Product facts an agent cannot infer live in
+`.claude/skills/verification-mytrion/SKILL.md` (canonical; mirrored to `.cursor/skills/`).
+
+If this change touches **tabs, gates, phases, routes, vendors, or which store a write hits**,
+update that skill in the **same PR** (both mirrors, byte-identical). Read the skill before
+editing Verification UI or APIs. SOP vs code disagreements stay stated — do not silently pick.
+
+Do not invent CS / Billing workspace skills. Do not restyle `MytrionShell` sidebar/header.
+Do not call credit_platform / loans from the CRM. The live desk is `/verification/flow/*`,
+not the Sales verification tab and not the quarantined Decision Desk.

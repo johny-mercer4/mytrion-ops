@@ -1,11 +1,16 @@
+> **Status:** SHIPPED (checked 2026-08-21). Live Analyst dashboards + `/v1/analytics/*`.
+> This file stays at repo root as the SQL/cache contract (`softQuery`, `public.zoho_deals`,
+> filtered cache). Optional items under "Sensible next work" are not current blockers.
+> `WORKING_NOTES.md` is local scratch — do not load it wholesale.
+
 # Analytics / Analyst dashboards — Claude Code handoff
 
 **Date:** 2026-07-28  
 **Audience:** Claude Code (or any agent continuing this work)  
 **Repo:** `mytrion-ops` (Octane Assistant + `apps/mytrion-crm`)  
-**Product surface:** `/m/analyst` (Analyst Mytrion) — category dashboards (Sales, CS, Finance, Billing, Transactions, Reports)
+**Product surface:** `/main/analystmytrion` (Analyst Mytrion) — category dashboards (Sales, CS, Finance, Billing, Transactions, Reports)
 
-Read this before changing analytics SQL, cache, or Sales dashboard UI. Project hard rules still live in `CLAUDE.md`. Session scraps: `WORKING_NOTES.md` (§ 2026-07-28).
+Read this before changing analytics SQL, cache, or Sales dashboard UI. Project hard rules still live in `CLAUDE.md`.
 
 ---
 

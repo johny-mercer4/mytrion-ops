@@ -51,7 +51,7 @@ When asked to "run the bot / gateway", the answer is almost always `agent-gatewa
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
 10. **Karpathy guidelines apply to every change** — think before coding, simplicity first, surgical
     changes, goal-driven execution. Stated in full below and in `.claude/skills/karpathy-guidelines/`.
-11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders). Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin (`.claude/skills/<name>-mytrion/`).
+11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Glass is for chrome only (header, rail, modals, drawers); data surfaces are flat and opaque. Workspace product skills: Collection, Sales, Customer Service, Billing, HR, Admin, Verification — canonical tree `.claude/skills/<name>-mytrion/` (see `.claude/skills/README.md`). Mirror `*-mytrion` to `.cursor/skills`. `.agents/` is gitignored; `git add -f` if that mirror is present. Do **not** keep four copies of `impeccable` in sync; `.github/skills` is GitHub-agent / impeccable only.
 
 ## Karpathy guidelines — apply to every change
 
@@ -149,10 +149,10 @@ committing `app/` when opening a PR to `build` / `main`.
   directly. Fetch the latest `build`, branch off it, set up locally, and work there — merging back
   into `build` goes through review, not a direct push.
 - **Branch naming:** `feature/***`, `fix/***`, `hotfix/***`.
-- Agents may `git push` the current `feature/*` / `fix/*` / `hotfix/*` branch (that is how PRs to `build` get opened). Never push `build` or `main` — not `origin build`/`origin main`, not `HEAD:build`/`HEAD:main`, not `--force` to those refs. Merge to `build`/`main` is PRs only.
+- Agents may `git push` the current `feature/*` / `fix/*` / `hotfix/*` branch (that is how PRs to `build` get opened). Never push `build` or `main` — not `origin build`/`origin main`, not `HEAD:build`/`HEAD:main`, not `--force` to those refs. Merge to `build`/`main` is PRs only. Codex: push the feature branch only; never push `build`/`main`.
 - One-time: `git config core.hooksPath .githooks` so the pre-push hook is active.
 
 ## When in doubt
 
 - Look at how Mytrion's `mytrion-engine` handles it (in another repo) — for pattern reference only.
-- Ask in `WORKING_NOTES.md` before making architectural changes.
+- `WORKING_NOTES.md` is local scratch only; do not load wholesale; prefer ONBOARDING + product skills + docs/design.

@@ -1,6 +1,12 @@
+> **How to read this file (2026-08-21).**
+> **Incumbent** = shipped CSS in `apps/mytrion-crm/src/styles/` + `apps/mytrion-crm/src/ds/`.
+> **Target / exploratory** = sections labeled Phase 2 / Redesigner — not implemented unless HEAD already shipped them.
+> Do not treat AUDIT "Phase 2 target untouched" as current blockers without re-checking the CSS.
+> `feature/Redesigner` was a 2026-08 session branch, not the incumbent source of truth.
+
 # Mytrion Horizon — Foundations (Phase 2)
 
-**Date:** 2026-08-09 · **Branch:** `feature/Redesigner` · **Status:** token layer complete, verified in-browser.
+**Date:** 2026-08-09 · **Session branch (historical):** `feature/Redesigner` · **Status:** describes the token layer; incumbent is shipped CSS.
 **Scope:** tokens only. No components — those are Phase 3.
 
 Phase 1 audit: [AUDIT.md](./AUDIT.md).
