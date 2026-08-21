@@ -13,6 +13,8 @@ import {
   fetchCurrentUser,
   type ZohoWorker,
 } from '../../integrations/zohoOAuth.js';
+import { workerZohoTokenRepo } from '../../repos/workerZohoTokenRepo.js';
+import { logger } from '../../lib/logger.js';
 import type { AuthTokens } from './authService.js';
 import {
   signAccessToken,
@@ -69,8 +71,17 @@ export const zohoAuthService = {
   /** Step 2: validate state, exchange the code, read the worker, and mint the session. */
   async completeLogin(code: string, state: string): Promise<WorkerSession> {
     await verifyOauthState(state);
-    const accessToken = await exchangeCodeForToken(code);
-    const worker = await fetchCurrentUser(accessToken);
+    const { accessToken: zohoAccessToken, refreshToken: zohoRefreshToken } =
+      await exchangeCodeForToken(code);
+    const worker = await fetchCurrentUser(zohoAccessToken);
+
+    // Persist the refresh token so CRM writes can be attributed to this agent.
+    if (zohoRefreshToken && !worker.zohoUserId.startsWith('zuid:')) {
+      workerZohoTokenRepo
+        .upsert(DEFAULT_TENANT_ID, worker.zohoUserId, zohoRefreshToken)
+        .catch((err) => logger.warn({ err, zohoUserId: worker.zohoUserId }, 'failed to persist zoho refresh token'));
+    }
+
     const claims = claimsFor(worker);
     const [access, refresh] = await Promise.all([
       signAccessToken(claims),
