@@ -29,11 +29,18 @@
 /*
  * The page-header control row: search, a stage picker, a view toggle, Refresh.
  *
- * ONE HEIGHT FOR ALL OF THEM. `ds` sizes each primitive from its own font and padding rather than
- * a shared control height, so four components asked for at the same nominal size came out at four
- * different heights — 32 / 26 / 38 / 32 in the Cases header, which read as a row of mismatched
- * boxes. Every control in this bar is unlabelled (the Select uses `labelHidden`), so pinning the
- * row height is safe here in a way it would not be over a bar with labels above the fields.
+ * ONE HEIGHT FOR ALL OF THEM — 32px, which is `md` for Input, Select and Button. Get there by
+ * asking each primitive for the right SIZE, not by overriding its height here.
+ *
+ * This used to force `height` on every direct child, and that was worse than doing nothing: the
+ * Select was still `size="sm"`, so its wrapper obediently became 32px while the element that
+ * actually paints the border stayed 26px. The row measured correct and looked wrong, which is the
+ * hardest kind of CSS bug to find. Sizing the component right leaves a future mistake visible
+ * instead of silently absorbing it.
+ *
+ * Tabs is the one genuine exception: its steps are 28px and 36px, so neither matches the row.
+ * The pill group is a FRAME around its tabs, so stretch the frame and let the 28px tabs sit
+ * inside it rather than shrinking the row to fit them.
  */
 [data-mytrion='collection'] .cc-head-actions {
   --cc-control-h: 2rem;
@@ -42,12 +49,8 @@
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-[data-mytrion='collection'] .cc-head-actions > * {
-  height: var(--cc-control-h);
-}
-/* The pill group frames its tabs; tighten the frame rather than shrinking the tabs inside it. */
 [data-mytrion='collection'] .cc-head-actions [role='tablist'] {
-  height: 100%;
+  height: var(--cc-control-h);
   padding: 1px;
 }
 [data-mytrion='collection'] .cc-search {

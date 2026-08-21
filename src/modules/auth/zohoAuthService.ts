@@ -13,6 +13,8 @@ import {
   fetchCurrentUser,
   type ZohoWorker,
 } from '../../integrations/zohoOAuth.js';
+import { invalidateUserToken } from '../../integrations/zohoUserAuth.js';
+import { workerZohoTokenRepo } from '../../repos/workerZohoTokenRepo.js';
 import type { AuthTokens } from './authService.js';
 import {
   signAccessToken,
@@ -69,8 +71,20 @@ export const zohoAuthService = {
   /** Step 2: validate state, exchange the code, read the worker, and mint the session. */
   async completeLogin(code: string, state: string): Promise<WorkerSession> {
     await verifyOauthState(state);
-    const accessToken = await exchangeCodeForToken(code);
-    const worker = await fetchCurrentUser(accessToken);
+    const { accessToken: zohoAccessToken, refreshToken: zohoRefreshToken } =
+      await exchangeCodeForToken(code);
+    const worker = await fetchCurrentUser(zohoAccessToken);
+
+    // Persist the refresh token so CRM writes can be attributed to this agent.
+    if (zohoRefreshToken && !worker.zohoUserId.startsWith('zuid:')) {
+      // Await this before issuing the Mytrion session. A fire-and-forget write let the first CRM
+      // action race the token row and silently use the shared service account.
+      await workerZohoTokenRepo.upsert(DEFAULT_TENANT_ID, worker.zohoUserId, zohoRefreshToken);
+      // A reconnect may replace a read-only grant while this process still holds its old access
+      // token. Force the next write to refresh from the newly persisted grant.
+      invalidateUserToken(DEFAULT_TENANT_ID, worker.zohoUserId);
+    }
+
     const claims = claimsFor(worker);
     const [access, refresh] = await Promise.all([
       signAccessToken(claims),

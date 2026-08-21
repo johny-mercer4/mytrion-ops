@@ -5,6 +5,7 @@ import { featureFlagEnvShape } from './envFeatureFlags.js';
 import { inboundSecretsEnvShape } from './envInboundSecrets.js';
 import { operationalEnvShape } from './envOperational.js';
 import { storageEnvShape } from './envStorage.js';
+import { DEFAULT_ZOHO_OAUTH_SCOPES } from './zohoOAuthScopes.js';
 
 /** Parse a '0'/'1'/'true'/'false' style flag into a boolean, with a default. */
 const flag = (def: '0' | '1') =>
@@ -17,9 +18,7 @@ const EnvSchema = z.object({
   // --- Server ---
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   // Wildcard-by-suffix origins (comma-separated hostnames). Zoho serves each widget from a
   // per-instance subdomain of zappsusercontent.com, so we allow that whole suffix.
@@ -370,8 +369,9 @@ const EnvSchema = z.object({
   // at all — `GET /users` is gated by the caller's CRM profile permission on the Users module, which
   // Administrators hold and Sales-type profiles usually do not, so login 403'd for everyone but admins.
   // The fallback identifies the human at the accounts level and reads their profile/role with the
-  // service token instead. Adding a scope means existing workers re-consent once on next sign-in.
-  ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ,AaaServer.profile.READ'),
+  // service token instead. These least-privilege scopes cover every Sales CRM mutation exposed by
+  // Mytrion. Adding a scope means existing workers re-consent once on next sign-in.
+  ZOHO_OAUTH_SCOPES: z.string().default(DEFAULT_ZOHO_OAUTH_SCOPES),
 
   // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
   // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).
@@ -388,7 +388,9 @@ const EnvSchema = z.object({
   // the two vars below) to point every executeZohoFunction call at the CRM sandbox with
   // zero code change.
   ZOHO_FUNCTIONS_ENV: z.enum(['production', 'sandbox']).default('production'),
-  ZOHO_FUNCTIONS_SANDBOX_BASE_URL: z.string().default('https://sandbox.zohoapis.com/crm/v2/functions'),
+  ZOHO_FUNCTIONS_SANDBOX_BASE_URL: z
+    .string()
+    .default('https://sandbox.zohoapis.com/crm/v2/functions'),
   // Refresh token minted against the SANDBOX org (falls back to the prod CRM token).
   ZOHO_CRM_SANDBOX_REFRESH_TOKEN: z.string().default(''),
 

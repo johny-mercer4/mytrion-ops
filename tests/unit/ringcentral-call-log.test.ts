@@ -31,12 +31,23 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/zohoCrmRecords.js')>();
   const stub = Object.create(mod.zohoCrmRecords) as typeof mod.zohoCrmRecords;
   stub.getRecord = getRecordMock as unknown as typeof stub.getRecord;
-  stub.updateRecord = updateRecordMock as unknown as typeof stub.updateRecord;
   return { ...mod, zohoCrmRecords: stub };
+});
+vi.mock('../../src/integrations/zohoUserAuth.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoUserAuth.js')>();
+  return {
+    ...mod,
+    updateRecordAsUser: updateRecordMock,
+    zohoActorId: (ctx: { userId: string }) => ctx.userId.replace(/^zoho:/, ''),
+  };
 });
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
-  return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
+  return {
+    ...mod,
+    audit: vi.fn(async () => undefined),
+    auditFromContext: vi.fn(async () => undefined),
+  };
 });
 
 import { buildApp } from '../../src/app.js';
@@ -108,7 +119,10 @@ describe('mytrion_calls persistence', () => {
 
   it('marks a zero-duration, unconnected call as missed', async () => {
     await post({ ...ENDED_LEAD, durationMs: 0, result: 'No Answer' });
-    expect(createMock.mock.calls[0]?.[1]).toMatchObject({ callStatus: 'missed', durationSeconds: 0 });
+    expect(createMock.mock.calls[0]?.[1]).toMatchObject({
+      callStatus: 'missed',
+      durationSeconds: 0,
+    });
   });
 
   it('source precedence: retention_case wins over a co-present dealId', async () => {
@@ -129,13 +143,25 @@ describe('mytrion_calls persistence', () => {
   it('bumps the dialed Lead’s Mytrion_Call_Attempts counter', async () => {
     await post(ENDED_LEAD);
     expect(getRecordMock).toHaveBeenCalledWith('Leads', 'LEAD1');
-    expect(updateRecordMock).toHaveBeenCalledWith('Leads', 'LEAD1', { Mytrion_Call_Attempts: 3 });
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '6227679000031473048',
+      'Leads',
+      'LEAD1',
+      { Mytrion_Call_Attempts: 3 },
+    );
   });
 
   it('counts a first-ever call as attempt 1 when the field is unset', async () => {
     getRecordMock.mockResolvedValueOnce({});
     await post(ENDED_LEAD);
-    expect(updateRecordMock).toHaveBeenCalledWith('Leads', 'LEAD1', { Mytrion_Call_Attempts: 1 });
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '6227679000031473048',
+      'Leads',
+      'LEAD1',
+      { Mytrion_Call_Attempts: 1 },
+    );
   });
 
   // A retention call carries both retentionCaseId and dealId: the row logs under the case (more
@@ -143,7 +169,13 @@ describe('mytrion_calls persistence', () => {
   it('a retention call counts against the Deal even though it logs as retention_case', async () => {
     await post({ ...ENDED_LEAD, leadId: undefined, dealId: 'DEAL1', retentionCaseId: 'CASE1' });
     expect(createMock.mock.calls[0]?.[1]).toMatchObject({ sourceType: 'retention_case' });
-    expect(updateRecordMock).toHaveBeenCalledWith('Deals', 'DEAL1', { Mytrion_Call_Attempts: 3 });
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '6227679000031473048',
+      'Deals',
+      'DEAL1',
+      { Mytrion_Call_Attempts: 3 },
+    );
   });
 
   it('a Zoho counter failure never fails the call-event POST (row still logged)', async () => {

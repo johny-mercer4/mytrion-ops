@@ -20,14 +20,13 @@ function accountsBase(): string {
 /**
  * The Zoho authorization URL to send the worker's browser to.
  *
- * We deliberately DON'T send `prompt=consent` or `access_type=offline`:
- *  - We only need a one-shot access token to read the worker's CurrentUser; we never persist Zoho's
- *    refresh token (our own JWT is the session), so offline access is pointless.
- *  - `prompt=consent` forces Zoho's consent + org-picker screen on EVERY login. Omitting it means
- *    Zoho shows it only on the first authorization and then reuses the worker's choice, so returning
- *    workers go straight through. (The org-picker itself only ever appears for accounts that belong
- *    to more than one CRM org; single-org employees never see it — there is no authorize-URL param
- *    to pre-select an org or suppress the picker; it's Zoho-side consent UI.)
+ * `access_type=offline` requests a refresh token so we can make CRM API calls on behalf of the
+ * real agent (proper "Created By" attribution) without re-prompting on each request. Zoho only
+ * normally issues a refresh token only for a new grant. `prompt=consent` is intentionally present
+ * during the attribution rollout: every existing worker must replace the old read-only grant with
+ * one carrying the CRM write scopes and an encrypted refresh token. Removing it before every active
+ * worker has re-consented would leave a silent split between correctly and incorrectly attributed
+ * agents.
  */
 export function buildAuthorizeUrl(state: string): string {
   const params = new URLSearchParams({
@@ -35,6 +34,11 @@ export function buildAuthorizeUrl(state: string): string {
     client_id: env.ZOHO_SERVER_CLIENT_ID,
     scope: env.ZOHO_OAUTH_SCOPES,
     redirect_uri: env.ZOHO_OAUTH_REDIRECT_URI,
+    access_type: 'offline',
+    // prompt=consent forces Zoho to re-issue a refresh token on every login, even for
+    // existing grants. Without this, Zoho reuses the prior grant silently and returns no
+    // refresh_token, so worker_zoho_tokens never gets populated for pre-existing accounts.
+    prompt: 'consent',
     state,
   });
   return `${accountsBase()}/oauth/v2/auth?${params.toString()}`;
@@ -42,11 +46,18 @@ export function buildAuthorizeUrl(state: string): string {
 
 interface ZohoTokenResponse {
   access_token?: string;
+  refresh_token?: string;
   error?: string;
 }
 
-/** Exchange the one-time authorization code for an access token (confidential-client, server-side). */
-export async function exchangeCodeForToken(code: string): Promise<string> {
+export interface ZohoTokenPair {
+  accessToken: string;
+  /** Present when `access_type=offline` was requested and Zoho issued a new grant. */
+  refreshToken: string | null;
+}
+
+/** Exchange the one-time authorization code for an access + refresh token pair (confidential-client, server-side). */
+export async function exchangeCodeForToken(code: string): Promise<ZohoTokenPair> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: env.ZOHO_SERVER_CLIENT_ID,
@@ -65,7 +76,7 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
     // 'invalid_code' is the common expired/replayed-code case → surface as an auth failure.
     throw new AuthError(`Zoho code exchange failed${json.error ? `: ${json.error}` : ''}`);
   }
-  return json.access_token;
+  return { accessToken: json.access_token, refreshToken: json.refresh_token ?? null };
 }
 
 export interface ZohoWorker {
@@ -171,7 +182,9 @@ async function fetchWorkerViaAccountsIdentity(accessToken: string): Promise<Zoho
   const info = (await res.json().catch(() => ({}))) as ZohoAccountsUserInfo;
   const email = (info.Email ?? '').trim().toLowerCase();
   if (!email) {
-    throw new AuthError('Zoho returned no email for the signed-in user, so their CRM record cannot be matched');
+    throw new AuthError(
+      'Zoho returned no email for the signed-in user, so their CRM record cannot be matched',
+    );
   }
 
   // Imported lazily: the service-token client pulls in the whole Zoho wrapper, and the sign-in path
@@ -192,9 +205,12 @@ async function fetchWorkerViaAccountsIdentity(accessToken: string): Promise<Zoho
      * portal shows its "no Mytrion is assigned" screen — signed in, but granted nothing yet.
      */
     if (info.ZUID == null) {
-      throw new AuthError('Zoho returned neither a CRM user nor a ZUID, so this sign-in cannot be identified');
+      throw new AuthError(
+        'Zoho returned neither a CRM user nor a ZUID, so this sign-in cannot be identified',
+      );
     }
-    const displayName = info.Display_Name ?? [info.First_Name, info.Last_Name].filter(Boolean).join(' ');
+    const displayName =
+      info.Display_Name ?? [info.First_Name, info.Last_Name].filter(Boolean).join(' ');
     logger.warn(
       { email, zuid: info.ZUID },
       'zoho oauth: signed-in Zoho account is not an active CRM user — session granted with no profile/role; grant access in Mytrion Admin',

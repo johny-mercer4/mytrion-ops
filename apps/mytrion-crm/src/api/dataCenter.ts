@@ -59,6 +59,7 @@ export interface NoteItem {
   content: string;
   createdAt: string;
   owner: string;
+  canManage: boolean;
 }
 
 type RecordKind = 'leads' | 'deals';
@@ -97,6 +98,34 @@ export async function createRecordNote(
   return (await requestMultipart(`/data-center/${kind}/${id}/notes${qs}`, form, {
     headers: DC_HEADERS,
   })) as { id: string; hasAttachment: boolean };
+}
+
+/** Update an existing Zoho Note. The server re-checks note ownership/manager authority. */
+export async function updateRecordNote(
+  kind: RecordKind,
+  recordId: string,
+  noteId: string,
+  input: { title: string; content: string },
+  zohoUserId?: string,
+): Promise<{ id: string; updatedFields: string[] }> {
+  return (await request('PATCH', `/data-center/${kind}/${recordId}/notes/${noteId}`, {
+    query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
+    headers: DC_HEADERS,
+    body: input,
+  })) as { id: string; updatedFields: string[] };
+}
+
+/** Delete an existing Zoho Note. The server re-checks note ownership/manager authority. */
+export async function deleteRecordNote(
+  kind: RecordKind,
+  recordId: string,
+  noteId: string,
+  zohoUserId?: string,
+): Promise<{ id: string; deleted: true }> {
+  return (await request('DELETE', `/data-center/${kind}/${recordId}/notes/${noteId}`, {
+    query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
+    headers: DC_HEADERS,
+  })) as { id: string; deleted: true };
 }
 
 /** Per-day applications-filled counts (by CRM `Application_Date` — "application filled") for the

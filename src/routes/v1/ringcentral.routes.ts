@@ -18,6 +18,7 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { collectionActivityRepo } from '../../repos/collectionActivityRepo.js';
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { updateRecordAsUser, zohoActorId } from '../../integrations/zohoUserAuth.js';
 import type { MytrionCallSourceType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { buildCallerContext } from './callerIdentity.js';
@@ -81,8 +82,11 @@ type CallEventBody = z.infer<typeof callEventSchema>;
 /** Map a finished outbound call's dial context to its source record. Most specific owner first:
  *  a collection or retention call to a deal carries both ids, and the case is what the agent was
  *  actually working. Then lead, then deal. */
-function callSource(body: CallEventBody): { sourceType: MytrionCallSourceType; sourceId: string } | null {
-  if (body.collectionCaseId) return { sourceType: 'collection_case', sourceId: body.collectionCaseId };
+function callSource(
+  body: CallEventBody,
+): { sourceType: MytrionCallSourceType; sourceId: string } | null {
+  if (body.collectionCaseId)
+    return { sourceType: 'collection_case', sourceId: body.collectionCaseId };
   if (body.retentionCaseId) return { sourceType: 'retention_case', sourceId: body.retentionCaseId };
   if (body.leadId) return { sourceType: 'lead', sourceId: body.leadId };
   if (body.dealId) return { sourceType: 'deal', sourceId: body.dealId };
@@ -227,7 +231,9 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
           const rec = await zohoCrmRecords.getRecord(target.module, target.id);
           const cur = rec ? Number(rec.Mytrion_Call_Attempts) : 0;
           const next = (Number.isFinite(cur) ? cur : 0) + 1;
-          await zohoCrmRecords.updateRecord(target.module, target.id, { Mytrion_Call_Attempts: next });
+          await updateRecordAsUser(ctx.tenantId, zohoActorId(ctx), target.module, target.id, {
+            Mytrion_Call_Attempts: next,
+          });
         } catch (err) {
           request.log.warn({ err }, 'Mytrion_Call_Attempts increment failed (call still logged)');
         }

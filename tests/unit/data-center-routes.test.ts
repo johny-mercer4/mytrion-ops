@@ -48,6 +48,47 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   stub.getRecord = vi.fn(async () => ({ id: 'deal-9', Mytrion_Call_Attempts: 2 }));
   return { ...mod, zohoCrmRecords: stub };
 });
+const userWrites = vi.hoisted(() => ({
+  update: vi.fn(
+    async (
+      _tenantId: string,
+      _actorId: string,
+      _module: string,
+      _recordId: string,
+      _data: Record<string, unknown>,
+    ) => '555',
+  ),
+  executeBlueprint: vi.fn(
+    async (
+      _tenantId: string,
+      _actorId: string,
+      _module: string,
+      _recordId: string,
+      _transitionId: string,
+      _data: Record<string, unknown>,
+    ) => undefined,
+  ),
+  attach: vi.fn(async () => 'attachment-1'),
+  patch: vi.fn(async () => 'note-1'),
+  remove: vi.fn(async () => undefined),
+  insertNote: vi.fn(async () => 'note-1'),
+  insertDetailed: vi.fn(),
+}));
+vi.mock('../../src/integrations/zohoUserAuth.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoUserAuth.js')>();
+  return {
+    ...mod,
+    updateRecordAsUser: userWrites.update,
+    executeBlueprintTransitionAsUser: userWrites.executeBlueprint,
+    attachFileAsUser: userWrites.attach,
+    patchRecordAsUser: userWrites.patch,
+    deleteRecordAsUser: userWrites.remove,
+    insertNoteAsUser: userWrites.insertNote,
+    insertRecordAsUserDetailed: userWrites.insertDetailed,
+    zohoActorId: (ctx: { impersonatorUserId?: string; userId: string }) =>
+      String(ctx.impersonatorUserId ?? ctx.userId).replace(/^zoho:/, ''),
+  };
+});
 
 // Same reason: the ended-call event writes a mytrion_calls row, and there is no database in a unit
 // run. The insert is best-effort in the route, but the connection attempt still had to time out.
@@ -135,10 +176,13 @@ const clientsMock = vi.mocked(fetchAgentClients);
 const loyaltyOverridesMock = vi.mocked(loyaltyClientOverrideRepo.list);
 const leadOwnerMock = vi.mocked(fetchLeadOwnerId);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
-const updateRecordMock = vi.mocked(zohoCrmRecords.updateRecord);
+const updateRecordMock = userWrites.update;
+const executeBlueprintMock = userWrites.executeBlueprint;
 
 function blueprintWith(
-  transitions: NonNullable<Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintDetails>>>['transitions'],
+  transitions: NonNullable<
+    Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintDetails>>
+  >['transitions'],
 ): NonNullable<Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintDetails>>> {
   return {
     process: {
@@ -397,7 +441,7 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
   beforeEach(() => {
     leadOwnerMock.mockResolvedValue('42');
     dealOwnerMock.mockResolvedValue('42');
-    updateRecordMock.mockResolvedValue({} as never);
+    updateRecordMock.mockResolvedValue('555');
   });
 
   it('a non-sales worker cannot edit a lead', async () => {
@@ -423,6 +467,8 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     expect(res.statusCode).toBe(200);
     expect(leadOwnerMock).toHaveBeenCalledWith('555');
     expect(updateRecordMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '42',
       'Leads',
       '555',
       expect.objectContaining({ MC: 'MC-1', Phone: '5551234567', DOT: '1234567' }),
@@ -485,6 +531,8 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     });
     expect(res.statusCode).toBe(200);
     expect(updateRecordMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '42',
       'Leads',
       '555',
       expect.objectContaining({ Status: 'Unqualified', Unqualified_Reason: 'No response' }),
@@ -508,12 +556,34 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
   // had coverage before (the class-instance mock made getBlueprintTransitions undefined).
   it('a Blueprint-controlled lead moves Status via the transition, not updateRecord', async () => {
     const blueprintMock = vi.mocked(zohoCrmRecords.getBlueprintDetails);
-    const executeMock = vi.mocked(zohoCrmRecords.executeBlueprintTransition);
+    const executeMock = executeBlueprintMock;
     blueprintMock.mockResolvedValueOnce({
-      process: { id: 'bp-1', name: 'Lead flow', fieldApiName: 'Status', fieldLabel: 'Status', currentValue: 'Third Call' },
+      process: {
+        id: 'bp-1',
+        name: 'Lead flow',
+        fieldApiName: 'Status',
+        fieldLabel: 'Status',
+        currentValue: 'Third Call',
+      },
       transitions: [
-        { id: 'tr-1', name: 'Unqualified', nextValue: 'Unqualified', type: 'manual', criteriaMatched: true, criteriaMessage: '', fields: [] },
-        { id: 'tr-2', name: 'Follow-up', nextValue: 'Follow-up', type: 'manual', criteriaMatched: true, criteriaMessage: '', fields: [] },
+        {
+          id: 'tr-1',
+          name: 'Unqualified',
+          nextValue: 'Unqualified',
+          type: 'manual',
+          criteriaMatched: true,
+          criteriaMessage: '',
+          fields: [],
+        },
+        {
+          id: 'tr-2',
+          name: 'Follow-up',
+          nextValue: 'Follow-up',
+          type: 'manual',
+          criteriaMatched: true,
+          criteriaMessage: '',
+          fields: [],
+        },
       ],
     });
 
@@ -528,6 +598,8 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     expect(res.statusCode).toBe(200);
     // The reason picklist rides along as the transition's data …
     expect(executeMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '42',
       'Leads',
       '555',
       'tr-1',
@@ -535,15 +607,29 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     );
     // … and Status is never pushed through a plain update (Zoho rejects that under a Blueprint).
     for (const call of updateRecordMock.mock.calls) {
-      expect(call[2]).not.toHaveProperty('Status');
+      expect(call[4]).not.toHaveProperty('Status');
     }
   });
 
   it('a Status the Blueprint does not currently allow → 422, naming the allowed moves', async () => {
     vi.mocked(zohoCrmRecords.getBlueprintDetails).mockResolvedValueOnce({
-      process: { id: 'bp-1', name: 'Lead flow', fieldApiName: 'Status', fieldLabel: 'Status', currentValue: 'Third Call' },
+      process: {
+        id: 'bp-1',
+        name: 'Lead flow',
+        fieldApiName: 'Status',
+        fieldLabel: 'Status',
+        currentValue: 'Third Call',
+      },
       transitions: [
-        { id: 'tr-2', name: 'Follow-up', nextValue: 'Follow-up', type: 'manual', criteriaMatched: true, criteriaMessage: '', fields: [] },
+        {
+          id: 'tr-2',
+          name: 'Follow-up',
+          nextValue: 'Follow-up',
+          type: 'manual',
+          criteriaMatched: true,
+          criteriaMessage: '',
+          fields: [],
+        },
       ],
     });
 
@@ -558,7 +644,7 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     expect(res.statusCode).toBe(422);
     expect(res.json().error?.code ?? res.json().code).toBe('BLUEPRINT_TRANSITION_INVALID');
     expect(res.body).toContain('Follow-up');
-    expect(vi.mocked(zohoCrmRecords.executeBlueprintTransition)).not.toHaveBeenCalled();
+    expect(executeBlueprintMock).not.toHaveBeenCalled();
   });
 
   it('fails closed when Blueprint lookup fails instead of attempting a plain Status update', async () => {
@@ -586,9 +672,23 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     expect(updateRecordMock).not.toHaveBeenCalled();
 
     vi.mocked(zohoCrmRecords.getBlueprintDetails).mockResolvedValueOnce({
-      process: { id: 'bp-1', name: 'Lead flow', fieldApiName: 'Status', fieldLabel: 'Status', currentValue: 'Third Call' },
+      process: {
+        id: 'bp-1',
+        name: 'Lead flow',
+        fieldApiName: 'Status',
+        fieldLabel: 'Status',
+        currentValue: 'Third Call',
+      },
       transitions: [
-        { id: 'tr-app', name: 'Application Filled', nextValue: 'Application Filled', type: 'manual', criteriaMatched: true, criteriaMessage: '', fields: [] },
+        {
+          id: 'tr-app',
+          name: 'Application Filled',
+          nextValue: 'Application Filled',
+          type: 'manual',
+          criteriaMatched: true,
+          criteriaMessage: '',
+          fields: [],
+        },
       ],
     });
     const ok = await app.inject({
@@ -598,7 +698,9 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       payload: { Status: 'Application Filled', Application_ID: '872228' },
     });
     expect(ok.statusCode).toBe(200);
-    expect(zohoCrmRecords.executeBlueprintTransition).toHaveBeenCalledWith(
+    expect(executeBlueprintMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '42',
       'Leads',
       '555',
       'tr-app',
@@ -626,20 +728,29 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
   });
 
   it('executes an owned Lead transition by live transition id and audit-logs the move', async () => {
-    vi.mocked(zohoCrmRecords.getBlueprintDetails).mockResolvedValueOnce(blueprintWith([
-      {
-        id: '6227679000162301999',
-        name: 'Unqualified',
-        nextValue: 'Unqualified',
-        type: 'manual',
-        criteriaMatched: true,
-        criteriaMessage: '',
-        fields: [{
-          apiName: 'Unqualified_Reason', label: 'Unqualified reason', dataType: 'picklist',
-          mandatory: true, readOnly: false, value: null, options: [{ label: 'No response', value: 'No response' }],
-        }],
-      },
-    ]));
+    vi.mocked(zohoCrmRecords.getBlueprintDetails).mockResolvedValueOnce(
+      blueprintWith([
+        {
+          id: '6227679000162301999',
+          name: 'Unqualified',
+          nextValue: 'Unqualified',
+          type: 'manual',
+          criteriaMatched: true,
+          criteriaMessage: '',
+          fields: [
+            {
+              apiName: 'Unqualified_Reason',
+              label: 'Unqualified reason',
+              dataType: 'picklist',
+              mandatory: true,
+              readOnly: false,
+              value: null,
+              options: [{ label: 'No response', value: 'No response' }],
+            },
+          ],
+        },
+      ]),
+    );
     const res = await app.inject({
       method: 'POST',
       url: '/v1/data-center/leads/555/blueprint/6227679000162301999',
@@ -647,22 +758,42 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       payload: { data: { Unqualified_Reason: 'No response' } },
     });
     expect(res.statusCode).toBe(200);
-    expect(zohoCrmRecords.executeBlueprintTransition).toHaveBeenCalledWith(
-      'Leads', '555', '6227679000162301999', { Unqualified_Reason: 'No response' },
+    expect(executeBlueprintMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '42',
+      'Leads',
+      '555',
+      '6227679000162301999',
+      { Unqualified_Reason: 'No response' },
     );
-    expect(auditFromContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: 'sales.datacenter.lead_blueprint_transition',
-      resourceId: '555',
-    }));
+    expect(auditFromContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'sales.datacenter.lead_blueprint_transition',
+        resourceId: '555',
+      }),
+    );
   });
 
   it('rejects stale ids, fields not declared by Zoho, and missing required fields', async () => {
     const transition = {
-      id: '6227679000162301999', name: 'Interested', nextValue: 'Interested', type: 'manual',
-      criteriaMatched: true, criteriaMessage: '', fields: [{
-        apiName: 'Call_Outcome', label: 'Call outcome', dataType: 'picklist', mandatory: true,
-        readOnly: false, value: null, options: [{ label: 'Connected', value: 'Connected' }],
-      }],
+      id: '6227679000162301999',
+      name: 'Interested',
+      nextValue: 'Interested',
+      type: 'manual',
+      criteriaMatched: true,
+      criteriaMessage: '',
+      fields: [
+        {
+          apiName: 'Call_Outcome',
+          label: 'Call outcome',
+          dataType: 'picklist',
+          mandatory: true,
+          readOnly: false,
+          value: null,
+          options: [{ label: 'Connected', value: 'Connected' }],
+        },
+      ],
     };
     vi.mocked(zohoCrmRecords.getBlueprintDetails)
       .mockResolvedValueOnce(blueprintWith([transition]))
@@ -670,22 +801,28 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       .mockResolvedValueOnce(blueprintWith([transition]));
     const token = await workerToken('Sales Rep');
     const stale = await app.inject({
-      method: 'POST', url: '/v1/data-center/leads/555/blueprint/6227679000162301888',
-      headers: bearer(token), payload: { data: {} },
+      method: 'POST',
+      url: '/v1/data-center/leads/555/blueprint/6227679000162301888',
+      headers: bearer(token),
+      payload: { data: {} },
     });
     expect(stale.statusCode).toBe(409);
     const forged = await app.inject({
-      method: 'POST', url: '/v1/data-center/leads/555/blueprint/6227679000162301999',
-      headers: bearer(token), payload: { data: { Owner: 'attacker' } },
+      method: 'POST',
+      url: '/v1/data-center/leads/555/blueprint/6227679000162301999',
+      headers: bearer(token),
+      payload: { data: { Owner: 'attacker' } },
     });
     expect(forged.statusCode).toBe(400);
     const missing = await app.inject({
-      method: 'POST', url: '/v1/data-center/leads/555/blueprint/6227679000162301999',
-      headers: bearer(token), payload: { data: {} },
+      method: 'POST',
+      url: '/v1/data-center/leads/555/blueprint/6227679000162301999',
+      headers: bearer(token),
+      payload: { data: {} },
     });
     expect(missing.statusCode).toBe(400);
     expect(missing.body).toContain('Call outcome');
-    expect(zohoCrmRecords.executeBlueprintTransition).not.toHaveBeenCalled();
+    expect(executeBlueprintMock).not.toHaveBeenCalled();
   });
 
   it('a non-numeric record id is rejected (400)', async () => {
@@ -711,6 +848,8 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     });
     expect(res.statusCode).toBe(200);
     expect(updateRecordMock).toHaveBeenCalledWith(
+      DEFAULT_TENANT_ID,
+      '42',
       'Deals',
       '777',
       expect.objectContaining({ Phone: '5559998888' }),
@@ -728,6 +867,75 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     });
     expect(res.statusCode).toBe(403);
     expect(updateRecordMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('data-center notes — edit/delete attribution and scope', () => {
+  beforeEach(() => {
+    leadOwnerMock.mockResolvedValue('42');
+    dealOwnerMock.mockResolvedValue('42');
+    vi.mocked(zohoCrmRecords.getRecord).mockResolvedValue({
+      id: '1001',
+      Parent_Id: { id: '555' },
+      $se_module: 'Leads',
+      Created_By: { id: '42', name: 'CI Test Admin' },
+    });
+  });
+
+  it('edits an owned lead note through the signed-in worker token and audits it', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555/notes/1001',
+      headers: bearer(token),
+      payload: { title: 'Updated', content: 'New body' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(userWrites.patch).toHaveBeenCalledWith(DEFAULT_TENANT_ID, '42', 'Notes', '1001', {
+      Note_Title: 'Updated',
+      Note_Content: 'New body',
+    });
+    expect(auditFromContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'sales.datacenter.note_update', resourceId: '555' }),
+    );
+  });
+
+  it('deletes an owned deal note through the signed-in worker token', async () => {
+    vi.mocked(zohoCrmRecords.getRecord).mockResolvedValueOnce({
+      id: '1001',
+      Parent_Id: { id: '777' },
+      $se_module: 'Deals',
+      Created_By: { id: '42', name: 'CI Test Admin' },
+    });
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/data-center/deals/777/notes/1001',
+      headers: bearer(token),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(userWrites.remove).toHaveBeenCalledWith(DEFAULT_TENANT_ID, '42', 'Notes', '1001');
+  });
+
+  it('does not mutate a note that belongs to another CRM record', async () => {
+    vi.mocked(zohoCrmRecords.getRecord).mockResolvedValueOnce({
+      id: '1001',
+      Parent_Id: { id: '999' },
+      $se_module: 'Leads',
+      Created_By: { id: '42' },
+    });
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/data-center/leads/555/notes/1001',
+      headers: bearer(token),
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(userWrites.remove).not.toHaveBeenCalled();
   });
 });
 
