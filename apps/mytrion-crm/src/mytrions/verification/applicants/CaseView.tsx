@@ -74,6 +74,7 @@ import { hardStopsCanPass, type HardStopAck } from './caseHardStops';
 import { EMPTY_HIGHWAY_MARKS, highwayCanPass, type HighwayMarks } from './caseHighway';
 import { EMPTY_RISK_MARKS, riskCanPass, type RiskMarks } from './caseRisk';
 import { CaseDecideBar } from './CaseDecideBar';
+import { CaseFullDetailsControl } from './CaseFullDetailsModal';
 import { CaseReopenButton } from './CaseReopen';
 import { deskReviewOrder } from './caseRouting';
 import { PhaseBody } from './PhaseBody';
@@ -429,6 +430,12 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 <Badge intent={chip.intent} icon={chip.icon}>
                   {statusText}
                 </Badge>
+                <CaseFullDetailsControl
+                  caseId={caseId}
+                  detail={detail}
+                  wexCardCutoff={wexCardCutoff}
+                  onUpdated={adopt}
+                />
               </div>
               <div className="va-case-facts">
                 {facts.map((f) => (
@@ -517,9 +524,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
         </div>
       ) : null}
 
-      {/* Errors from the aside render INSIDE the aside, beside the control that failed — a 415 on
-          an attach belongs at the attach button, not in a banner three sections above it. Everything
-          else has no region of its own and reports here. */}
+      {/* Aside failures stay in the aside. Other errors have no region of their own. */}
       {error && error.scope !== 'attach' && error.scope !== 'request' ? (
         <div className="va-banner" data-tone="danger" role="alert">
           <span className="va-banner-glyph" aria-hidden="true">

@@ -13,6 +13,7 @@ const uploadDeskDocuments = vi.fn();
 const decidePhase = vi.fn();
 const requestDocuments = vi.fn();
 const reopenPhase = vi.fn();
+const runScreening = vi.fn();
 vi.mock('@/api/verificationFlow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/verificationFlow')>();
   return {
@@ -24,6 +25,7 @@ vi.mock('@/api/verificationFlow', async (importOriginal) => {
     decidePhase,
     requestDocuments,
     reopenPhase,
+    runScreening,
     saveRiskAssessment,
     submitFinalDecision,
   };
@@ -139,6 +141,7 @@ beforeEach(() => {
   uploadDeskDocuments.mockReset();
   decidePhase.mockReset();
   requestDocuments.mockReset();
+  runScreening.mockReset();
   getDeskBrokerSnapshot.mockReset();
   getDeskBrokerSnapshot.mockResolvedValue({ match: null });
   runAuthorityLookup.mockReset();
@@ -149,6 +152,29 @@ beforeEach(() => {
     nsfReviewThreshold: 3,
     wexCardCutoff: 20,
     verificationOwner: { name: 'Credit Agent' },
+  });
+});
+
+describe('CaseView record chrome', () => {
+  it('opens the case body with no Case / Data Center switcher', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(screen.queryByRole('tablist', { name: 'Case record' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Data Center' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Case' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Full Details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pass phase' })).toBeInTheDocument();
+  });
+});
+
+describe('CaseView Full Details', () => {
+  it('opens the full-details modal from the record header', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Full Details' }));
+    const dialog = await screen.findByRole('dialog', { name: /full details/i });
+    expect(within(dialog).getByLabelText('Company')).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Attachments' })).toBeInTheDocument();
   });
 });
 
@@ -369,6 +395,14 @@ function screeningDesk(
 }
 
 describe('CaseView Phase 3 screening', () => {
+  it('does not auto-run screening when the case opens', async () => {
+    getDeskCase.mockResolvedValue(screeningDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(runScreening).not.toHaveBeenCalled();
+    expect(getDeskCase).toHaveBeenCalled();
+  });
+
   it('shows carrier identity facts and keeps Pass disabled until both checks are clear', async () => {
     getDeskCase.mockResolvedValue(screeningDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
@@ -481,6 +515,13 @@ function authorityDesk(
 }
 
 describe('CaseView Phase 4 authority', () => {
+  it('does not auto-run the register lookup when the case opens', async () => {
+    getDeskCase.mockResolvedValue(authorityDesk());
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    expect(runAuthorityLookup).not.toHaveBeenCalled();
+  });
+
   it('skips the working pane and decision buttons for an owner-operator', async () => {
     getDeskCase.mockResolvedValue(
       authorityDesk(
@@ -1051,11 +1092,12 @@ describe('CaseView Phase 6 credit and banking', () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
     expect(await screen.findByText(/Banking → Credit/)).toBeInTheDocument();
     expect(screen.getByText(/confirmed in Routing/)).toBeInTheDocument();
-    const tabs = screen.getAllByRole('tab').map((n) => n.textContent ?? '');
+    const reviews = screen.getByRole('tablist', { name: 'Phase 6 reviews' });
+    const tabs = within(reviews).getAllByRole('tab').map((n) => n.textContent ?? '');
     expect(tabs[0]).toContain('Banking');
     expect(tabs[1]).toContain('Credit report review');
     // And the one actually open is step one, not merely the one drawn leftmost.
-    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+    expect(within(reviews).getByRole('tab', { selected: true }).textContent).toContain('Banking');
     expect(screen.getByRole('heading', { level: 4 }).textContent).toContain('Banking review');
   });
 
@@ -1063,8 +1105,10 @@ describe('CaseView Phase 6 credit and banking', () => {
   it('starts on credit when the order is credit-first', async () => {
     getDeskCase.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    await screen.findByRole('tab', { selected: true });
-    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Credit report review');
+    const reviews = await screen.findByRole('tablist', { name: 'Phase 6 reviews' });
+    expect(within(reviews).getByRole('tab', { selected: true }).textContent).toContain(
+      'Credit report review',
+    );
   });
 
   /**
@@ -1074,9 +1118,10 @@ describe('CaseView Phase 6 credit and banking', () => {
   it('lets the reviewer switch to the other step', async () => {
     getDeskCase.mockResolvedValue(creditDesk());
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
-    const bankingTab = await screen.findByRole('tab', { name: /Banking/ });
+    const reviews = await screen.findByRole('tablist', { name: 'Phase 6 reviews' });
+    const bankingTab = within(reviews).getByRole('tab', { name: /Banking/ });
     fireEvent.click(bankingTab);
-    expect(screen.getByRole('tab', { selected: true }).textContent).toContain('Banking');
+    expect(within(reviews).getByRole('tab', { selected: true }).textContent).toContain('Banking');
   });
 
   it('keeps Pass off until credit is strong/acceptable and banking has no missing rows', async () => {

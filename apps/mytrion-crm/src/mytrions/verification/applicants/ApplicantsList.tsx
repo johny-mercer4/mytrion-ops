@@ -113,7 +113,7 @@ export function ApplicantsList({
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('age');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(1);
 
   const loadCases = useCallback(() => listDeskCases({ limit: 200 }), []);
@@ -479,7 +479,7 @@ export function ApplicantsList({
             onChange={(v) => {
               const next = (v ?? 'age') as SortKey;
               setSortKey(next);
-              setSortDir(next === 'name' ? 'asc' : 'desc');
+              setSortDir(next === 'name' || next === 'age' ? 'asc' : 'desc');
             }}
             options={SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />

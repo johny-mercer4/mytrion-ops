@@ -42,15 +42,15 @@ export const verificationScreeningRepo = {
   },
 
   /**
-   * Check B: other cases in THIS tenant sharing an identifier with `caseId`.
+   * Check B / Data Center: cases in THIS tenant sharing an identifier.
    *
-   * Compares on the stored plaintext business identifiers (EIN/MC/DOT/email/phone) rather than the
-   * hashes, because these columns are the ones a duplicate actually shares and they are not secret.
-   * `ne(id, caseId)` keeps a case from matching itself.
+   * Compares on the stored plaintext business identifiers (EIN/MC/DOT/email/phone/cell) rather than
+   * the hashes, because these columns are the ones a duplicate actually shares and they are not secret.
+   * `excludeCaseId` keeps a case from matching itself; Data Center search passes null (no current file).
    */
   async matchDuplicates(
     ctx: TenantContext,
-    caseId: string,
+    excludeCaseId: string | null,
     needles: {
       ein?: string | null;
       mc?: string | null;
@@ -59,13 +59,28 @@ export const verificationScreeningRepo = {
       phone?: string | null;
       companyName?: string | null;
     },
-  ): Promise<Array<{ id: string; entryType: VerificationIdentifierType; display: string }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      entryType: VerificationIdentifierType;
+      display: string;
+      statusCode: string;
+      createdAt: Date;
+      applicationDate: string | null;
+      zohoDealId: string | null;
+      zohoStage: string | null;
+    }>
+  > {
     const clauses = [];
     if (needles.ein) clauses.push(sql`nullif(regexp_replace(coalesce(${verificationCases.ein},''), '\\D', '', 'g'), '') = ${needles.ein.replace(/\D+/g, '')}`);
     if (needles.mc) clauses.push(sql`nullif(regexp_replace(coalesce(${verificationCases.mc},''), '\\D', '', 'g'), '') = ${needles.mc.replace(/\D+/g, '')}`);
     if (needles.dot) clauses.push(sql`nullif(regexp_replace(coalesce(${verificationCases.dot},''), '\\D', '', 'g'), '') = ${needles.dot.replace(/\D+/g, '')}`);
     if (needles.email) clauses.push(sql`lower(coalesce(${verificationCases.email},'')) = ${needles.email.toLowerCase()}`);
-    if (needles.phone) clauses.push(sql`nullif(regexp_replace(coalesce(${verificationCases.phone},''), '\\D', '', 'g'), '') = ${needles.phone.replace(/\D+/g, '')}`);
+    if (needles.phone) {
+      const phone = needles.phone.replace(/\D+/g, '');
+      clauses.push(sql`nullif(regexp_replace(coalesce(${verificationCases.phone},''), '\\D', '', 'g'), '') = ${phone}`);
+      clauses.push(sql`nullif(regexp_replace(coalesce(${verificationCases.cell},''), '\\D', '', 'g'), '') = ${phone}`);
+    }
     if (needles.companyName) {
       clauses.push(
         sql`lower(btrim(coalesce(${verificationCases.companyName},''))) = ${needles.companyName.trim().toLowerCase()}`,
@@ -82,13 +97,19 @@ export const verificationScreeningRepo = {
         dot: verificationCases.dot,
         email: verificationCases.email,
         phone: verificationCases.phone,
+        cell: verificationCases.cell,
         companyName: verificationCases.companyName,
+        statusCode: verificationCases.statusCode,
+        createdAt: verificationCases.createdAt,
+        applicationDate: verificationCases.applicationDate,
+        zohoDealId: verificationCases.zohoDealId,
+        zohoStage: verificationCases.zohoStage,
       })
       .from(verificationCases)
       .where(
         and(
           eq(verificationCases.tenantId, ctx.tenantId),
-          ne(verificationCases.id, caseId),
+          ...(excludeCaseId ? [ne(verificationCases.id, excludeCaseId)] : []),
           ...(any ? [any] : []),
         ),
       )
@@ -96,21 +117,41 @@ export const verificationScreeningRepo = {
 
     // Name which identifier collided — "duplicate of Kaiser Freight" is unactionable, "same EIN as
     // Kaiser Freight" tells the agent what to check.
-    const out: Array<{ id: string; entryType: VerificationIdentifierType; display: string }> = [];
+    const out: Array<{
+      id: string;
+      entryType: VerificationIdentifierType;
+      display: string;
+      statusCode: string;
+      createdAt: Date;
+      applicationDate: string | null;
+      zohoDealId: string | null;
+      zohoStage: string | null;
+    }> = [];
     const digits = (v: string | null | undefined) => (v ?? '').replace(/\D+/g, '');
     for (const row of rows) {
+      const rest = {
+        statusCode: row.statusCode,
+        createdAt: row.createdAt,
+        applicationDate: row.applicationDate,
+        zohoDealId: row.zohoDealId,
+        zohoStage: row.zohoStage,
+      };
       if (needles.ein && digits(row.ein) === digits(needles.ein) && digits(needles.ein)) {
-        out.push({ id: row.id, entryType: 'ein', display: row.companyName ?? row.id });
+        out.push({ id: row.id, entryType: 'ein', display: row.companyName ?? row.id, ...rest });
       } else if (needles.mc && digits(row.mc) === digits(needles.mc) && digits(needles.mc)) {
-        out.push({ id: row.id, entryType: 'mc', display: row.companyName ?? row.id });
+        out.push({ id: row.id, entryType: 'mc', display: row.companyName ?? row.id, ...rest });
       } else if (needles.dot && digits(row.dot) === digits(needles.dot) && digits(needles.dot)) {
-        out.push({ id: row.id, entryType: 'usdot', display: row.companyName ?? row.id });
+        out.push({ id: row.id, entryType: 'usdot', display: row.companyName ?? row.id, ...rest });
       } else if (needles.email && (row.email ?? '').toLowerCase() === needles.email.toLowerCase()) {
-        out.push({ id: row.id, entryType: 'email', display: row.email ?? row.id });
-      } else if (needles.phone && digits(row.phone) === digits(needles.phone) && digits(needles.phone)) {
-        out.push({ id: row.id, entryType: 'phone', display: row.phone ?? row.id });
+        out.push({ id: row.id, entryType: 'email', display: row.email ?? row.id, ...rest });
+      } else if (
+        needles.phone &&
+        (digits(row.phone) === digits(needles.phone) || digits(row.cell) === digits(needles.phone)) &&
+        digits(needles.phone)
+      ) {
+        out.push({ id: row.id, entryType: 'phone', display: row.phone ?? row.cell ?? row.id, ...rest });
       } else {
-        out.push({ id: row.id, entryType: 'name', display: row.companyName ?? row.id });
+        out.push({ id: row.id, entryType: 'name', display: row.companyName ?? row.id, ...rest });
       }
     }
     return out;

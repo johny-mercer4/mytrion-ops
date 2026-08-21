@@ -97,14 +97,16 @@ CRM never calls these vendors. Octane API does.
 
 | Vendor / store | Owner | Used by live rail? |
 | --- | --- | --- |
-| FMCSA QCMobile (`fmcsaQcMobile.ts`) | **Octane** | Phase 4. US Render only — `fmcsa.dot.gov` denies non-US egress. |
+| FMCSA QCMobile (`fmcsaQcMobile.ts`) | **Octane** | Phase 4 + Data Center search. US Render only — `fmcsa.dot.gov` denies non-US egress. |
 | Socrata census + filings | **Octane** | Phase 4 fallback. Insurance filings feed is **frozen**. |
 | DWH broker snapshot | **Octane** | Phase 4 third opinion + Sales prefill. Not a dependency. |
 | Local `verification_blacklist_entries` | **Octane** | Phase 3 Check A (this desk’s own declines). |
 | Zoho Deals COQL | **Octane** | Phase 3 Check B (applicants who never became a case) + Citifuel status. |
 | App PG reviews / risk / policy | **Octane** | Phases 6 / 7 / 9. Analyst-typed. |
-| Highway | **neither** | SOP names it. **No API.** Agent types Phase 8 findings by hand (`deskHighway.ts`). |
-| iSoftPull / Creditsafe / Plaid Link | **Credit Platform** | Legacy `/verification/cases*` only. Not pulled into `verification_credit_reviews` / banking. |
+| Highway | **Octane parse + desk type-in** | **Gated off** in Data Center (`VERIFICATION_DATA_CENTER_VENDORS_ENABLED = false`). Client + HTML parser stay on disk; the tab is hidden and `POST .../highway/parse` returns `killed`. Phase 8 findings are still typed by hand (`deskHighway.ts`). |
+| iSoftPull | **Octane** (Data Center) | **Gated off.** Client stays; tab hidden; `POST .../isoftpull/pull` returns `killed` before spend or HTTP. Live flags stay **off**. Not written onto Phase 6. |
+| Plaid Link token | **Octane** (Data Center) | **Gated off.** Client stays; tab hidden; `POST .../plaid/link-token` returns `killed` (product switch, then `PLAID_LIVE_ENABLED`). Check `/get` is not shipped. |
+| Creditsafe / Plaid Check `/get` / CP Link | **Credit Platform** | Legacy `/verification/cases*` only. Not pulled into `verification_credit_reviews` / banking. |
 | `credit_platform.public.blacklist_entries` | **Credit Platform** (shared list) | Phase 3 Check A read. Decline+Blacklist insert-only writeback (`VERIFICATION_BAN_WRITEBACK_ENABLED`). CP types omit `ssn` / `mc` / `usdot` / `ip` — those stay local. |
 | `kxd.sales_agent_*` write-back | Credit Platform | **Off** (`VERIFICATION_CP_WRITEBACK_ENABLED`). |
 | `VERIFICATION_DATABASE_URL` | Credit Platform | Admin schema browser / metadata only — **never** a migration target. |
@@ -119,10 +121,13 @@ Declared in `verificationTabs.ts` (undeclared = invisible to non-admins):
 | --- | --- |
 | **Main** | Desk overview (`VerificationMain`) — queue state, not a launcher grid |
 | **Inbox** | `mytrion_inbox_messages` tagged `verification`, live `/v1/realtime` |
-| **Verification Case** | 10-phase queue + case (`ApplicantsList` / `CaseView` / `PhaseSpine`) |
+| **Verification Case** | 10-phase queue + case (`ApplicantsList` / `CaseView` / `PhaseSpine`). Opening an applicant shows the case body; Data Center is the workspace tab only. |
+| **Data Center** | Workspace vendor search (`CaseDataCenter`). No case required. `/main/verificationmytrion?tab=data-center`. Optional `dot` / `mc` / `name` / `email` / `phone` (or `q`) query prefills. |
 | **Mytrion Watch** | Weekly behavioural re-score of **existing** carriers (`src/modules/mytrionWatch/`). Not the new-applicant SOP. |
 | **Existing clients** | Read-only `octane.dim_company` roster (`/v1/verification/roster*`) |
 | **Tickets** | `soon: true` — not mounted |
+
+**Data Center.** First-class desk tab, not Sales Verification and not Telegram-only. Live `GET /v1/verification/flow/fmcsa/search?by=dot|mc|name&q=` wraps `lookupFmcsaCarrier` with one QCMobile key. Live `GET /v1/verification/flow/motus/search?by=dot|name&q=` is Motus: the four free Socrata placements (`socrata.census` / `socrata.census.name` / `socrata.insurance` / `socrata.process_agents`). USDOT fans out census + frozen insurance + BOC-3; name is census only — there is no MC or VIN client. Live `GET /v1/verification/flow/broker-snapshot/search?by=dot|name&q=` is our DWH `public.stg_broker_snapshot` (17 columns, no MC). USDOT is exact `dot_number`; name is a prefix on `owner_full_name` (a person, not a legal name) with min 3 chars. Pages are `page` + `pageSize` (default 50, max 100) and `pagination.hasMore` via LIMIT+1 — no COUNT(*) on the unindexed ~543k replica, and no DWH CREATE INDEX. Live `GET /v1/verification/flow/blacklist/search?by=dot|mc|email|phone|name&q=` runs three probes in parallel (never a merged BLOCKED): own `verification_blacklist_entries` + Credit Platform `blacklist_entries` (hashed identifier; CP has no `mc`/`usdot` type), other `verification_cases` + Zoho Deals COQL (`Email` / `Secondary_Email` / `MC` / `DOT1` / `Deal_Name`; any stage; no invented phone COQL), and DWH `cmp_invoice` roll-up on matched `carrier_id`s with outstanding **> $100** (company-wide debtor law — not `dim_company.is_debtor`, not Collection, not Finance/Sales ≥ $1; invoice age ≥ 2 days is same-day noise only). Debtor pages are the same `page`/`pageSize` (default 50, max 100) with LIMIT+1 `hasMore`. A down probe is `{ available: false }` on 200, not a clear and not a 403. Live `GET /v1/verification/flow/citi/search?by=dot|mc|email|name&q=` wraps `queryDealsForNeedles` — the same org-wide Zoho Deals COQL Phase 3 already uses (`Email` / `Secondary_Email` / `MC` / `DOT1` / `Deal_Name` + `citifuel_Status`; any stage; no Owner filter; no invented phone COQL). Data Center pages that statement (`page`/`pageSize`, default 200, max 200, one COQL credit); Phase 3 still LIMIT 50. `truncated` / `hasMore` come from Zoho `more_records`. Full selected Deal fields on expand. CMP live Collections (`cmp-backend.production.united-fuel.com`) stays backlog — no `X-API-Key` / `CITI_API_KEY`. All five return the full vendor/warehouse/Deal row on `fields` plus a typed summary; the UI row is name / DOT / MC / status (snapshot has no MC; Blacklist shows three labeled sections; CITI badges `citifuel_Status`) and expand lists remaining keys (null/empty skipped). Prefills USDOT → MC → name from the query (Motus and Broker Snapshot skip MC; snapshot prefers the person name; Blacklist also reads `email` / `phone`; CITI also reads `email`, not phone); does not auto-run; does not write findings (Phase 4 `authority/run` still does that — only when the reviewer clicks Run). iSoftPull / Plaid / Highway clients stay on disk but are **not shown** (`dataCenterVendors.ts`) and their routes return `killed` (`VERIFICATION_DATA_CENTER_VENDORS_ENABLED`). CITI Fuel stays the current Zoho Deals tab — no new spec. Prefill never fires a vendor. Results stay view-only. Case GET / phase change does **not** auto-run FMCSA, Socrata, blacklist, credit, or Highway. There is no in-case Case / Data Center switcher; a failed case GET does not hide the workspace tab.
 
 Legacy “Verification cases” / “Decision rules” stay on disk and **undeclared** while `legacyDesk.ts` is off.
 
@@ -186,11 +191,11 @@ Code `FINAL_DECISIONS`: `approve` (limit required; note required if **above** re
 | Phases / machine | `src/modules/verificationFlow/phases.ts` · `stateMachine.ts` |
 | Sales intake | `applicationService.ts` · `intake.ts` · `src/routes/v1/verificationApplications.routes.ts` |
 | Ingest | `dealIntake.ts` · `automation.verification.case-ingest` |
-| Desk | `deskService.ts` · `deskDecision.ts` · `deskScreening.ts` · `deskAuthority.ts` · `deskHighway.ts` · `deskReviews.ts` · `hardStops.ts` · `capacity.ts` · `src/routes/v1/verificationFlow.routes.ts` · `verificationAuthority.routes.ts` · `verificationPolicy.routes.ts` |
-| CRM API | `apps/mytrion-crm/src/api/verificationFlow.ts` · `verificationDeskWrites.ts` |
+| Desk | `deskService.ts` · `deskDecision.ts` · `deskScreening.ts` · `deskAuthority.ts` · `deskHighway.ts` · `deskReviews.ts` · `hardStops.ts` · `capacity.ts` · `src/routes/v1/verificationFlow.routes.ts` (incl. `DELETE .../documents/:documentId`) · `verificationAuthority.routes.ts` (Phase 4/8 writes + `GET .../fmcsa/search`) · `verificationVendors.routes.ts` (Data Center iSoftPull / Plaid / Highway) · `verificationPolicy.routes.ts` |
+| CRM API | `apps/mytrion-crm/src/api/verificationFlow.ts` · `verificationDeskWrites.ts` · `verificationFmcsa.ts` · `verificationIsoftpull.ts` · `verificationPlaid.ts` · `verificationHighway.ts` |
 | Desk UI | `apps/mytrion-crm/src/mytrions/verification/**` |
 | Sales tab (not this desk) | `.../sales/redesign/tabs/VerificationTab.tsx` · `salesVerificationQueue.ts` · `applicationIntake.tsx` |
-| Kill switches | `src/modules/verification/killSwitches.ts` ↔ `legacyDesk.ts` |
+| Kill switches | `src/modules/verification/killSwitches.ts` ↔ `legacyDesk.ts` / `dataCenterVendors.ts` |
 | Taxonomy | `src/lib/mytrions.ts` ↔ `apps/mytrion-crm/src/access/mytrions.config.ts` |
 
 ## Do not
@@ -203,6 +208,9 @@ Code `FINAL_DECISIONS`: `approve` (limit required; note required if **above** re
 - Treat a skip as a pass. Treat a failed ban-list probe as a clear.
 - Silently “fix” SOP vs code in product code unless the skill itself was simply wrong.
 - Add a Salesforce TARGET.md / pack from this skill.
+- Write Data Center FMCSA, Motus, Broker Snapshot, Blacklist, CITI Fuel, iSoftPull, Plaid, or Highway hits onto the case. Search / pull / parse is view-only; Phase 4 Run still stores the register.
+- Auto-run FMCSA / Socrata / blacklist / credit / Highway on case GET or phase change. Phase 3 and Phase 4 Run stay explicit clicks.
+- Surface iSoftPull / Plaid / Highway in Data Center, or fire their HTTP, while `VERIFICATION_DATA_CENTER_VENDORS_ENABLED` is off.
 
 ## Keep in sync
 

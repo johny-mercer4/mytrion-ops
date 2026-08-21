@@ -29,7 +29,7 @@ vi.mock('../dcCache', () => ({
   formatCachedAt: () => '',
 }));
 
-const { RecordsTab } = await import('./RecordsTab');
+const { RecordsTab, matchesClientQuery } = await import('./RecordsTab');
 
 function clientRow(
   computedIsActive: boolean,
@@ -146,5 +146,29 @@ describe('Sales Data Center pipeline tabs', () => {
     state.clientRows = [clientRow(false, 'active')];
     render(<RecordsTab />);
     expect(screen.getByRole('button', { name: 'View TPO EXPRESS LLC mini-app' })).toBeDisabled();
+  });
+});
+
+describe('matchesClientQuery — live-call phone lookup', () => {
+  const row = {
+    name: 'Vasyuchka Service INC',
+    carrier: 'CR-5841798',
+    contact: 'Volodymyr',
+    phone: '(773) 812-3535',
+  };
+
+  it('finds a client by digit-only phone, ignoring formatting', () => {
+    expect(matchesClientQuery(row, '7738123535')).toBe(true);
+    expect(matchesClientQuery(row, '812-3535')).toBe(true);
+  });
+
+  it('still matches name / carrier / contact substrings', () => {
+    expect(matchesClientQuery(row, 'vasyuchka')).toBe(true);
+    expect(matchesClientQuery(row, '5841798')).toBe(true);
+    expect(matchesClientQuery(row, 'volodymyr')).toBe(true);
+  });
+
+  it('does not treat a short digit stub as a phone hit', () => {
+    expect(matchesClientQuery({ ...row, name: 'Other', carrier: 'CR-1', contact: '' }, '773')).toBe(false);
   });
 });

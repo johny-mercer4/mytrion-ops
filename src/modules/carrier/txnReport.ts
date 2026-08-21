@@ -323,10 +323,16 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
   const totalRow = ws.getRow(lastRow + 1);
   totalRow.getCell(1).value = 'TOTAL';
   cols.forEach((c, idx) => {
-    if (!TOTAL_BY_HEADER[c.header]) return;
+    const total = TOTAL_BY_HEADER[c.header];
+    if (!total) return;
     const i = idx + 1;
     const cell = totalRow.getCell(i);
-    cell.value = grid.rows.length ? { formula: `SUM(${colLetter(i)}${first}:${colLetter(i)}${lastRow})` } : 0;
+    // Keep the formula editable, but also persist the exact total produced by the shared report
+    // grid. ExcelJS does not calculate formulas, so omitting this cached result made some viewers
+    // display a stale/blank total even though the PDF showed the correct number.
+    cell.value = grid.rows.length
+      ? { formula: `SUM(${colLetter(i)}${first}:${colLetter(i)}${lastRow})`, result: total(grid.totals) }
+      : 0;
     cell.numFmt = c.numFmt ?? '#,##0.00';
   });
   totalRow.eachCell((cell, i) => {

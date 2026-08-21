@@ -15,6 +15,7 @@
  * confident false negative on exactly the new applicants Phase 4 sees most. Live insurance status
  * comes from QCMobile; this is corroboration and history.
  */
+import { jsonFields, type JsonValue } from '../lib/jsonFields.js';
 import {
   dotClause,
   FROZEN,
@@ -80,6 +81,7 @@ export interface SocrataInsuranceFiling {
   maxCoverageDollars: number | null;
   underlyingLimitDollars: number | null;
   status: SocrataInsuranceStatus;
+  fields?: Record<string, JsonValue>;
 }
 
 /** `agentName` and the whole address are the AGENT's, never the carrier's. */
@@ -88,6 +90,7 @@ export interface SocrataProcessAgent {
   agentName: string | null;
   attnTo: string | null;
   address: Record<'street' | 'city' | 'state' | 'country' | 'zip', string | null>;
+  fields?: Record<string, JsonValue>;
 }
 
 /** `available: false` means the read did not happen or did not succeed — never "we found nothing". */
@@ -95,14 +98,6 @@ export interface SocrataInsuranceResult extends SocrataFrozenProbe { filings: So
 
 export interface SocrataProcessAgentResult extends SocrataFrozenProbe { agents: SocrataProcessAgent[] }
 
-const INSURANCE_FIELDS = [
-  // `mod_col_1` IS THE FIELD NAME; its DISPLAY name on the dataset page is `ins_type_desc`, which a reader of
-  // that page tries first — and `$select=ins_type_desc` is an HTTP 400. `cancl_effective_date` is projected
-  // even though 95.3% of rows omit it, so a source-side rename becomes an HTTP 400 rather than "nobody is
-  // ever cancelled".
-  'docket_number, dot_number, ins_form_code, mod_col_1, name_company, policy_no, trans_date',
-  'underl_lim_amount, max_cov_amount, effective_date, cancl_effective_date',
-].join(', ');
 /** A history table — one carrier can carry decades of filings. 50 newest is more than Phase 4 reads. */
 const INSURANCE_LIMIT = 50;
 
@@ -133,7 +128,7 @@ export async function fetchInsuranceByDot(
   const { rows, error } = await socrataGet(
     INSURANCE_RESOURCE,
     {
-      $select: INSURANCE_FIELDS,
+      // No `$select`: the typed filing is a subset. Extra columns on a row survive on `fields`.
       $where: dotClause(normalized),
       // Both keys cast. `trans_date` is when the filing was recorded and decides which row is current;
       // `effective_date` breaks ties between same-day transactions so the page is deterministic.
@@ -187,6 +182,8 @@ export async function fetchInsuranceByDot(
       maxCoverageDollars: thousandsToDollars(row, 'max_cov_amount'),
       underlyingLimitDollars: thousandsToDollars(row, 'underl_lim_amount'),
     };
+    const fields = jsonFields(row);
+    if (fields !== undefined) filing.fields = fields;
     filing.status = insuranceStatus(filing, isCurrent, today, staleBefore);
     filings.push(filing);
   }
@@ -216,8 +213,6 @@ function insuranceStatus(
   return (filing.transDate ?? filing.effectiveDate) < staleBefore ? 'stale' : 'active';
 }
 
-const BOC3_FIELDS =
-  'docket_number, dot_number, co_name, attn_to_or_title, street_po, city, state_code, ctry_code, zip_code';
 /** Measured worst case is 12 filings for one DOT; 50 leaves room without paging. */
 const BOC3_LIMIT = 50;
 
@@ -237,7 +232,7 @@ export async function fetchProcessAgentsByDot(dot: string): Promise<SocrataProce
   if (normalized === null) return unavailable(badDot(dot), empty);
   const { rows, error } = await socrataGet(
     BOC3_RESOURCE,
-    { $select: BOC3_FIELDS, $where: dotClause(normalized), $order: 'co_name ASC', $limit: String(BOC3_LIMIT) },
+    { $where: dotClause(normalized), $order: 'co_name ASC', $limit: String(BOC3_LIMIT) },
     'socrata boc-3 lookup by dot failed',
   );
   if (rows === null) return unavailable(error ?? READ_FAILED, empty);
@@ -245,13 +240,18 @@ export async function fetchProcessAgentsByDot(dot: string): Promise<SocrataProce
     available: true,
     error: null,
     ...FROZEN,
-    agents: rows.map((row) => ({
-      docketNumber: text(row, 'docket_number'),
-      agentName: text(row, 'co_name'),
-      attnTo: text(row, 'attn_to_or_title'),
-      address: { street: text(row, 'street_po'), city: text(row, 'city'), state: text(row, 'state_code'),
-        country: text(row, 'ctry_code'), zip: text(row, 'zip_code') },
-    })),
+    agents: rows.map((row) => {
+      const agent: SocrataProcessAgent = {
+        docketNumber: text(row, 'docket_number'),
+        agentName: text(row, 'co_name'),
+        attnTo: text(row, 'attn_to_or_title'),
+        address: { street: text(row, 'street_po'), city: text(row, 'city'), state: text(row, 'state_code'),
+          country: text(row, 'ctry_code'), zip: text(row, 'zip_code') },
+      };
+      const fields = jsonFields(row);
+      if (fields !== undefined) agent.fields = fields;
+      return agent;
+    }),
   };
 }
 

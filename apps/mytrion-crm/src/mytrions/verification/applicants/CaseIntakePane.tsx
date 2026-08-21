@@ -6,7 +6,7 @@
  * addresses, banking source and type as counts the reviewer could not correct, so Pass stayed
  * locked on a hidden required field.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Input, Select } from '@/ds';
 import type { VerificationApplicantType, VerificationDeskDetail } from '@/api/verificationFlow';
 import { APPLICANT_LABEL, routeLabel, routeOf } from './applicantsModel';
@@ -146,6 +146,13 @@ export function IntakePane({
   onSave,
   onAddPrincipal,
   onRemovePrincipal,
+  idPrefix = 'va-intake',
+  formId,
+  hideSave = false,
+  hideCounts = false,
+  hideHead = false,
+  fileHint,
+  onDirtyChange,
 }: {
   detail: VerificationDeskDetail;
   closed: boolean;
@@ -155,6 +162,16 @@ export function IntakePane({
   onSave: (body: Record<string, unknown>) => Promise<void>;
   onAddPrincipal: (fullName: string) => Promise<void>;
   onRemovePrincipal: (principalId: string) => Promise<void>;
+  /** Default `va-intake`. The Full Details modal passes a different prefix so ids do not clash. */
+  idPrefix?: string;
+  /** When set, the fields wrap in a `<form>` so a dialog footer can submit them. */
+  formId?: string;
+  hideSave?: boolean;
+  hideCounts?: boolean;
+  hideHead?: boolean;
+  /** Extra sentence after missing-file names. Pass `''` to list the files only. */
+  fileHint?: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const c = detail.case as VerificationDeskDetail['case'] & Record<string, unknown>;
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -177,6 +194,10 @@ export function IntakePane({
   const dirty = Object.keys(draft).length > 0;
   const missing = new Set(c.intakeMissing ?? []);
   const fileGaps = [...missing].filter((k) => DOC_MISSING[k]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const submit = async (): Promise<void> => {
     const body: Record<string, unknown> = {};
@@ -211,14 +232,16 @@ export function IntakePane({
   const ownerOperatorFlow: 'owner_operator' | 'carrier' =
     c.applicantType === 'owner_operator' ? 'owner_operator' : 'carrier';
 
-  return (
-    <div className="va-stack">
+  const body = (
+    <>
+      {hideHead ? null : (
       <div className="va-pane-head">
         <h3 className="t-eyebrow va-pane-kicker">Application</h3>
         <span className="va-pane-note">
           {closed ? 'Read-only — this case is decided' : 'Editable — Sales-owned, correctable here'}
         </span>
       </div>
+      )}
 
       {FIELD_GROUPS.map((group) => (
         <div className="va-field-group" key={group.id}>
@@ -236,7 +259,7 @@ export function IntakePane({
           <div className="va-fields">
         {group.fields.map((f) => {
           const value = valueOf(f.k);
-          const id = `va-intake-${f.k}`;
+          const id = `${idPrefix}-${f.k}`;
           const invalid = missing.has(f.k);
           if (f.kind === 'type') {
             return (
@@ -351,7 +374,7 @@ export function IntakePane({
         {closed ? null : (
           <div className="va-principal-add">
             <Input
-              id="va-intake-principal"
+              id={`${idPrefix}-principal`}
               value={principalName}
               placeholder="Full name"
               disabled={disabled}
@@ -383,12 +406,15 @@ export function IntakePane({
         <div className="va-recorded" data-stack="true" data-needed="true">
           <h4 className="t-eyebrow va-pane-kicker">Still needed as files</h4>
           <p className="va-pane-body">
-            {fileGaps.map((k) => DOC_MISSING[k]).join(', ')}. Attach from Documents on the right — any
-            type will do, including “Something else”.
+            {fileGaps.map((k) => DOC_MISSING[k]).join(', ')}
+            {fileHint === ''
+              ? '.'
+              : `. ${fileHint ?? 'Attach from Documents on the right — any type will do, including “Something else”.'}`}
           </p>
         </div>
       ) : null}
 
+      {hideCounts ? null : (
       <div className="va-counts">
         <span className="va-count">
           <span className="t-eyebrow">Documents received</span>
@@ -409,8 +435,9 @@ export function IntakePane({
           </span>
         </span>
       </div>
+      )}
 
-      {closed ? null : (
+      {closed || hideSave ? null : (
         <div className="va-save">
           <Button
             variant="primary"
@@ -431,6 +458,24 @@ export function IntakePane({
           ) : null}
         </div>
       )}
-    </div>
+    </>
   );
+
+  if (formId) {
+    return (
+      <form
+        id={formId}
+        className="va-stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!dirty || disabled) return;
+          void submit();
+        }}
+      >
+        {body}
+      </form>
+    );
+  }
+
+  return <div className="va-stack">{body}</div>;
 }

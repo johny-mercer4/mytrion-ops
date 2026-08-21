@@ -17,9 +17,22 @@ export const VERIFICATION_TABS = [
   { key: 'main', label: 'Main' },
   { key: 'inbox', label: 'Inbox', group: 'Queue' },
   { key: 'applicants', label: 'Verification Case', group: 'Queue' },
+  { key: 'data-center', label: 'Data Center', group: 'Queue' },
   { key: 'watch', label: 'Mytrion Watch', group: 'Queue' },
   { key: 'clients', label: 'Existing clients', group: 'Roster' },
   { key: 'tickets', label: 'Tickets', group: 'Roster', soon: true },
 ] as const satisfies readonly TabDescriptor[];
 
 export type VerificationTabKey = (typeof VERIFICATION_TABS)[number]['key'];
+
+const LIVE_TAB_KEYS: ReadonlySet<string> = new Set(
+  VERIFICATION_TABS.filter((tab) => !('soon' in tab && tab.soon === true)).map((tab) => tab.key),
+);
+
+/** `?tab=data-center` (or any live key). Unknown / Soon keys fall back to Main. */
+export function verificationViewFromSearch(search: string): VerificationTabKey {
+  const raw = search.startsWith('?') ? search.slice(1) : search;
+  const tab = new URLSearchParams(raw).get('tab');
+  if (tab && LIVE_TAB_KEYS.has(tab)) return tab as VerificationTabKey;
+  return 'main';
+}

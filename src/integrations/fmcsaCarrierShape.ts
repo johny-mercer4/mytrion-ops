@@ -22,7 +22,12 @@
  * `outOfService` do not exist on `/carriers/{dot}`. `operatingStatus` in particular is a SAFER
  * (HTML) concept, not a QCMobile one — anyone specifying it is reading from the wrong system. The
  * QCMobile equivalents are `statusCode` + `allowedToOperate` + the three `*AuthorityStatus` codes.
+ *
+ * Extra QCMobile keys (fleet, crashes, OOS rates, census type, …) live on `fields` so the
+ * typed verdicts stay small and Data Center can still show the rest of the register row.
  */
+import { jsonFields, type JsonValue } from '../lib/jsonFields.js';
+
 export type FmcsaUnavailableReason =
   | 'not_configured'
   | 'blocked'
@@ -119,6 +124,8 @@ export interface FmcsaCarrier {
    */
   driverOosRate?: number;
   vehicleOosRate?: number;
+  /** Every element QCMobile sent on this carrier, including keys the summary does not name. */
+  fields?: Record<string, JsonValue>;
 }
 
 /** One row of `/carriers/{dot}/authority`. Optional for the same "elements only appear" reason. */
@@ -255,6 +262,7 @@ export function parseCarrier(c: Record<string, unknown>): FmcsaCarrier {
   put(out, 'carrierOperationDesc', str(operation?.carrierOperationDesc));
   put(out, 'driverOosRate', num(c.driverOosRate));
   put(out, 'vehicleOosRate', num(c.vehicleOosRate));
+  put(out, 'fields', jsonFields(c));
   return out;
 }
 /** Every carrier-bearing envelope wraps the record: `{ _links, carrier }`. */

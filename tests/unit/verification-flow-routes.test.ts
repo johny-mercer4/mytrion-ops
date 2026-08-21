@@ -61,6 +61,17 @@ vi.mock('../../src/modules/verificationFlow/deskPhase1Writes.js', () => ({
     banking: null,
     risk: { recommendedLimit: '4560.00' },
   })),
+  afterDeskDocumentRemove: vi.fn(async () => ({
+    case: { id: 'vc_1', statusCode: 'in_review', phaseCode: 'p3_screening' },
+    rail: [],
+    principals: [],
+    documents: [],
+    events: [],
+    screening: { hits: [], summary: { clear: true, unresolved: 0 } },
+    credit: null,
+    banking: null,
+    risk: { recommendedLimit: '4560.00' },
+  })),
 }));
 
 /** The desk's principal routes call the same service the Sales routes do. */
@@ -69,7 +80,12 @@ vi.mock('../../src/modules/verificationFlow/applicationService.js', async (impor
     await importOriginal<typeof import('../../src/modules/verificationFlow/applicationService.js')>();
   return {
     ...mod,
-    applicationService: { ...mod.applicationService, addPrincipal: vi.fn(), removePrincipal: vi.fn() },
+    applicationService: {
+      ...mod.applicationService,
+      addPrincipal: vi.fn(),
+      removePrincipal: vi.fn(),
+      assertDeskMayCorrect: vi.fn(),
+    },
   };
 });
 
@@ -91,7 +107,9 @@ import { deskService } from '../../src/modules/verificationFlow/deskService.js';
 import { documentService } from '../../src/modules/verificationFlow/documentService.js';
 import { verificationPolicyRepo } from '../../src/repos/verificationReviewRepo.js';
 import { applicationService } from '../../src/modules/verificationFlow/applicationService.js';
+import { afterDeskDocumentRemove } from '../../src/modules/verificationFlow/deskPhase1Writes.js';
 import { readDeskBrokerSnapshot } from '../../src/modules/verificationFlow/deskSnapshot.js';
+import { AppError } from '../../src/lib/errors.js';
 
 const listMock = vi.mocked(deskService.list);
 const detailMock = vi.mocked(deskService.detail);
@@ -104,6 +122,9 @@ const uploadMock = vi.mocked(documentService.upload);
 const snapshotMock = vi.mocked(readDeskBrokerSnapshot);
 const addPrincipalMock = vi.mocked(applicationService.addPrincipal);
 const removePrincipalMock = vi.mocked(applicationService.removePrincipal);
+const assertDeskMayCorrectMock = vi.mocked(applicationService.assertDeskMayCorrect);
+const removeDocMock = vi.mocked(documentService.remove);
+const afterRemoveMock = vi.mocked(afterDeskDocumentRemove);
 const policyGetMock = vi.mocked(verificationPolicyRepo.get);
 const policyUpdateMock = vi.mocked(verificationPolicyRepo.update);
 
@@ -423,10 +444,43 @@ describe('the desk can complete Phase 1 itself', () => {
     });
   });
 
+  it('removes a document through the desk door', async () => {
+    assertDeskMayCorrectMock.mockResolvedValue({ id: 'vc_1' } as never);
+    removeDocMock.mockResolvedValue(undefined);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/verification/flow/cases/vc_1/documents/doc_1',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(assertDeskMayCorrectMock).toHaveBeenCalledWith(expect.anything(), 'vc_1');
+    expect(removeDocMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'doc_1');
+    expect(afterRemoveMock).toHaveBeenCalledWith(expect.anything(), 'vc_1');
+  });
+
+  it('refuses a desk delete on a decided case before the bytes move', async () => {
+    assertDeskMayCorrectMock.mockRejectedValue(
+      new AppError('This application has already been decided and can no longer be edited.', {
+        statusCode: 409,
+        code: 'VERIFICATION_CASE_CLOSED',
+        expose: true,
+      }),
+    );
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/verification/flow/cases/vc_1/documents/doc_1',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: { code: 'VERIFICATION_CASE_CLOSED' } });
+    expect(removeDocMock).not.toHaveBeenCalled();
+  });
+
   it('REFUSES a sales worker on all three — this is the Verification door', async () => {
     const token = bearer(await workerToken('Sales Rep'));
     const calls: Array<[string, string]> = [
       ['POST', '/v1/verification/flow/cases/vc_1/documents'],
+      ['DELETE', '/v1/verification/flow/cases/vc_1/documents/doc_1'],
       ['POST', '/v1/verification/flow/cases/vc_1/principals'],
       ['DELETE', '/v1/verification/flow/cases/vc_1/principals/p_1'],
     ];

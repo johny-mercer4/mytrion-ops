@@ -98,12 +98,29 @@ const DC_TABS: ReadonlyArray<SalesSubTab<DcSub>> = [
 ];
 
 const SEARCH_PLACEHOLDER: Record<DcSub, string> = {
-  clients: 'Search clients by name, carrier ID or contact…',
+  clients: 'Search clients by name, carrier ID, contact or phone…',
   leads: 'Search leads by name, company, source, email or phone…',
   deals: 'Search deals by company or deal name…',
   rejections: 'Search rejections by company, app ID or reason…',
   money: 'Search by company or carrier ID…',
 };
+
+/**
+ * Live-call lookup. Name/carrier/contact stay substring matches; phone is digit-stripped so
+ * typing 7738123535 hits a stored "(773) 812-3535". Four digits is the floor so a stray "1"
+ * does not light up every 1-prefixed number.
+ */
+export function matchesClientQuery(
+  c: { name: string; carrier: string; contact: string; phone: string },
+  q: string,
+): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  if (`${c.name} ${c.carrier} ${c.contact}`.toLowerCase().includes(needle)) return true;
+  const digits = needle.replace(/\D/g, '');
+  if (digits.length >= 4 && (c.phone ?? '').replace(/\D/g, '').includes(digits)) return true;
+  return false;
+}
 
 const VIEW_TABS: ReadonlyArray<SalesSubTab<PipeView>> = [
   { id: 'kanban', label: 'Board', icon: 'board' }, { id: 'list', label: 'List', icon: 'list' },
@@ -352,7 +369,7 @@ export function RecordsTab() {
 
   // Clients → RecordVM
   const clients: RecordVM[] = (recsLoad.data ?? [])
-    .filter((c) => !q || `${c.name} ${c.carrier} ${c.contact}`.toLowerCase().includes(q))
+    .filter((c) => matchesClientQuery(c, q))
     // Account status and loyalty tier are INDEPENDENT filters that compose (e.g. Debtor + Gold);
     // they used to share one dropdown, where choosing a tier silently discarded the status.
     .filter((c) => {

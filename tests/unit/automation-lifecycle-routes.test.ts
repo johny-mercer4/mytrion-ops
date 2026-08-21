@@ -53,8 +53,8 @@ function log(overrides: Partial<AutomationLog> = {}): AutomationLog {
     id: 'log_1',
     tenantId: DEFAULT_TENANT_ID,
     runId: '4f86cf44-1daa-4fd3-8df5-999cb27430c9',
-    phase: 'started',
-    durationMs: null,
+    phase: 'succeeded',
+    durationMs: 1200,
     errorCode: null,
     sourceMytrion: 'sales',
     actorUserId: 'zoho:42',
@@ -133,8 +133,30 @@ async function nonSalesAuthorization(): Promise<string> {
   return `Bearer ${token}`;
 }
 
-describe('automation lifecycle logging', () => {
-  it('attributes a lifecycle phase from the verified server context', async () => {
+describe('automation outcome logging', () => {
+  it('attributes a run outcome from the verified server context', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/automation/logs',
+      headers: { authorization: await authorization() },
+      payload: {
+        automationType: 'balance_check',
+        runId: '4f86cf44-1daa-4fd3-8df5-999cb27430c9',
+        phase: 'succeeded',
+        durationMs: 1200,
+        originSource: 'Mytrion Horizon',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(automationMocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID, userId: 'zoho:42' }),
+      expect.objectContaining({ actorUserId: 'zoho:42', phase: 'succeeded' }),
+    );
+    expect(response.json()).toMatchObject({ phase: 'succeeded', replayed: false });
+  });
+
+  it('refuses a submit-time row so one click cannot log twice', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/automation/logs',
@@ -143,19 +165,14 @@ describe('automation lifecycle logging', () => {
         automationType: 'balance_check',
         runId: '4f86cf44-1daa-4fd3-8df5-999cb27430c9',
         phase: 'started',
-        originSource: 'Mytrion Horizon',
       },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(automationMocks.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID, userId: 'zoho:42' }),
-      expect.objectContaining({ actorUserId: 'zoho:42', phase: 'started' }),
-    );
-    expect(response.json()).toMatchObject({ phase: 'started', replayed: false });
+    expect(response.statusCode).toBe(400);
+    expect(automationMocks.insert).not.toHaveBeenCalled();
   });
 
-  it('marks View-as lifecycle rows with the verified target and impersonator', async () => {
+  it('marks View-as rows with the verified target and impersonator', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/automation/logs',
@@ -166,7 +183,8 @@ describe('automation lifecycle logging', () => {
       payload: {
         automationType: 'balance_check',
         runId: '4f86cf44-1daa-4fd3-8df5-999cb27430c9',
-        phase: 'started',
+        phase: 'succeeded',
+        durationMs: 1200,
       },
     });
 
@@ -180,7 +198,7 @@ describe('automation lifecycle logging', () => {
     );
   });
 
-  it('rejects lifecycle rows from a non-Sales session', async () => {
+  it('rejects rows from a non-Sales session', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/automation/logs',
@@ -188,7 +206,8 @@ describe('automation lifecycle logging', () => {
       payload: {
         automationType: 'balance_check',
         runId: '4f86cf44-1daa-4fd3-8df5-999cb27430c9',
-        phase: 'started',
+        phase: 'succeeded',
+        durationMs: 1200,
       },
     });
 
@@ -196,7 +215,7 @@ describe('automation lifecycle logging', () => {
     expect(automationMocks.insert).not.toHaveBeenCalled();
   });
 
-  it('does not duplicate the audit row when an idempotent phase is replayed', async () => {
+  it('does not duplicate the audit row when an outcome is replayed', async () => {
     automationMocks.insert.mockResolvedValue({ log: log(), inserted: false });
     const response = await app.inject({
       method: 'POST',
@@ -205,7 +224,8 @@ describe('automation lifecycle logging', () => {
       payload: {
         automationType: 'balance_check',
         runId: '4f86cf44-1daa-4fd3-8df5-999cb27430c9',
-        phase: 'started',
+        phase: 'succeeded',
+        durationMs: 1200,
       },
     });
 

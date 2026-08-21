@@ -90,23 +90,28 @@ export async function runVendor<TArgs, TData>(
   }
 
   let attemptId: string | null = null;
-  if (descriptor.cost === 'metered' && spend) {
-    const attempt = recordAttempt({ vendorId: descriptor.id, caseId: spend.caseId });
-    attemptId = attempt.id;
-    await auditFromContext(input.ctx, {
-      action: `${descriptor.auditAction}.attempt`,
-      status: 'ok',
-      resourceType: 'verification_vendor',
-      resourceId: descriptor.id,
-      detail: { phase: 'pending', caseId: spend.caseId },
-    });
-  }
 
   try {
+    if (descriptor.cost === 'metered' && spend) {
+      // Ledger insert is fail-close: a throw here skips `call` (no second chance to bill).
+      const attempt = await recordAttempt({
+        ctx: input.ctx,
+        vendorId: descriptor.id,
+        caseId: spend.caseId,
+      });
+      attemptId = attempt.id;
+      await auditFromContext(input.ctx, {
+        action: `${descriptor.auditAction}.attempt`,
+        status: 'ok',
+        resourceType: 'verification_vendor',
+        resourceId: descriptor.id,
+        detail: { phase: 'pending', caseId: spend.caseId },
+      });
+    }
     // URL/arg construction belongs inside `call` (see fmcsaQcMobile / socrataClient).
     // Wrapping the invoke is what keeps a thrown builder from escaping.
     const data = await descriptor.call(input.args);
-    if (attemptId) resolveAttempt(attemptId, 'ok');
+    if (attemptId) await resolveAttempt(attemptId, 'ok');
     if (descriptor.cost === 'metered') {
       await auditFromContext(input.ctx, {
         action: descriptor.auditAction,
@@ -117,7 +122,7 @@ export async function runVendor<TArgs, TData>(
     }
     return ok(data);
   } catch (err) {
-    if (attemptId) resolveAttempt(attemptId, 'error');
+    if (attemptId) await resolveAttempt(attemptId, 'error');
     const reason: VendorUnavailableReason = isTimeoutError(err) ? 'timeout' : 'remote_error';
     if (descriptor.cost === 'metered') {
       await auditFromContext(input.ctx, {

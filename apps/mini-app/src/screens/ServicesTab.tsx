@@ -44,9 +44,32 @@ export function ServicesTab({
   return (
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 4, margin: '0 -16px', padding: '8px 16px 12px', background: 'var(--background)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 13 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 4px 0 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 13 }}>
           <SearchGlyph />
-          <input className="selectable" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('services.search')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontSize: 15 }} />
+          <input
+            className="selectable"
+            name="services-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('services.search')}
+            aria-label={t('services.search')}
+            autoComplete="off"
+            spellCheck={false}
+            style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontSize: 15 }}
+          />
+          {search && (
+            <button
+              type="button"
+              className="press"
+              onClick={() => setSearch('')}
+              aria-label={t('common.clearSearch')}
+              style={{ width: 44, height: 44, flex: 'none', border: 'none', background: 'transparent', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+            >
+              <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="x" size={12} strokeWidth={2.2} className="" />
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -62,24 +85,29 @@ export function ServicesTab({
               const disabled = !it.action;
               const isPinned = pinned.includes(it.key);
               return (
-                <div
-                  key={it.key}
-                  onClick={() => openItem(it)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    padding: '16px 0',
-                    borderTop: '1px solid var(--border)',
-                    cursor: disabled ? 'default' : 'pointer',
-                  }}
-                >
-                  <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>
-                    <Icon name={it.icon} size={19} strokeWidth={1.7} className="" />
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>{t(it.labelKey)}</span>
-                  {soon && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('services.soon')}</span>}
-                  {previewOnly && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--link-accent)', background: 'color-mix(in srgb, var(--link-accent) 12%, transparent)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('agent.readOnly')}</span>}
+                <div key={it.key} style={{ display: 'flex', alignItems: 'center', borderTop: '1px solid var(--border)' }}>
+                  {disabled ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0, padding: '16px 0' }}>
+                      <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>
+                        <Icon name={it.icon} size={19} strokeWidth={1.7} className="" />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>{t(it.labelKey)}</span>
+                      {soon && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('services.soon')}</span>}
+                      {previewOnly && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--link-accent)', background: 'color-mix(in srgb, var(--link-accent) 12%, transparent)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('agent.readOnly')}</span>}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="row-press"
+                      onClick={() => openItem(it)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0, padding: '16px 0', border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+                    >
+                      <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: 'var(--fg)' }}>
+                        <Icon name={it.icon} size={19} strokeWidth={1.7} className="" />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: 'var(--fg)' }}>{t(it.labelKey)}</span>
+                    </button>
+                  )}
                   {!disabled && (
                     <button
                       type="button"

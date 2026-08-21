@@ -93,10 +93,8 @@ describe('AutoTab active-run guards', () => {
       submit.click();
     });
     expect(runAutomationMock).toHaveBeenCalledOnce();
-    expect(logAutomationMock).toHaveBeenCalledWith(
-      'efs-login',
-      expect.objectContaining({ phase: 'started', runId: expect.any(String) }),
-    );
+    // The click itself logs nothing — one submit must leave exactly one row, at the outcome.
+    expect(logAutomationMock).not.toHaveBeenCalled();
 
     const guardedClose = screen.getByRole('button', {
       name: 'Close unavailable while action is running',
@@ -114,16 +112,14 @@ describe('AutoTab active-run guards', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument());
-    expect(logAutomationMock).toHaveBeenLastCalledWith(
+    expect(logAutomationMock).toHaveBeenCalledOnce();
+    expect(logAutomationMock).toHaveBeenCalledWith(
       'efs-login',
       expect.objectContaining({
         phase: 'succeeded',
         runId: expect.any(String),
         durationMs: expect.any(Number),
       }),
-    );
-    expect(logAutomationMock.mock.calls[0]?.[1]?.runId).toBe(
-      logAutomationMock.mock.calls[1]?.[1]?.runId,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();

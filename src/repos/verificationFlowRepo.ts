@@ -213,7 +213,9 @@ export const verificationFlowRepo = {
       .select(VERIFICATION_FLOW_LIST_COLUMNS)
       .from(verificationCases)
       .where(listWhere(ctx, filter))
-      .orderBy(desc(verificationCases.updatedAt))
+      // Opened (`created_at`) newest first — same clock the desk prints as "Opened". `updated_at`
+      // would bounce a just-touched old file to the top of a queue that is meant to surface intake.
+      .orderBy(desc(verificationCases.createdAt))
       .limit(limit)
       .offset(offset);
   },

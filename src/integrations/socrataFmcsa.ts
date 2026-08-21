@@ -22,6 +22,7 @@
  * insurance feed is frozen (see socrataFmcsaFilings.ts). Insurance status needs the register.
  */
 import { logger } from '../lib/logger.js';
+import { jsonFields, type JsonValue } from '../lib/jsonFields.js';
 import {
   dotClause,
   integer,
@@ -83,6 +84,8 @@ export interface SocrataCensusRecord {
   dockets: SocrataCensusDocket[];
   address: Record<'street' | 'city' | 'state' | 'zip', string | null>;
   phone: string | null;
+  /** Every census column Socrata sent, including keys the summary does not name. */
+  fields?: Record<string, JsonValue>;
 }
 
 /** Per-filing verdict instead of one boolean. The five values are argued for on `insuranceStatus`. */
@@ -93,12 +96,6 @@ export interface SocrataCensusSearchResult extends SocrataProbe {
   truncated: boolean;
 }
 
-const CENSUS_FIELDS = [
-  'dot_number, legal_name, dba_name, status_code, add_date, carrier_operation, power_units',
-  'total_drivers, safety_rating, docket1prefix, docket1, docket1_status_code, docket2prefix',
-  'docket2, docket2_status_code, docket3prefix, docket3, docket3_status_code, phy_street',
-  'phy_city, phy_state, phy_zip, phone',
-].join(', ');
 /** Default name-search page, its ceiling, and the shortest needle worth sending (two match ~6 figures). */
 const CENSUS_NAME_LIMIT = 25;
 const CENSUS_NAME_LIMIT_MAX = 100;
@@ -125,7 +122,7 @@ function parseCensusRow(row: unknown): SocrataCensusRecord | null {
   const statusCode = status === 'A' || status === 'I' || status === 'P' ? status : null;
   const op = text(row, 'carrier_operation');
   const carrierOperation = op === 'A' || op === 'B' || op === 'C' ? op : null;
-  return {
+  const record: SocrataCensusRecord = {
     dotNumber,
     statusCode,
     carrierOperation,
@@ -142,6 +139,9 @@ function parseCensusRow(row: unknown): SocrataCensusRecord | null {
     address: { street: text(row, 'phy_street'), city: text(row, 'phy_city'),
       state: text(row, 'phy_state'), zip: text(row, 'phy_zip') },
   };
+  const fields = jsonFields(row);
+  if (fields !== undefined) record.fields = fields;
+  return record;
 }
 
 /**
@@ -156,7 +156,9 @@ export async function fetchCensusByDot(dot: string): Promise<SocrataCensusResult
   if (normalized === null) return unavailable(badDot(dot), { record: null });
   const { rows, error } = await socrataGet(
     CENSUS_RESOURCE,
-    { $select: CENSUS_FIELDS, $where: dotClause(normalized), $limit: '2' },
+    // No `$select`: the typed summary is a subset. Data Center needs every census column
+    // (email, officers, MCS-150, cargo flags, mailing address, …) that Socrata has for the DOT.
+    { $where: dotClause(normalized), $limit: '2' },
     'socrata census lookup by dot failed',
   );
   if (rows === null) return unavailable(error ?? READ_FAILED, { record: null });
@@ -201,7 +203,6 @@ export async function searchCensusByName(
   const { rows, error } = await socrataGet(
     CENSUS_RESOURCE,
     {
-      $select: CENSUS_FIELDS,
       $where: `upper(legal_name) like upper('%${needle.replace(/'/g, "''")}%')`,
       // Unordered pages are not stable between requests, so the same search can disagree with itself.
       $order: 'legal_name ASC',
