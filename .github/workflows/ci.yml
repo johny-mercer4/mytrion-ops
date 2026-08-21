@@ -93,6 +93,10 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
+          # Branch NAMES too: the script warns instead of failing on the build -> main release PR,
+          # whose commits were already gated on their way into build.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: bash scripts/ci/check-conventional-commits.sh
 
       - name: Source file size cap
