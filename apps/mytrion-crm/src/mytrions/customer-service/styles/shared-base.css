@@ -1,10 +1,10 @@
 /* =====================================================
    Customer Service — Base Styles, Reset & App Shell
    CSMYTRION gold: sidebar-led layout, open tables,
-   Space Grotesk UI + Space Mono figures (theme.css / docs/design/).
+   Rajdhani display + Instrument Sans UI.
    ===================================================== */
 
-/* Fonts come from src/styles/theme.css — do not import families here. */
+/* === Font Imports — CSMYTRION: Rajdhani + Instrument Sans + JetBrains Mono === */
 
 /* === Reset === */
 .cs-root *,

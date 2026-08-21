@@ -18,8 +18,8 @@ const TINT_CLASS: Record<NonNullable<StatCardProps['tint']>, string> = {
   purple: 'bg-brand-purple/14 text-brand-purple',
 };
 
-// KPI/stat tile — icon chip + big Space Grotesk numeral (`--font-figure`) +
-// uppercase label, used in every module's dashboard and detail-modal snapshot rows.
+// KPI/stat tile — icon chip + big Rajdhani numeral + uppercase label, used in
+// every module's dashboard and detail-modal snapshot rows.
 export function StatCard({ icon: Icon, value, label, tint = 'primary', className }: StatCardProps) {
   return (
     <div className={cn('flex items-center gap-3.5 rounded-lg border bg-card p-4 shadow-sm', className)}>

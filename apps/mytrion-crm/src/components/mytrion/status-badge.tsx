@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-// Status pill vocabulary from src/styles/theme.css / docs/design/ — every
+// Status pill vocabulary from docs/design-mockups/design-tokens.md — every
 // module reuses this same five-way status language (ready/embedding/failed
 // style tags, "Grounded"/"Denied" tool chips, KPI deltas, etc).
 export type StatusTone = 'good' | 'warn' | 'bad' | 'info' | 'neutral';
