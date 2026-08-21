@@ -960,6 +960,13 @@
       "when": 1787090000005,
       "tag": "0135_verification_stage0_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1787090000006,
+      "tag": "0136_verification_vendor_spend",
+      "breakpoints": true
     }
   ]
 }

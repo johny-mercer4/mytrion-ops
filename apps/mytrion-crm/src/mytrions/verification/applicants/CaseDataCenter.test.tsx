@@ -263,6 +263,9 @@ describe('CaseDataCenter FMCSA search', () => {
     expect(screen.getByRole('tab', { name: 'Broker snapshot' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'Blacklist' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('tab', { name: 'CITI Fuel' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('tab', { name: 'iSoftPull' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('tab', { name: 'Plaid' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('tab', { name: 'Highway' })).not.toHaveAttribute('aria-disabled');
     fireEvent.click(screen.getByRole('tab', { name: 'Motus' }));
     expect(screen.getByRole('tab', { name: 'Motus' })).toHaveAttribute('aria-selected', 'true');
   });

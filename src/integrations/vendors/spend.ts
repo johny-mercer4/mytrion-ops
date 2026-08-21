@@ -1,14 +1,16 @@
 /**
- * Spend authorisation — the typed hook for *future* metered vendors.
+ * Spend authorisation — the typed hook for metered vendors.
  *
- * POLICY (pending a business confirm): any verification-capable caller may be granted;
- * every grant is attributed and audited. Phase 10 "recorded not blocked" shape — we do
- * not invent a per-case or per-day spend ceiling here.
+ * POLICY: any verification-capable caller may be granted; every grant is attributed and audited.
+ * Phase 10 "recorded not blocked" shape — we do not invent a per-case or per-day spend ceiling.
  *
- * The attempt ledger is in-memory and testable. A table + `repos/` lands before the first
- * live metered pull. This file must not grow a ceiling in the meantime.
+ * The attempt ledger is persisted (`vendorSpendLedgerRepo`). The WeakSet is only the forge-proof
+ * token: a grant for vendor A must not authorise vendor B, and a forged object is not issued.
+ * Inserting the ledger row is fail-close — if it throws, `runVendor` must not call the vendor.
  */
+import { createId } from '@paralleldrive/cuid2';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { vendorSpendLedgerRepo } from '../../repos/vendorSpendLedgerRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 declare const spendAuthorisationBrand: unique symbol;
@@ -70,31 +72,45 @@ export interface SpendAttempt {
 }
 
 const attempts: SpendAttempt[] = [];
-let nextAttemptId = 0;
 
-export function recordAttempt(input: { vendorId: string; caseId: string }): SpendAttempt {
-  nextAttemptId += 1;
+export async function recordAttempt(input: {
+  ctx: TenantContext;
+  vendorId: string;
+  caseId: string;
+}): Promise<SpendAttempt> {
   const row: SpendAttempt = {
-    id: `attempt-${nextAttemptId}`,
+    id: createId(),
     vendorId: input.vendorId,
     caseId: input.caseId,
     status: 'pending',
   };
+  // Persist first. A throw here must reach runVendor before `call`.
+  await vendorSpendLedgerRepo.insertAttempt({
+    id: row.id,
+    tenantId: input.ctx.tenantId,
+    vendorId: input.vendorId,
+    caseId: input.caseId,
+    requestedBy: input.ctx.userId,
+  });
   attempts.push(row);
   return row;
 }
 
-export function resolveAttempt(id: string, status: 'ok' | 'error'): void {
+export async function resolveAttempt(id: string, status: 'ok' | 'error'): Promise<void> {
   const row = attempts.find((attempt) => attempt.id === id);
   if (row) row.status = status;
+  try {
+    await vendorSpendLedgerRepo.resolveAttempt(id, status);
+  } catch {
+    // The vendor HTTP already happened — do not retry it. The pending row stays for ops.
+  }
 }
 
-/** Test hook. The in-memory ledger is replaced by a table before any live metered pull. */
+/** Test hook. Production readers should query the table. */
 export function listSpendAttempts(): readonly SpendAttempt[] {
   return attempts;
 }
 
 export function resetSpendAttempts(): void {
   attempts.length = 0;
-  nextAttemptId = 0;
 }

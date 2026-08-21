@@ -108,6 +108,21 @@ export function blacklistPrefill(row: FmcsaPrefillCase): { by: BlacklistSearchBy
   return { by: 'dot', q: '' };
 }
 
+export function isoftpullPrefill(row: FmcsaPrefillCase): { firstName: string; lastName: string } {
+  return {
+    firstName: (row.firstName ?? '').trim(),
+    lastName: (row.lastName ?? '').trim(),
+  };
+}
+
+const SECRET_FIELD = /^(ssn|api-key|api-secret|secret|password)$/i;
+
+/** Flatten a vendor payload for expand, skipping empty values and obvious secrets. */
+export function flattenVendorPayload(input: Record<string, unknown> | undefined): VendorFact[] {
+  if (!input) return [];
+  return flattenFields(input, Object.keys(input).filter((key) => SECRET_FIELD.test(key)));
+}
+
 /**
  * CITI keys are the ones `queryDealsForNeedles` already filters: USDOT → MC → email → name.
  * No phone — that COQL does not match Phone/Cell.

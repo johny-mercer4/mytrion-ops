@@ -45,10 +45,14 @@ import {
 import { BlacklistResults } from './CaseDataCenterBlacklist';
 import { BrokerResults } from './CaseDataCenterBroker';
 import { CITI_KEYS, CITI_PLACEHOLDER, CitiResults } from './CaseDataCenterCiti';
+import { HighwayPanel } from './CaseDataCenterHighway';
+import { IsoftpullPanel } from './CaseDataCenterIsoftpull';
+import { PlaidPanel } from './CaseDataCenterPlaid';
 import { FmcsaResults, MotusResults, ResultsSkeleton } from './CaseDataCenterVendors';
 import './caseDataCenter.css';
 
-type Source = 'fmcsa' | 'motus' | 'broker' | 'blacklist' | 'citi';
+type SearchSource = 'fmcsa' | 'motus' | 'broker' | 'blacklist' | 'citi';
+type Source = SearchSource | 'isoftpull' | 'plaid' | 'highway';
 
 const SOURCES: TabItem[] = [
   { value: 'fmcsa', label: 'FMCSA' },
@@ -56,7 +60,14 @@ const SOURCES: TabItem[] = [
   { value: 'broker', label: 'Broker snapshot' },
   { value: 'blacklist', label: 'Blacklist' },
   { value: 'citi', label: 'CITI Fuel' },
+  { value: 'isoftpull', label: 'iSoftPull' },
+  { value: 'plaid', label: 'Plaid' },
+  { value: 'highway', label: 'Highway' },
 ];
+
+function isSearchSource(value: string): value is SearchSource {
+  return value === 'fmcsa' || value === 'motus' || value === 'broker' || value === 'blacklist' || value === 'citi';
+}
 
 const FMCSA_KEYS: TabItem[] = [
   { value: 'dot', label: 'USDOT' },
@@ -153,7 +164,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
   }, [source, seed.by, seed.q]);
 
   const changeSource = (next: string): void => {
-    if (next === 'fmcsa' || next === 'motus' || next === 'broker' || next === 'blacklist' || next === 'citi') {
+    if (isSearchSource(next) || next === 'isoftpull' || next === 'plaid' || next === 'highway') {
       setSource(next);
     }
   };
@@ -381,6 +392,11 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
         />
       </div>
 
+      {source === 'isoftpull' ? <IsoftpullPanel {...(caseRow ? { caseRow } : {})} /> : null}
+      {source === 'plaid' ? <PlaidPanel /> : null}
+      {source === 'highway' ? <HighwayPanel /> : null}
+
+      {isSearchSource(source) ? (
       <div className="va-dc-panel">
         <form className="va-dc-form" onSubmit={submit}>
           <Tabs
@@ -446,6 +462,7 @@ export function CaseDataCenter({ caseRow }: { caseRow?: FmcsaPrefillCase }) {
           <BrokerResults result={broker} loadingMore={loadingMore} onLoadMore={loadMore} />
         ) : null}
       </div>
+      ) : null}
     </div>
   );
 }

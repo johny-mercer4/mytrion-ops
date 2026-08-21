@@ -35,6 +35,42 @@
   gap: var(--space-2);
 }
 
+[data-mytrion='verification'] .va-dc-vendor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .va-dc-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+}
+
+[data-mytrion='verification'] .va-dc-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .va-dc-field-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .va-dc-file {
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 [data-mytrion='verification'] .va-dc-keys {
   flex: 0 1 auto;
 }
@@ -165,6 +201,10 @@
   [data-mytrion='verification'] .va-dc-q,
   [data-mytrion='verification'] .va-dc-keys {
     flex: 1 1 100%;
+  }
+
+  [data-mytrion='verification'] .va-dc-fields {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   [data-mytrion='verification'] .va-dc-detail {

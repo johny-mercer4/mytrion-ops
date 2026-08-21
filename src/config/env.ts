@@ -451,6 +451,29 @@ const EnvSchema = z.object({
   // when this is blank rather than sending it empty. Deliberately NOT in assertRuntimeSecrets.
   SOCRATA_APP_TOKEN: z.string().default(''),
 
+  // --- Data Center paid vendors (iSoftPull / Plaid). Default OFF. A live metered pull also needs
+  // a verification-capable caller, a UI Confirm, a spend token bound to that vendorId, and a
+  // persisted ledger row. Vitest pins the iSoftPull base URL empty so a forgotten stub cannot
+  // reach app.isoftpull.com. Per-bureau keys only — the legacy combined ISOFTPULL_API_KEY pair
+  // is accepted as a documented alias but is never the default path.
+  VERIFICATION_PAID_VENDORS_ENABLED: flag('0'),
+  ISOFTPULL_LIVE_ENABLED: flag('0'),
+  ISOFTPULL_BASE_URL: z.string().default('https://app.isoftpull.com/api/v2'),
+  ISOFTPULL_EQUIFAX_API_KEY: z.string().default(''),
+  ISOFTPULL_EQUIFAX_API_SECRET: z.string().default(''),
+  ISOFTPULL_TRANSUNION_API_KEY: z.string().default(''),
+  ISOFTPULL_TRANSUNION_API_SECRET: z.string().default(''),
+  ISOFTPULL_EXPERIAN_API_KEY: z.string().default(''),
+  ISOFTPULL_EXPERIAN_API_SECRET: z.string().default(''),
+  ISOFTPULL_API_KEY: z.string().default(''),
+  ISOFTPULL_API_SECRET: z.string().default(''),
+  PLAID_LIVE_ENABLED: flag('0'),
+  PLAID_CLIENT_ID: z.string().default(''),
+  PLAID_SECRET: z.string().default(''),
+  // Preferred name. `PLAID_ENVIRONMENT` is the loans-box alias and is read when this is blank.
+  PLAID_ENV: z.string().default('sandbox'),
+  PLAID_ENVIRONMENT: z.string().default(''),
+
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),

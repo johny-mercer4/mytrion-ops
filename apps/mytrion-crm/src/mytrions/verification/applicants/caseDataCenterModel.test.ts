@@ -13,6 +13,7 @@ import {
   citiPrefill,
   brokerPrefill,
   brokerSnapshotTitle,
+  isoftpullPrefill,
 } from './caseDataCenterModel';
 
 function row(over: Partial<FmcsaCarrierRow> = {}): FmcsaCarrierRow {
@@ -250,5 +251,14 @@ describe('fmcsa labels', () => {
     expect(fmcsaDetailFacts(row({ fields: { totalPowerUnits: 4, legalName: 'X' } }))).toEqual([
       { label: 'totalPowerUnits', value: '4' },
     ]);
+  });
+});
+
+describe('isoftpullPrefill', () => {
+  it('reads the person name and does not invent an address', () => {
+    expect(isoftpullPrefill({ firstName: 'Ada', lastName: 'Cole', companyName: 'Ridgevale' })).toEqual({
+      firstName: 'Ada',
+      lastName: 'Cole',
+    });
   });
 });
