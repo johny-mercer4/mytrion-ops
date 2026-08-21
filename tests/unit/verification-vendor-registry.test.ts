@@ -1,8 +1,8 @@
 /**
- * Step 0 vendor registry — dispatcher contract, not live vendor wiring.
+ * Vendor registry — dispatcher contract + Step 1 Socrata placements.
  *
- * Billable placements (iSoftPull, Plaid, Highway) are not registered. Descriptors in this
- * file are test doubles so every `reason` and the never-throws belt can be proven.
+ * Billable placements (iSoftPull, Plaid, Highway) are not registered. Extra descriptors in
+ * this file are test doubles so every `reason` and the never-throws belt can be proven.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TenantContext } from '../../src/types/tenantContext.js';
@@ -32,6 +32,10 @@ const { getVendor, registeredVendorIds, VENDOR_REGISTRY } = await import(
 );
 const { authoriseSpend, isIssuedSpend, listSpendAttempts, resetSpendAttempts } = await import(
   '../../src/integrations/vendors/spend.js'
+);
+const { env } = await import('../../src/config/env.js');
+const { socrataCensus, socrataCensusName, socrataInsurance, socrataProcessAgents } = await import(
+  '../../src/integrations/vendors/socrata.js'
 );
 
 function ctx(over: Partial<TenantContext> = {}): TenantContext {
@@ -76,6 +80,12 @@ function metered(
   };
 }
 
+function dispatchedData<T>(result: VendorResult<T>): T {
+  expect(result.available).toBe(true);
+  if (!result.available) throw new Error(result.error);
+  return result.data;
+}
+
 /** Runtime belt: invoke the implementation without a spend token. */
 function runWithoutSpend(
   descriptor: VendorDescriptor<{ q: string }, string>,
@@ -93,12 +103,93 @@ afterEach(() => {
 });
 
 describe('registry placements', () => {
-  it('registers no vendors in Step 0 — billable ones stay out', () => {
-    expect(VENDOR_REGISTRY).toEqual({});
-    expect(registeredVendorIds()).toEqual([]);
+  it('registers the four free Socrata lookups and no billable vendors', () => {
+    expect(registeredVendorIds().slice().sort()).toEqual([
+      'socrata.census',
+      'socrata.census.name',
+      'socrata.insurance',
+      'socrata.process_agents',
+    ]);
+    expect(VENDOR_REGISTRY['socrata.census'].cost).toBe('free');
+    expect(VENDOR_REGISTRY['socrata.insurance'].cost).toBe('free');
+    expect(getVendor('socrata.census')).toBe(socrataCensus);
     expect(getVendor('isoftpull')).toBeUndefined();
     expect(getVendor('plaid')).toBeUndefined();
     expect(getVendor('highway')).toBeUndefined();
+  });
+});
+
+describe('socrata via runVendor', () => {
+  /**
+   * Vitest pins `SOCRATA_BASE_URL` to '' so a forgotten stub cannot hit the live feed
+   * (`vitest.config.ts`). The dispatcher must name that env — not pretend the probe ran.
+   */
+  it('names SOCRATA_BASE_URL when the vitest baseline leaves it blank', async () => {
+    const result = await runVendor(socrataCensus, { ctx: ctx(), args: { dot: '652739' } });
+    expect(result).toEqual({
+      available: false,
+      error: 'SOCRATA_BASE_URL is not configured',
+      reason: 'not_configured',
+      data: null,
+    });
+  });
+
+  it('forwards a junk USDOT to the census export once the env is present', async () => {
+    env.SOCRATA_BASE_URL = 'https://data.transportation.gov';
+    try {
+      const data = dispatchedData(await runVendor(socrataCensus, { ctx: ctx(), args: { dot: '221' } }));
+      expect(data.available).toBe(false);
+      expect(data.record).toBeNull();
+    } finally {
+      env.SOCRATA_BASE_URL = '';
+    }
+  });
+
+  it('keeps frozen insurance payload on a refused junk DOT', async () => {
+    env.SOCRATA_BASE_URL = 'https://data.transportation.gov';
+    try {
+      const data = dispatchedData(
+        await runVendor(socrataInsurance, { ctx: ctx(), args: { dot: '221' } }),
+      );
+      expect(data).toMatchObject({
+        available: false,
+        frozen: true,
+        dataAsOf: '2026-05-14',
+        filings: [],
+      });
+    } finally {
+      env.SOCRATA_BASE_URL = '';
+    }
+  });
+
+  it('does not treat a too-short name search as an empty success', async () => {
+    env.SOCRATA_BASE_URL = 'https://data.transportation.gov';
+    try {
+      const data = dispatchedData(
+        await runVendor(socrataCensusName, { ctx: ctx(), args: { name: 'ab' } }),
+      );
+      expect(data.available).toBe(false);
+      expect(data.records).toEqual([]);
+    } finally {
+      env.SOCRATA_BASE_URL = '';
+    }
+  });
+
+  it('keeps frozen process-agent payload on a refused junk DOT', async () => {
+    env.SOCRATA_BASE_URL = 'https://data.transportation.gov';
+    try {
+      const data = dispatchedData(
+        await runVendor(socrataProcessAgents, { ctx: ctx(), args: { dot: '221' } }),
+      );
+      expect(data).toMatchObject({
+        available: false,
+        frozen: true,
+        dataAsOf: '2026-05-14',
+        agents: [],
+      });
+    } finally {
+      env.SOCRATA_BASE_URL = '';
+    }
   });
 });
 
