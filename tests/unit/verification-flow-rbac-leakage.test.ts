@@ -91,6 +91,12 @@ describe('desk list — tenant isolation', () => {
     expect(params).toContain("%' or 1=1 --%"); // bound as a parameter, not interpolated
     expect(sql).not.toContain('1=1');
   });
+
+  it('orders opened newest first — created_at, not last-touched', () => {
+    const { sql } = sqlOf(ctxOf());
+    expect(sql).toMatch(/order by "verification_cases"\."created_at" desc/i);
+    expect(sql).not.toMatch(/order by "verification_cases"\."updated_at"/i);
+  });
 });
 
 describe('sales list — tenant AND ownership isolation', () => {
