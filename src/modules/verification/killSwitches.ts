@@ -50,3 +50,12 @@ export const VERIFICATION_CP_WRITEBACK_ENABLED = false;
  * `on conflict do nothing` — this never edits or removes a ban somebody else added.
  */
 export const VERIFICATION_BAN_WRITEBACK_ENABLED = true;
+
+/**
+ * Data Center iSoftPull / Plaid / Highway. Clients stay on disk; the CRM hides the tabs
+ * (`dataCenterVendors.ts`) and these routes refuse. Live env flags stay off as a second
+ * gate. Flip both this and the FE constant to restore the three sources.
+ *
+ * FMCSA / Motus / Blacklist / CITI are not this switch — those stay searchable by hand.
+ */
+export const VERIFICATION_DATA_CENTER_VENDORS_ENABLED = false;

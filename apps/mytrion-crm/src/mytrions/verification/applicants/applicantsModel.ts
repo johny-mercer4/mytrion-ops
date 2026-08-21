@@ -287,7 +287,7 @@ const STAGE_RANGE: Record<Exclude<StageFilter, 'all'>, [number, number]> = {
 };
 
 export const SORT_OPTIONS: ReadonlyArray<{ value: SortKey; label: string }> = [
-  { value: 'age', label: 'Oldest first' },
+  { value: 'age', label: 'Newest first' },
   { value: 'name', label: 'Name A–Z' },
   { value: 'phase', label: 'Furthest along' },
   { value: 'limit', label: 'Largest limit' },

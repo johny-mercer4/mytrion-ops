@@ -180,6 +180,14 @@ describe('the three shapes of content', () => {
     }
   });
 
+  it('keeps QCMobile elements the typed summary does not name', async () => {
+    fetchMock.mockResolvedValue(reply(CARRIER_BODY));
+    const { carrier } = await lookupFmcsaCarrier({ dot: '158121' });
+    expect(carrier?.fields?.totalPowerUnits).toBe(213);
+    expect(carrier?.fields?.phyCountry).toBe('US');
+    expect(carrier?.fields?.crashTotal).toBe(15);
+  });
+
   it('parses ARRAY-shaped content from the docket-number lookup', async () => {
     const entry = JSON.parse(MULTI_BODY).content[1] as unknown;
     fetchMock.mockResolvedValue(reply(envelope([entry])));

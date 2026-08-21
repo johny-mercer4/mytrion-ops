@@ -296,6 +296,13 @@ describe('the census probe', () => {
     fetchMock.mockRejectedValue(new Error('ETIMEDOUT'));
     await expect(fetchCensusByDot('652739')).resolves.toBeTruthy();
   });
+
+  it('does not $select a subset, and keeps extra census columns on fields', async () => {
+    fetchMock.mockResolvedValue(ok([{ ...CENSUS_ROW, email_address: 'dispatch@stone.example' }]));
+    const out = await fetchCensusByDot('652739');
+    expect(param('$select')).toBe('');
+    expect(out.record?.fields?.email_address).toBe('dispatch@stone.example');
+  });
 });
 
 describe('the census name search', () => {
@@ -351,10 +358,17 @@ describe('the insurance probe', () => {
     expect(SOCRATA_FROZEN_AS_OF).toBe('2026-05-14');
   });
 
+  it('keeps extra insurance columns on fields', async () => {
+    fetchMock.mockResolvedValue(ok([{ ...INSURANCE_ROW, cancel_reason: 'endorsement' }]));
+    const filing = (await fetchInsuranceByDot('652739', NOW)).filings[0];
+    expect(param('$select')).toBe('');
+    expect(filing?.fields?.cancel_reason).toBe('endorsement');
+  });
+
   it('parses the live BIPD filing, money included', async () => {
     fetchMock.mockResolvedValue(ok([INSURANCE_ROW]));
     const out = await fetchInsuranceByDot('652739', NOW);
-    expect(out.filings).toEqual([
+    expect(out.filings).toMatchObject([
       {
         docketNumber: 'MC307348',
         formCode: '91X',
@@ -530,10 +544,17 @@ describe('the BOC-3 probe', () => {
     zip_code: '57106',
   };
 
+  it('keeps extra process-agent columns on fields', async () => {
+    fetchMock.mockResolvedValue(ok([{ ...BOC3_ROW, phone_ext: '221' }]));
+    const agent = (await fetchProcessAgentsByDot('652739')).agents[0];
+    expect(param('$select')).toBe('');
+    expect(agent?.fields?.phone_ext).toBe('221');
+  });
+
   it('parses the agent, and names it as the agent rather than the carrier', async () => {
     fetchMock.mockResolvedValue(ok([BOC3_ROW]));
     const out = await fetchProcessAgentsByDot('652739');
-    expect(out.agents).toEqual([
+    expect(out.agents).toMatchObject([
       {
         docketNumber: 'MC307348',
         agentName: 'PROCESS AGENT SERVICE COMPANY, INC.',

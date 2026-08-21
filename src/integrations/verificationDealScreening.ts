@@ -110,8 +110,30 @@ const DEAL_SCREENING_FIELDS = [
   'citifuel_Status',
 ].join(', ');
 
-/** Enough to prove a pattern; a case colliding with more than this needs a human either way. */
-const DEAL_SCREENING_LIMIT = 50;
+/** Phase 3: enough to prove a pattern; more than this needs a human either way. */
+export const DEAL_SCREENING_LIMIT = 50;
+
+/**
+ * Data Center CITI page. Zoho v8 COQL allows 2000/call; ≤200 is one API credit.
+ * Phase 3 stays on {@link DEAL_SCREENING_LIMIT}. Do not invent a second Deal SELECT.
+ */
+export const CITI_SEARCH_DEFAULT_PAGE_SIZE = 200;
+export const CITI_SEARCH_MAX_PAGE_SIZE = 200;
+
+const COQL_OFFSET_MAX = 100_000;
+const COQL_LIMIT_MAX = 2000;
+
+function coqlOffset(value: number | undefined): number {
+  const n = Math.floor(value ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, COQL_OFFSET_MAX);
+}
+
+function coqlLimit(value: number | undefined, fallback: number): number {
+  const n = Math.floor(value ?? fallback);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, COQL_LIMIT_MAX);
+}
 
 const UNAVAILABLE = (error: string): DealScreeningResult => ({
   available: false,
@@ -121,21 +143,27 @@ const UNAVAILABLE = (error: string): DealScreeningResult => ({
   truncated: false,
 });
 
+export interface DealQueryResult {
+  available: boolean;
+  error: string | null;
+  /** Every column `DEAL_SCREENING_FIELDS` selected — the full payload Data Center expands. */
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+}
+
 /**
- * Duplicate Deals sharing an identifier with this case, plus this case's Citifuel status.
+ * The Deal COQL itself — one SELECT, org-wide, no Owner / Stage / phone filter.
  *
- * NEVER THROWS, for the same reason `matchCreditPlatformBanList` does not: Phase 3 runs three
- * independent probes and one unreachable source must not take the other two down. The caller writes
- * `available` onto the phase findings and the pane renders a failed lookup as a failed lookup.
- *
- * IN-FLIGHT DEALS ARE INCLUDED. There is no Stage filter — the credit platform's equivalent excludes
- * active cases, which is the exact opposite of what Check B is for. Two applications open at once is
- * the interesting case, not the one to hide.
+ * Phase 3 (`screenDealsForCase`) and Data Center CITI both call this. Do not invent a second
+ * Deal query: the standing field is `citifuel_Status` on this same statement.
  */
-export async function screenDealsForCase(
+export async function queryDealsForNeedles(
   needles: DealScreeningNeedles,
-): Promise<DealScreeningResult> {
+  page: { offset?: number | undefined; limit?: number | undefined } = {},
+): Promise<DealQueryResult> {
   const ownDealId = needles.dealId && isZohoId(needles.dealId) ? needles.dealId.trim() : null;
+  const limit = coqlLimit(page.limit, DEAL_SCREENING_LIMIT);
+  const offset = coqlOffset(page.offset);
 
   const clauses: string[] = [];
   const email = (needles.email ?? '').trim().toLowerCase();
@@ -154,7 +182,7 @@ export async function screenDealsForCase(
   // Nothing to ask, and no own Deal to read Citifuel from: there is no query to make. That is a
   // successful empty answer, not an unavailable one.
   if (clauses.length === 0 && !ownDealId) {
-    return { available: true, error: null, duplicates: [], citifuel: { status: null, verdict: 'absent' }, truncated: false };
+    return { available: true, error: null, rows: [], truncated: false };
   }
 
   const where = ownDealId
@@ -164,55 +192,85 @@ export async function screenDealsForCase(
     : clauses.join(' or ');
 
   try {
-    const { rows, count } = await zohoCrm.runCoql(
+    const { rows, moreRecords } = await zohoCrm.runCoql(
       `select ${DEAL_SCREENING_FIELDS} from Deals where ${where}` +
-        ` order by Application_Date desc, id desc limit 0, ${DEAL_SCREENING_LIMIT}`,
+        ` order by Application_Date desc, id desc limit ${offset}, ${limit}`,
     );
-
-    const text = (row: Record<string, unknown>, key: string): string | null => {
-      const raw = row[key];
-      const value = raw == null ? '' : String(raw).trim();
-      return value === '' ? null : value;
-    };
-
-    let citifuelStatus: string | null = null;
-    const duplicates: DealDuplicate[] = [];
-    for (const row of rows) {
-      const id = String(row.id ?? '').trim();
-      if (id === '') continue;
-      if (ownDealId && id === ownDealId) {
-        citifuelStatus = text(row, 'citifuel_Status');
-        continue;
-      }
-      const matchedOn = matchedField(row, { email, mc, dot, companyName });
-      // A row can come back only because it satisfied a clause, so a null here means the projection
-      // and the WHERE disagree — log it rather than filing an unattributable duplicate.
-      if (!matchedOn) {
-        logger.warn({ dealId: id }, 'deal duplicate matched no known needle');
-        continue;
-      }
-      duplicates.push({
-        dealId: id,
-        dealName: text(row, 'Deal_Name'),
-        stage: text(row, 'Stage'),
-        applicationDate: text(row, 'Application_Date'),
-        matchedOn,
-        citifuelStatus: text(row, 'citifuel_Status'),
-      });
-    }
-
     return {
       available: true,
       error: null,
-      duplicates,
-      citifuel: { status: citifuelStatus, verdict: citifuelVerdict(citifuelStatus) },
-      truncated: count >= DEAL_SCREENING_LIMIT,
+      rows,
+      truncated: moreRecords || rows.length >= limit,
     };
   } catch (err) {
     const message = errorMessage(err);
     logger.warn({ err: message }, 'verification deal screening failed');
-    return UNAVAILABLE(message);
+    return { available: false, error: message, rows: [], truncated: false };
   }
+}
+
+/**
+ * Duplicate Deals sharing an identifier with this case, plus this case's Citifuel status.
+ *
+ * NEVER THROWS, for the same reason `matchCreditPlatformBanList` does not: Phase 3 runs three
+ * independent probes and one unreachable source must not take the other two down. The caller writes
+ * `available` onto the phase findings and the pane renders a failed lookup as a failed lookup.
+ *
+ * IN-FLIGHT DEALS ARE INCLUDED. There is no Stage filter — the credit platform's equivalent excludes
+ * active cases, which is the exact opposite of what Check B is for. Two applications open at once is
+ * the interesting case, not the one to hide.
+ */
+export async function screenDealsForCase(
+  needles: DealScreeningNeedles,
+): Promise<DealScreeningResult> {
+  const ownDealId = needles.dealId && isZohoId(needles.dealId) ? needles.dealId.trim() : null;
+  const email = (needles.email ?? '').trim().toLowerCase();
+  const mc = digits(needles.mc);
+  const dot = digits(needles.dot);
+  const companyName = (needles.companyName ?? '').trim();
+
+  const queried = await queryDealsForNeedles(needles);
+  if (!queried.available) return UNAVAILABLE(queried.error ?? 'unavailable');
+
+  const text = (row: Record<string, unknown>, key: string): string | null => {
+    const raw = row[key];
+    const value = raw == null ? '' : String(raw).trim();
+    return value === '' ? null : value;
+  };
+
+  let citifuelStatus: string | null = null;
+  const duplicates: DealDuplicate[] = [];
+  for (const row of queried.rows) {
+    const id = String(row.id ?? '').trim();
+    if (id === '') continue;
+    if (ownDealId && id === ownDealId) {
+      citifuelStatus = text(row, 'citifuel_Status');
+      continue;
+    }
+    const matchedOn = matchedField(row, { email, mc, dot, companyName });
+    // A row can come back only because it satisfied a clause, so a null here means the projection
+    // and the WHERE disagree — log it rather than filing an unattributable duplicate.
+    if (!matchedOn) {
+      logger.warn({ dealId: id }, 'deal duplicate matched no known needle');
+      continue;
+    }
+    duplicates.push({
+      dealId: id,
+      dealName: text(row, 'Deal_Name'),
+      stage: text(row, 'Stage'),
+      applicationDate: text(row, 'Application_Date'),
+      matchedOn,
+      citifuelStatus: text(row, 'citifuel_Status'),
+    });
+  }
+
+  return {
+    available: true,
+    error: null,
+    duplicates,
+    citifuel: { status: citifuelStatus, verdict: citifuelVerdict(citifuelStatus) },
+    truncated: queried.truncated,
+  };
 }
 
 /** Which needle this row satisfied. Ordered most to least specific, so MC beats a shared name. */

@@ -1,27 +1,85 @@
 /**
- * The two CARRIER-ONLY phase surfaces — Phase 4's authority lookup and Phase 8's Highway review.
+ * The two CARRIER-ONLY phase surfaces — Phase 4's authority lookup and Phase 8's Highway review —
+ * plus the Data Center FMCSA (QCMobile), Motus (Socrata), Broker Snapshot (DWH),
+ * Blacklist (ban / duplicate / debtor), and CITI Fuel (Zoho Deals Citifuel COQL)
+ * searches, which read the same sources without writing findings.
  *
- * Both belong to the phases that apply to carriers alone, and both were kept out of
+ * Both writes belong to the phases that apply to carriers alone, and both were kept out of
  * `verificationFlow.routes.ts` because that file already sits over the house 600-line cap and cannot
  * take another endpoint without making a failing gate worse. Grouping them here also keeps the carrier
  * surface findable rather than buried at line 600 of the desk's route table.
  *
- * WRITE-GATED, both of them. Phase 4 spends an outbound call to a federal register; Phase 8 writes the
- * findings the underwriting summary reads. Either way `requireMytrionWrite` is the right door — and
- * `auditFromContext` records it, which `/screening/run` still does not.
+ * Phase 4 spends an outbound call to a federal register; Phase 8 writes the findings the underwriting
+ * summary reads. Either way `requireMytrionWrite` is the right door — and `auditFromContext` records
+ * it, which `/screening/run` still does not. The Data Center search is read-only: department gate,
+ * no audit, no case write-back.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { lookupFmcsaCarrier } from '../../integrations/fmcsaQcMobile.js';
+import { searchBlacklist } from '../../modules/verificationFlow/blacklistSearch.js';
+import { searchBrokerSnapshot } from '../../modules/verificationFlow/brokerSnapshotSearch.js';
+import { searchCitifuel } from '../../modules/verificationFlow/citiSearch.js';
+import { searchMotus } from '../../modules/verificationFlow/motusSearch.js';
 import { deskService } from '../../modules/verificationFlow/deskService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireMytrionWrite } from './helpers.js';
+import { requireDepartment, requireMytrionWrite } from './helpers.js';
 
 const idParams = z.object({ id: z.string().min(1) });
 
+function requireVerificationRead(request: FastifyRequest): TenantContext {
+  return requireDepartment(request, 'verification', 'Verification underwriting');
+}
 function requireVerificationWrite(request: FastifyRequest): TenantContext {
   return requireMytrionWrite(request, 'verification', 'Verification underwriting');
 }
+
+/**
+ * QCMobile's own keys, not a fuzzy box. `/carriers/{dot}`, `/carriers/docket-number/{mc}` and
+ * `/carriers/name/{name}` are three endpoints; `lookupFmcsaCarrier` already talks to each when
+ * given only that key.
+ */
+const fmcsaSearchQuery = z.object({
+  by: z.enum(['dot', 'mc', 'name']),
+  q: z.string().trim().min(1).max(160),
+});
+
+/** USDOT and legal name only — insurance / BOC-3 have no MC or name client. */
+const motusSearchQuery = z.object({
+  by: z.enum(['dot', 'name']),
+  q: z.string().trim().min(1).max(160),
+});
+
+/** Shared Data Center page. Modules clamp pageSize; zod only rejects junk. */
+const searchPageQuery = {
+  page: z.coerce.number().int().min(1).max(10_000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+};
+
+/** USDOT and owner name only — `stg_broker_snapshot` has no MC column. */
+const brokerSnapshotSearchQuery = z.object({
+  by: z.enum(['dot', 'name']),
+  q: z.string().trim().min(1).max(160),
+  ...searchPageQuery,
+});
+
+/** Ban / duplicate / debtor — compact type + value, same door as the other Data Center tabs. */
+const blacklistSearchQuery = z.object({
+  by: z.enum(['dot', 'mc', 'email', 'phone', 'name']),
+  q: z.string().trim().min(1).max(160),
+  ...searchPageQuery,
+});
+
+/**
+ * Citifuel standing — the keys `queryDealsForNeedles` already filters. No phone: that COQL
+ * never matched on Phone/Cell.
+ */
+const citiSearchQuery = z.object({
+  by: z.enum(['dot', 'mc', 'email', 'name']),
+  q: z.string().trim().min(1).max(160),
+  ...searchPageQuery,
+});
 
 /**
  * Phase 8's review, typed by hand off Highway. Optional and nullable throughout: it is filled over
@@ -53,6 +111,65 @@ const highwayBody = z
 
 export async function verificationAuthorityRoutes(app: FastifyInstance): Promise<void> {
   const auth = { onRequest: [app.authenticate] };
+
+  /**
+   * Live QCMobile lookup for the Data Center tab.
+   *
+   * READ-ONLY: it does not write Phase 4 findings (that is `POST .../authority/run`). Always 200
+   * with the client's `{ available, error, ... }` shape — a denied egress IP or a missing webKey
+   * is "could not read", not an HTTP failure the UI would confuse with RBAC.
+   */
+  app.get('/verification/flow/fmcsa/search', auth, async (request) => {
+    requireVerificationRead(request);
+    const { by, q } = fmcsaSearchQuery.parse(request.query);
+    return lookupFmcsaCarrier(
+      by === 'dot' ? { dot: q } : by === 'mc' ? { mc: q } : { name: q },
+    );
+  });
+
+  /**
+   * Live Socrata lookup for the Motus Data Center tab.
+   *
+   * READ-ONLY. USDOT fans out census + insurance + process agents; name is census only.
+   * Always 200 with `{ available, error, ... }` — a missing base URL is "could not read".
+   */
+  app.get('/verification/flow/motus/search', auth, async (request) => {
+    requireVerificationRead(request);
+    return searchMotus(motusSearchQuery.parse(request.query));
+  });
+
+  /**
+   * Live DWH lookup for the Broker Snapshot Data Center tab.
+   *
+   * READ-ONLY. USDOT is exact `dot_number`; name is a prefix on `owner_full_name`.
+   * Always 200 with `{ available, error, ... }` — a missing DWH URL is "could not read".
+   */
+  app.get('/verification/flow/broker-snapshot/search', auth, async (request) => {
+    requireVerificationRead(request);
+    return searchBrokerSnapshot(brokerSnapshotSearchQuery.parse(request.query));
+  });
+
+  /**
+   * Parallel Ban / Duplicates / Debtors for the Blacklist Data Center tab.
+   *
+   * READ-ONLY. Always 200 with per-probe `{ available, error, ... }` — a down Credit
+   * Platform or DWH is "could not read", not an HTTP failure the UI would mix with RBAC.
+   */
+  app.get('/verification/flow/blacklist/search', auth, async (request) => {
+    const ctx = requireVerificationRead(request);
+    return searchBlacklist(ctx, blacklistSearchQuery.parse(request.query));
+  });
+
+  /**
+   * Live Zoho Deals Citifuel lookup for the CITI Fuel Data Center tab.
+   *
+   * READ-ONLY. Wraps `queryDealsForNeedles` — the same org-wide COQL Phase 3 uses.
+   * Always 200 with `{ available, error, ... }` — Zoho down is "could not read".
+   */
+  app.get('/verification/flow/citi/search', auth, async (request) => {
+    requireVerificationRead(request);
+    return searchCitifuel(citiSearchQuery.parse(request.query));
+  });
 
   /**
    * Read the register for this case and store what it said.

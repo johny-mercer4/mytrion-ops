@@ -19,6 +19,15 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
 });
 
+const insertAttempt = vi.fn(async (_input: unknown) => undefined);
+const resolveLedger = vi.fn(async (_id: unknown, _status: unknown) => undefined);
+vi.mock('../../src/repos/vendorSpendLedgerRepo.js', () => ({
+  vendorSpendLedgerRepo: {
+    insertAttempt: (input: unknown) => insertAttempt(input),
+    resolveAttempt: (id: unknown, status: unknown) => resolveLedger(id, status),
+  },
+}));
+
 const warn = vi.fn();
 vi.mock('../../src/lib/logger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/lib/logger.js')>();
@@ -37,6 +46,7 @@ const { env } = await import('../../src/config/env.js');
 const { socrataCensus, socrataCensusName, socrataInsurance, socrataProcessAgents } = await import(
   '../../src/integrations/vendors/socrata.js'
 );
+const { isoftpull } = await import('../../src/integrations/vendors/isoftpull.js');
 
 function ctx(over: Partial<TenantContext> = {}): TenantContext {
   return {
@@ -100,11 +110,16 @@ function runWithoutSpend(
 afterEach(() => {
   resetSpendAttempts();
   warn.mockClear();
+  insertAttempt.mockClear();
+  resolveLedger.mockClear();
+  insertAttempt.mockResolvedValue(undefined);
+  resolveLedger.mockResolvedValue(undefined);
 });
 
 describe('registry placements', () => {
-  it('registers the four free Socrata lookups and no billable vendors', () => {
+  it('registers free Socrata plus metered isoftpull; unpaid Plaid/Highway stay off the catalog', () => {
     expect(registeredVendorIds().slice().sort()).toEqual([
+      'isoftpull',
       'socrata.census',
       'socrata.census.name',
       'socrata.insurance',
@@ -112,8 +127,9 @@ describe('registry placements', () => {
     ]);
     expect(VENDOR_REGISTRY['socrata.census'].cost).toBe('free');
     expect(VENDOR_REGISTRY['socrata.insurance'].cost).toBe('free');
+    expect(VENDOR_REGISTRY.isoftpull.cost).toBe('metered');
     expect(getVendor('socrata.census')).toBe(socrataCensus);
-    expect(getVendor('isoftpull')).toBeUndefined();
+    expect(getVendor('isoftpull')).toBe(isoftpull);
     expect(getVendor('plaid')).toBeUndefined();
     expect(getVendor('highway')).toBeUndefined();
   });
@@ -345,6 +361,21 @@ describe('never-throws', () => {
   });
 });
 
+describe('registered isoftpull', () => {
+  it('stays killed by default and never spends', async () => {
+    const result = await (
+      runVendor as unknown as (
+        d: typeof isoftpull,
+        i: { ctx: ReturnType<typeof ctx>; args: { bureau: 'equifax' } },
+      ) => Promise<VendorResult<unknown>>
+    )(isoftpull, { ctx: ctx(), args: { bureau: 'equifax' } });
+    expect(result.available).toBe(false);
+    expect(result.reason).toBe('killed');
+    expect(listSpendAttempts()).toEqual([]);
+    expect(insertAttempt).not.toHaveBeenCalled();
+  });
+});
+
 describe('free path', () => {
   it('does not require spend and is an available success', async () => {
     const result = await runVendor(free({ id: 'census' }), { ctx: ctx(), args: { q: 'dot' } });
@@ -381,8 +412,31 @@ describe('metered hook (types + runtime belt, no registered vendors)', () => {
     });
     expect(result).toEqual({ available: true, error: null, reason: null, data: 'DOT' });
     expect(listSpendAttempts()).toEqual([
-      { id: 'attempt-1', vendorId: 'paid', caseId: 'case-1', status: 'ok' },
+      expect.objectContaining({ vendorId: 'paid', caseId: 'case-1', status: 'ok' }),
     ]);
+    expect(insertAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ vendorId: 'paid', caseId: 'case-1', tenantId: 'octane' }),
+    );
+  });
+
+  it('does not call a metered vendor when the spend ledger insert fails', async () => {
+    insertAttempt.mockRejectedValueOnce(new Error('ledger down'));
+    const call = vi.fn(async () => 'BILLED');
+    const spend = await authoriseSpend({
+      ctx: ctx(),
+      caseId: 'case-1',
+      vendorId: 'paid',
+      reason: 'unit test',
+    });
+    const result = await runVendor(metered({ id: 'paid', call }), {
+      ctx: ctx(),
+      args: { q: 'dot' },
+      spend: spend as SpendAuthorisation,
+    });
+    expect(result.available).toBe(false);
+    expect(result.reason).toBe('remote_error');
+    expect(call).not.toHaveBeenCalled();
+    expect(listSpendAttempts()).toEqual([]);
   });
 
   it('rejects a spend token issued for a different vendor', async () => {

@@ -36,6 +36,7 @@ const STALE_WATCH = 10 * 60_000;
 /** Tab id → the launcher glyph. Material Symbols, matching the tab's own lucide icon. */
 const LAUNCHER_ICON: Record<string, IconName> = {
   applicants: 'assignment_turned_in',
+  'data-center': 'database',
   watch: 'vital_signs',
   clients: 'apartment',
   tickets: 'confirmation_number',

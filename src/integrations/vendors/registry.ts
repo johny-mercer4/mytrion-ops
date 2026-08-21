@@ -1,10 +1,12 @@
 /**
  * Verification vendor descriptors. This file is the catalog — no route or service imports.
  *
- * Step 1 registers the four free Socrata lookups. FMCSA and DWH land later. Billable vendors
- * (iSoftPull, Plaid, Highway) are NOT registered here: cost class and wiring are a separate
- * discussion.
+ * Free Socrata lookups stay unpaid. `isoftpull` is the first metered placement — its `call` is
+ * real and spend-gated. Plaid Link-token mint is unpaid and is not registered. Highway is an
+ * HTML parse with no vendor HTTP, so it is not registered. Plaid `/get` stays off this list
+ * until a session table exists.
  */
+import { isoftpull } from './isoftpull.js';
 import {
   socrataCensus,
   socrataCensusName,
@@ -17,6 +19,7 @@ export const VENDOR_REGISTRY = {
   'socrata.census.name': socrataCensusName,
   'socrata.insurance': socrataInsurance,
   'socrata.process_agents': socrataProcessAgents,
+  isoftpull,
 } as const;
 
 export type RegisteredVendorId = keyof typeof VENDOR_REGISTRY;

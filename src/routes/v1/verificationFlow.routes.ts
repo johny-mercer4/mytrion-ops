@@ -30,7 +30,10 @@ import {
   principalBody as deskPrincipalBody,
 } from './verificationApplications.routes.js';
 import { applicationService } from '../../modules/verificationFlow/applicationService.js';
-import { afterDeskDocumentUpload } from '../../modules/verificationFlow/deskPhase1Writes.js';
+import {
+  afterDeskDocumentRemove,
+  afterDeskDocumentUpload,
+} from '../../modules/verificationFlow/deskPhase1Writes.js';
 import { readDeskBrokerSnapshot } from '../../modules/verificationFlow/deskSnapshot.js';
 import { AppError } from '../../lib/errors.js';
 import {
@@ -325,6 +328,26 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
       });
       // Opens the gate when this file was the last outstanding item — see deskPhase1Writes.
       return reply.code(201).send(await afterDeskDocumentUpload(ctx, id));
+    },
+  );
+
+  /** Desk file remove. Sales twin POST-deletes and refuses after submit; this door allows red. */
+  app.delete<{ Params: { id: string; documentId: string } }>(
+    '/verification/flow/cases/:id/documents/:documentId',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationWrite(request);
+      const { id, documentId } = docParams.parse(request.params);
+      await applicationService.assertDeskMayCorrect(ctx, id);
+      await documentService.remove(ctx, id, documentId);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.document_removed',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { documentId, byDesk: true },
+      });
+      return afterDeskDocumentRemove(ctx, id);
     },
   );
 

@@ -67,7 +67,7 @@ const query = (over: Partial<Parameters<typeof selectRows>[1]> = {}): Parameters
   search: '',
   filters: EMPTY_FILTERS,
   sortKey: 'age',
-  sortDir: 'desc',
+  sortDir: 'asc',
   wexCardCutoff: 20,
   slaDays: DECISION_SLA_DAYS,
   now: NOW,
@@ -250,8 +250,8 @@ describe('selectRows', () => {
     row({ id: 'closed', createdAt: daysAgo(30), closedAt: daysAgo(1), statusCode: 'approved' }),
   ];
 
-  it('sorts oldest first by default and leaves decided cases out', () => {
-    expect(selectRows(rows, query()).map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  it('sorts newest first by default and leaves decided cases out', () => {
+    expect(selectRows(rows, query()).map((r) => r.id)).toEqual(['c', 'b', 'a']);
   });
 
   it('sorts by name ascending when asked', () => {
@@ -267,7 +267,7 @@ describe('selectRows', () => {
     // Cards not set → "not set", even though the stored column is null for all of them.
     expect(
       selectRows(rows, query({ filters: { ...EMPTY_FILTERS, route: 'none' } })).map((r) => r.id),
-    ).toEqual(['a', 'c']);
+    ).toEqual(['c', 'a']);
   });
 
   it('filters by applicant type and by stage', () => {
@@ -283,12 +283,12 @@ describe('selectRows', () => {
     const late = selectRows(rows, query({ filters: { ...EMPTY_FILTERS, age: 'late' } }));
     expect(late.map((r) => r.id)).toEqual(['a']);
     const inside = selectRows(rows, query({ filters: { ...EMPTY_FILTERS, age: 'inside' } }));
-    expect(inside.map((r) => r.id)).toEqual(['b', 'c']);
+    expect(inside.map((r) => r.id)).toEqual(['c', 'b']);
   });
 
   it('searches the name, the owner and the untyped identifiers on the wire', () => {
     expect(selectRows(rows, query({ search: 'bluebird' })).map((r) => r.id)).toEqual(['b']);
-    expect(selectRows(rows, query({ search: 'okoye' })).map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    expect(selectRows(rows, query({ search: 'okoye' })).map((r) => r.id)).toEqual(['c', 'b', 'a']);
     const withEin: VerificationCaseRow[] = [{ ...rows[1]!, ein: '84-3392017' }];
     expect(selectRows(withEin, query({ search: '3392017' }))).toHaveLength(1);
   });

@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Activity, Building2, ClipboardCheck, Home, Inbox, Ticket } from 'lucide-react';
+import { Activity, Building2, ClipboardCheck, Database, Home, Inbox, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
+import { CaseDataCenter } from './applicants/CaseDataCenter';
+import { fmcsaPrefillFromSearch } from './applicants/caseDataCenterModel';
 import { VerificationClients } from './clients/ClientsList';
 import { ApplicantsList } from './applicants/ApplicantsList';
 import { VerificationInbox } from './inbox/VerificationInbox';
@@ -8,6 +10,7 @@ import { isUnread } from './inbox/inboxModel';
 import { VerificationMain } from './main/VerificationMain';
 import { useVerificationInbox } from './verificationData';
 import { VerificationNotifications } from './verificationNotify';
+import { verificationViewFromSearch } from './verificationTabs';
 import { MytrionWatch } from './watch/MytrionWatch';
 import './verification.css';
 import './verificationModal.css';
@@ -89,6 +92,21 @@ function tabsFor(
     content: <ApplicantsList initialCaseId={pendingCase} onCloseCase={clearPendingCase} />,
   },
   {
+    id: 'data-center',
+    label: 'Data Center',
+    description: 'Search FMCSA, Motus, the broker snapshot, the blacklist, and CITI Fuel without writing the case.',
+    icon: Database,
+    tone: 'var(--tone-sky)',
+    group: 'Queue',
+    hideKicker: true,
+    keywords: ['data center', 'fmcsa', 'qcmobile', 'motus', 'socrata', 'broker', 'snapshot', 'blacklist', 'citi', 'citifuel', 'usdot', 'dot', 'mc', 'carrier', 'authority', 'lookup', 'insurance'],
+    content: (
+      <CaseDataCenter
+        caseRow={fmcsaPrefillFromSearch(typeof window === 'undefined' ? '' : window.location.search)}
+      />
+    ),
+  },
+  {
     id: 'watch',
     label: 'Mytrion Watch',
     description: 'Behavioural scoring for carriers already on the books — who is drifting, and why.',
@@ -142,7 +160,9 @@ export default function VerificationMytrion() {
   const [pendingCase, setPendingCase] = useState<string | null>(null);
   // The active tab lives here, not in the shell, because Main and the Inbox both open a case in the
   // Verification Case workspace — see ModuleShell's `view` / `onViewChange`.
-  const [view, setView] = useState('main');
+  const [view, setView] = useState<string>(() =>
+    verificationViewFromSearch(typeof window === 'undefined' ? '' : window.location.search),
+  );
 
   /** Hand a case to the Verification Case tab and go there. Used by Main's queue and the Inbox. */
   const openCase = (caseId: string): void => {
