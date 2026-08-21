@@ -3,8 +3,17 @@
  * one retry is safe, and a cap stops the Sales shell from opening a dozen streams at once.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, request, requestBlob } from './transport';
+import { ApiError, request, requestBlob, requestMultipart } from './transport';
 import { jsonResponse } from '../test/sse';
+
+const SESSION_KEY = 'octane.session.v1';
+
+function seedSession(): void {
+  localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1', worker: { zohoUserId: '42' } }),
+  );
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -13,6 +22,28 @@ afterEach(() => {
 });
 
 describe('request network retry', () => {
+  it('does not refresh the Mytrion session or replay a multipart write for a Zoho reauth 403', async () => {
+    seedSession();
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(403, {
+        error: {
+          code: 'ZOHO_USER_REAUTH_REQUIRED',
+          message: 'Sign out and sign in again.',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      requestMultipart('/data-center/leads/555/notes', new FormData()),
+    ).rejects.toMatchObject({
+      code: 'ZOHO_USER_REAUTH_REQUIRED',
+      status: 403,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/data-center/leads/555/notes');
+  });
+
   it('retries a POST that never reached the origin (HTTP/2 refused stream)', async () => {
     vi.useFakeTimers();
     const fetchMock = vi

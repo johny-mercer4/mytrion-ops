@@ -121,7 +121,10 @@ function reauthError(cause?: unknown): AppError {
   return new AppError(
     'Your Zoho session cannot create CRM notes. Sign out and sign in again to refresh access.',
     {
-      statusCode: 401,
+      // HTTP 401 is reserved for the Mytrion bearer session: the portal refreshes that session and
+      // replays the whole request on any 401. This is a Zoho credential precondition, so return 403
+      // and let the worker re-consent explicitly rather than issuing another Notes POST.
+      statusCode: 403,
       code: 'ZOHO_USER_REAUTH_REQUIRED',
       expose: true,
       cause,

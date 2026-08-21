@@ -48,6 +48,10 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   stub.getRecord = vi.fn(async () => ({ id: 'deal-9', Mytrion_Call_Attempts: 2 }));
   return { ...mod, zohoCrmRecords: stub };
 });
+vi.mock('../../src/modules/sales/recordActivity.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/sales/recordActivity.js')>();
+  return { ...mod, createRecordNote: vi.fn(async () => 'note-1') };
+});
 
 // Same reason: the ended-call event writes a mytrion_calls row, and there is no database in a unit
 // run. The insert is best-effort in the route, but the connection attempt still had to time out.
@@ -117,6 +121,7 @@ vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { env } from '../../src/config/env.js';
+import { AppError } from '../../src/lib/errors.js';
 import {
   fetchAgentApplicationStats,
   fetchAgentLeads,
@@ -127,6 +132,7 @@ import { fetchAgentClients } from '../../src/integrations/dwhClientRoster.js';
 import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { createRecordNote } from '../../src/modules/sales/recordActivity.js';
 import { loyaltyClientOverrideRepo } from '../../src/repos/loyaltyClientOverrideRepo.js';
 
 const leadsMock = vi.mocked(fetchAgentLeads);
@@ -136,6 +142,7 @@ const loyaltyOverridesMock = vi.mocked(loyaltyClientOverrideRepo.list);
 const leadOwnerMock = vi.mocked(fetchLeadOwnerId);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
 const updateRecordMock = vi.mocked(zohoCrmRecords.updateRecord);
+const createNoteMock = vi.mocked(createRecordNote);
 
 function blueprintWith(
   transitions: NonNullable<Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintDetails>>>['transitions'],
@@ -164,6 +171,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   leadsMock.mockResolvedValue([]);
   loyaltyOverridesMock.mockResolvedValue([]);
+  createNoteMock.mockResolvedValue('note-1');
 });
 
 async function workerToken(profile: string, zohoUserId = '42'): Promise<string> {
@@ -179,6 +187,53 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
 function bearer(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` };
 }
+
+function noteMultipart(content: string): { payload: string; contentType: string } {
+  const boundary = 'data-center-note-boundary';
+  return {
+    payload:
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="content"\r\n\r\n' +
+      `${content}\r\n` +
+      `--${boundary}--\r\n`,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
+describe('data-center notes — attributed failure audit', () => {
+  it('returns a non-session 403 and audits only the safe application error code', async () => {
+    createNoteMock.mockRejectedValueOnce(
+      new AppError('Sign in to Zoho again.', {
+        statusCode: 403,
+        code: 'ZOHO_USER_REAUTH_REQUIRED',
+        expose: true,
+        details: { providerMessage: 'must never enter the audit event' },
+      }),
+    );
+    const body = noteMultipart('Customer follow-up');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/data-center/leads/555/notes',
+      headers: {
+        ...bearer(await workerToken('Sales Rep')),
+        'content-type': body.contentType,
+      },
+      payload: body.payload,
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: 'ZOHO_USER_REAUTH_REQUIRED' } });
+    const auditCall = vi.mocked(auditFromContext).mock.calls.find(
+      ([, event]) => event.action === 'sales.datacenter.note_create' && event.status === 'error',
+    );
+    expect(auditCall?.[1]).toMatchObject({
+      resourceType: 'crm_lead',
+      resourceId: '555',
+      detail: { code: 'ZOHO_USER_REAUTH_REQUIRED' },
+    });
+    expect(auditCall?.[1].detail).toEqual({ code: 'ZOHO_USER_REAUTH_REQUIRED' });
+  });
+});
 
 describe('data-center leads — header elevation regression', () => {
   it('a non-sales worker asserting x-department-access: sales is refused', async () => {

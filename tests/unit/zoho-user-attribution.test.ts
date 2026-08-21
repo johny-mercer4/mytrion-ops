@@ -163,10 +163,40 @@ describe('insertNoteAsUser', () => {
     await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject(
       {
         code: 'ZOHO_USER_REAUTH_REQUIRED',
-        statusCode: 401,
+        statusCode: 403,
       },
     );
     expect(fetchWithTimeoutMock).not.toHaveBeenCalled();
+  });
+
+  it('throws non-retriable reauth when the stored refresh token is revoked', async () => {
+    findTokenMock.mockResolvedValue('revoked-refresh-token');
+    fetchWithTimeoutMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_code' }),
+    });
+
+    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject({
+      code: 'ZOHO_USER_REAUTH_REQUIRED',
+      statusCode: 403,
+    });
+    expect(fetchWithTimeoutMock).toHaveBeenCalledTimes(1);
+    expect(fetchWithTimeoutMock.mock.calls.some(([url]) => String(url).endsWith('/Notes'))).toBe(false);
+    expect(insertRecordMock).not.toHaveBeenCalled();
+  });
+
+  it('does not retry or fall back when the Notes request has a network error', async () => {
+    refreshOk();
+    fetchWithTimeoutMock.mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject({
+      code: 'ZOHO_USER_NOTE_CREATE_FAILED',
+      statusCode: 502,
+    });
+    const notePosts = fetchWithTimeoutMock.mock.calls.filter(([url]) => String(url).endsWith('/Notes'));
+    expect(notePosts).toHaveLength(1);
+    expect(insertRecordMock).not.toHaveBeenCalled();
   });
 
   it('retries once on 401 then succeeds with a fresh token', async () => {
@@ -198,6 +228,38 @@ describe('insertNoteAsUser', () => {
       insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' }),
     ).resolves.toBe('note-retry');
     expect(fetchWithTimeoutMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('stops after one same-worker retry when the fresh token also returns INVALID_TOKEN', async () => {
+    findTokenMock.mockResolvedValue('refresh-tok');
+    fetchWithTimeoutMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: 'stale-acc', expires_in: 3600 }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ code: 'INVALID_TOKEN' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: 'fresh-acc', expires_in: 3600 }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ code: 'INVALID_TOKEN' }),
+      });
+
+    await expect(insertNoteAsUser('tenant-A', 'agent-42', { Note_Content: 'Hi' })).rejects.toMatchObject({
+      code: 'ZOHO_USER_REAUTH_REQUIRED',
+      statusCode: 403,
+    });
+    expect(fetchWithTimeoutMock).toHaveBeenCalledTimes(4);
+    const notePosts = fetchWithTimeoutMock.mock.calls.filter(([url]) => String(url).endsWith('/Notes'));
+    expect(notePosts).toHaveLength(2);
+    expect(insertRecordMock).not.toHaveBeenCalled();
   });
 
   it('throws ZOHO_USER_SCOPE_MISMATCH after a 401 OAUTH_SCOPE_MISMATCH (no service fallback)', async () => {
