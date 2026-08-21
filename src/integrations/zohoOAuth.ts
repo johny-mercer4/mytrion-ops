@@ -20,14 +20,12 @@ function accountsBase(): string {
 /**
  * The Zoho authorization URL to send the worker's browser to.
  *
- * We deliberately DON'T send `prompt=consent` or `access_type=offline`:
- *  - We only need a one-shot access token to read the worker's CurrentUser; we never persist Zoho's
- *    refresh token (our own JWT is the session), so offline access is pointless.
- *  - `prompt=consent` forces Zoho's consent + org-picker screen on EVERY login. Omitting it means
- *    Zoho shows it only on the first authorization and then reuses the worker's choice, so returning
- *    workers go straight through. (The org-picker itself only ever appears for accounts that belong
- *    to more than one CRM org; single-org employees never see it — there is no authorize-URL param
- *    to pre-select an org or suppress the picker; it's Zoho-side consent UI.)
+ * `access_type=offline` requests a refresh token so we can make CRM API calls on behalf of the
+ * real agent (proper "Created By" attribution) without re-prompting on each request. Zoho only
+ * issues a new refresh token on the first authorization for an app + user pair; subsequent logins
+ * reuse the existing grant silently. `prompt=consent` is omitted: Zoho shows its consent screen
+ * only on first authorization and then reuses the worker's choice, so returning workers go straight
+ * through.
  */
 export function buildAuthorizeUrl(state: string): string {
   const params = new URLSearchParams({
@@ -35,6 +33,7 @@ export function buildAuthorizeUrl(state: string): string {
     client_id: env.ZOHO_SERVER_CLIENT_ID,
     scope: env.ZOHO_OAUTH_SCOPES,
     redirect_uri: env.ZOHO_OAUTH_REDIRECT_URI,
+    access_type: 'offline',
     state,
   });
   return `${accountsBase()}/oauth/v2/auth?${params.toString()}`;
@@ -42,11 +41,18 @@ export function buildAuthorizeUrl(state: string): string {
 
 interface ZohoTokenResponse {
   access_token?: string;
+  refresh_token?: string;
   error?: string;
 }
 
-/** Exchange the one-time authorization code for an access token (confidential-client, server-side). */
-export async function exchangeCodeForToken(code: string): Promise<string> {
+export interface ZohoTokenPair {
+  accessToken: string;
+  /** Present when `access_type=offline` was requested and Zoho issued a new grant. */
+  refreshToken: string | null;
+}
+
+/** Exchange the one-time authorization code for an access + refresh token pair (confidential-client, server-side). */
+export async function exchangeCodeForToken(code: string): Promise<ZohoTokenPair> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: env.ZOHO_SERVER_CLIENT_ID,
@@ -65,7 +71,7 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
     // 'invalid_code' is the common expired/replayed-code case → surface as an auth failure.
     throw new AuthError(`Zoho code exchange failed${json.error ? `: ${json.error}` : ''}`);
   }
-  return json.access_token;
+  return { accessToken: json.access_token, refreshToken: json.refresh_token ?? null };
 }
 
 export interface ZohoWorker {

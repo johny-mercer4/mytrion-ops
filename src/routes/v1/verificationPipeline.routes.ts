@@ -367,17 +367,22 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     const updates = crmKnownFields(values);
     if (Object.keys(updates).length) await zohoCrmRecords.updateRecord('Deals', body.dealId, updates);
     const labels = new Map(requirement.fields.map((field) => [field.id, field.label]));
-    const noteId = await createRecordNote('Deals', body.dealId, {
-      title: `Verification response · ${requirement.title}`.slice(0, 120),
-      content: noteContent({
-        requestId: body.requestId,
-        requirementTitle: requirement.title,
-        userName: ctx.userName || ownerId,
-        values,
-        labels,
-        note: body.note?.trim() ?? '',
-      }),
-    });
+    const noteId = await createRecordNote(
+      'Deals',
+      body.dealId,
+      {
+        title: `Verification response · ${requirement.title}`.slice(0, 120),
+        content: noteContent({
+          requestId: body.requestId,
+          requirementTitle: requirement.title,
+          userName: ctx.userName || ownerId,
+          values,
+          labels,
+          note: body.note?.trim() ?? '',
+        }),
+      },
+      ctx,
+    );
     let syncWarning: string | null = null;
     if (upload.file) {
       try {

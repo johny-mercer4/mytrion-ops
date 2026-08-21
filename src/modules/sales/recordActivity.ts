@@ -12,6 +12,7 @@
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { insertNoteAsUser } from '../../integrations/zohoUserAuth.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 export type CrmModule = 'Leads' | 'Deals';
@@ -133,16 +134,38 @@ export async function fetchRecordNotes(module: CrmModule, id: string): Promise<N
   }));
 }
 
-/** Create a Zoho Note under a Lead/Deal. Returns the new note id (for an optional attachment). */
+/**
+ * Create a Zoho Note under a Lead/Deal. Returns the new note id (for an optional attachment).
+ *
+ * When ctx carries a real Zoho user id and a refresh token has been stored for that user, the
+ * insert is made using their own access token so that Zoho's "Created By" field reflects the
+ * real agent. The Owner field is always set to the agent's Zoho user id regardless of which
+ * token path is used. Falls back to the service account on any failure.
+ */
 export async function createRecordNote(
   module: CrmModule,
   id: string,
   input: { title?: string; content: string },
+  ctx?: TenantContext,
 ): Promise<string> {
-  // Parent_Id is a multi-module lookup: Zoho requires `{ id, module: { api_name } }` (verified live).
-  return zohoCrmRecords.insertRecord('Notes', {
+  const zohoUserId =
+    ctx?.userId?.startsWith('zoho:') && !ctx.userId.startsWith('zoho:zuid:')
+      ? ctx.userId.slice('zoho:'.length)
+      : undefined;
+
+  const noteData: Record<string, unknown> = {
     Note_Title: input.title?.trim() || 'Note',
     Note_Content: input.content,
+    // Parent_Id is a multi-module lookup: Zoho requires `{ id, module: { api_name } }` (verified live).
     Parent_Id: { id, module: { api_name: module } },
-  });
+    ...(zohoUserId ? { Owner: { id: zohoUserId } } : {}),
+  };
+
+  // Attempt user-attributed insert; fall back to service account if unavailable.
+  if (zohoUserId && ctx) {
+    const noteId = await insertNoteAsUser(ctx.tenantId, zohoUserId, noteData);
+    if (noteId) return noteId;
+  }
+
+  return zohoCrmRecords.insertRecord('Notes', noteData);
 }

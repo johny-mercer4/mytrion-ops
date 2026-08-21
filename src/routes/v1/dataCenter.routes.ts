@@ -562,10 +562,15 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     }
     let noteId: string;
     try {
-      noteId = await createRecordNote(module, id, {
-        content,
-        ...(fields.title?.trim() ? { title: fields.title.trim() } : {}),
-      });
+      noteId = await createRecordNote(
+        module,
+        id,
+        {
+          content,
+          ...(fields.title?.trim() ? { title: fields.title.trim() } : {}),
+        },
+        ctx,
+      );
     } catch (err) {
       throw crmError(err);
     }
