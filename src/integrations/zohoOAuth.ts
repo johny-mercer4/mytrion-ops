@@ -34,6 +34,10 @@ export function buildAuthorizeUrl(state: string): string {
     scope: env.ZOHO_OAUTH_SCOPES,
     redirect_uri: env.ZOHO_OAUTH_REDIRECT_URI,
     access_type: 'offline',
+    // prompt=consent forces Zoho to re-issue a refresh token on every login, even for
+    // existing grants. Without this, Zoho reuses the prior grant silently and returns no
+    // refresh_token, so worker_zoho_tokens never gets populated for pre-existing accounts.
+    prompt: 'consent',
     state,
   });
   return `${accountsBase()}/oauth/v2/auth?${params.toString()}`;
