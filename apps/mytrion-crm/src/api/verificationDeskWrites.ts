@@ -71,3 +71,17 @@ export async function removeDeskPrincipal(
     `/verification/flow/cases/${id}/principals/${principalId}`,
   )) as VerificationDeskDetail;
 }
+
+/**
+ * Desk document delete — Sales' twin is `deleteApplicationDocument` and refuses after submit.
+ * This door stays open until the case is decided, including a red (incomplete) case.
+ */
+export async function deleteDeskDocument(
+  id: string,
+  documentId: string,
+): Promise<VerificationDeskDetail> {
+  return (await request(
+    'DELETE',
+    `/verification/flow/cases/${id}/documents/${encodeURIComponent(documentId)}`,
+  )) as VerificationDeskDetail;
+}

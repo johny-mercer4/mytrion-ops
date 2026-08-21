@@ -1,0 +1,73 @@
+/* Full Details modal — flat data surfaces inside Dialog chrome. */
+
+[data-mytrion='verification'] .va-full {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+[data-mytrion='verification'] .va-full-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2_5) var(--space-5);
+  padding: var(--space-3) var(--space-3_5);
+  border-radius: var(--va-r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+
+[data-mytrion='verification'] .va-full-attach {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+[data-mytrion='verification'] .va-full-docs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+}
+
+[data-mytrion='verification'] .va-full-doc {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-2_5);
+  border-radius: var(--va-r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-data);
+}
+
+[data-mytrion='verification'] .va-full-doc[data-pending='true'] {
+  border-style: dashed;
+  border-color: var(--intent-warning-bd);
+  background: transparent;
+}
+
+[data-mytrion='verification'] .va-full-doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .va-full-attach-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .va-full-doc {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  [data-mytrion='verification'] .va-full-doc-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}

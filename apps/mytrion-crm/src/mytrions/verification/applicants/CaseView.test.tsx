@@ -152,6 +152,17 @@ beforeEach(() => {
   });
 });
 
+describe('CaseView Full Details', () => {
+  it('opens the full-details modal from the record header', async () => {
+    render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
+    await screen.findByRole('heading', { name: 'Ridgevale Freight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Full Details' }));
+    const dialog = await screen.findByRole('dialog', { name: /full details/i });
+    expect(within(dialog).getByLabelText('Company')).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Attachments' })).toBeInTheDocument();
+  });
+});
+
 describe('CaseView live refresh', () => {
   it('refetches on a verification socket event for this case, and ignores everyone else’s', async () => {
     render(<CaseView caseId="vc_ridgevale01" onBack={() => undefined} />);
