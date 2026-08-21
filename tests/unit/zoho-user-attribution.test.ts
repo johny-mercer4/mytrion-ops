@@ -7,6 +7,7 @@
  *  3. zohoUserAuth.ts — getUserAccessToken caching and fallback
  *  4. zohoUserAuth.ts — insertNoteAsUser success, 401 invalidation, null fallback
  *  5. recordActivity.ts — createRecordNote passes Owner field and uses user token when available
+ *  6. recordActivity.ts — note edit/delete authorize before either Zoho mutation path
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,12 +15,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   fetchWithTimeoutMock,
+  getRecordMock,
   insertRecordMock,
   insertNoteAsUserMock,
+  patchRecordMock,
+  deleteRecordByIdMock,
+  updateNoteAsUserMock,
+  deleteNoteAsUserMock,
 } = vi.hoisted(() => ({
   fetchWithTimeoutMock: vi.fn(),
+  getRecordMock: vi.fn(),
   insertRecordMock: vi.fn(),
   insertNoteAsUserMock: vi.fn(),
+  patchRecordMock: vi.fn(),
+  deleteRecordByIdMock: vi.fn(),
+  updateNoteAsUserMock: vi.fn(),
+  deleteNoteAsUserMock: vi.fn(),
 }));
 
 vi.mock('../../src/lib/http.js', () => ({ fetchWithTimeout: fetchWithTimeoutMock }));
@@ -45,11 +56,18 @@ vi.mock('../../src/repos/workerZohoTokenRepo.js', () => ({
 }));
 
 vi.mock('../../src/integrations/zohoCrmRecords.js', () => ({
-  zohoCrmRecords: { insertRecord: insertRecordMock },
+  zohoCrmRecords: {
+    getRecord: getRecordMock,
+    insertRecord: insertRecordMock,
+    patchRecord: patchRecordMock,
+    deleteRecordById: deleteRecordByIdMock,
+  },
 }));
 
 vi.mock('../../src/integrations/zohoUserAuth.js', () => ({
   insertNoteAsUser: insertNoteAsUserMock,
+  updateNoteAsUser: updateNoteAsUserMock,
+  deleteNoteAsUser: deleteNoteAsUserMock,
   getUserAccessToken: vi.fn(),
   invalidateUserToken: vi.fn(),
 }));
@@ -61,7 +79,11 @@ vi.mock('../../src/lib/logger.js', () => ({
 // ─── Imports after mocks ───────────────────────────────────────────────────────
 
 import { buildAuthorizeUrl, exchangeCodeForToken } from '../../src/integrations/zohoOAuth.js';
-import { createRecordNote } from '../../src/modules/sales/recordActivity.js';
+import {
+  createRecordNote,
+  deleteRecordNote,
+  updateRecordNote,
+} from '../../src/modules/sales/recordActivity.js';
 import { makeContext } from '../fixtures/seed.js';
 
 // ─── 1. buildAuthorizeUrl ──────────────────────────────────────────────────────
@@ -195,5 +217,82 @@ describe('createRecordNote', () => {
     insertRecordMock.mockResolvedValueOnce('note-id-svc');
     await createRecordNote('Leads', 'lead-1', { content: 'Non-CRM user' }, nonCrmCtx);
     expect(insertNoteAsUserMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('note edit/delete authorization and attribution', () => {
+  const workerCtx = (userId = 'zoho:agent-42') =>
+    makeContext({
+      role: 'worker',
+      userId,
+      tenantId: 'tenant-A',
+      departments: ['sales'],
+      allDepartmentAccess: false,
+    });
+  const note = (ownerId: string) => ({
+    id: 'note-7',
+    Parent_Id: { id: 'lead-1' },
+    Owner: { id: ownerId, name: 'Owner' },
+    $se_module: 'Leads',
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('denies a different agent before calling either mutation path', async () => {
+    getRecordMock.mockResolvedValue(note('another-agent'));
+
+    await expect(
+      updateRecordNote(workerCtx(), 'Leads', 'lead-1', 'note-7', { title: 'T', content: 'C' }),
+    ).rejects.toThrow('You can only edit or delete notes you created');
+
+    expect(updateNoteAsUserMock).not.toHaveBeenCalled();
+    expect(patchRecordMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the note owner token for PATCH and skips the service account on success', async () => {
+    getRecordMock.mockResolvedValue(note('agent-42'));
+    updateNoteAsUserMock.mockResolvedValue(true);
+
+    await updateRecordNote(workerCtx(), 'Leads', 'lead-1', 'note-7', {
+      title: '  Updated  ',
+      content: 'New body',
+    });
+
+    expect(updateNoteAsUserMock).toHaveBeenCalledWith('tenant-A', 'agent-42', 'note-7', {
+      Note_Title: 'Updated',
+      Note_Content: 'New body',
+    });
+    expect(patchRecordMock).not.toHaveBeenCalled();
+  });
+
+  it('allows a manager to delete another owner’s note and falls back to the service account', async () => {
+    const manager = makeContext({
+      role: 'worker',
+      userId: 'zoho:manager-1',
+      tenantId: 'tenant-A',
+      departments: ['sales'],
+      allDepartmentAccess: false,
+      callerRole: 'Sales Manager',
+    });
+    getRecordMock.mockResolvedValue(note('agent-42'));
+    deleteNoteAsUserMock.mockResolvedValue(false);
+
+    await deleteRecordNote(manager, 'Leads', 'lead-1', 'note-7');
+
+    expect(deleteNoteAsUserMock).toHaveBeenCalledWith('tenant-A', 'manager-1', 'note-7');
+    expect(deleteRecordByIdMock).toHaveBeenCalledWith('Notes', 'note-7');
+  });
+
+  it('rejects a note that is not attached to the requested record', async () => {
+    getRecordMock.mockResolvedValue({ ...note('agent-42'), Parent_Id: { id: 'lead-2' } });
+
+    await expect(deleteRecordNote(workerCtx(), 'Leads', 'lead-1', 'note-7')).rejects.toThrow(
+      'Note not found',
+    );
+
+    expect(deleteNoteAsUserMock).not.toHaveBeenCalled();
+    expect(deleteRecordByIdMock).not.toHaveBeenCalled();
   });
 });

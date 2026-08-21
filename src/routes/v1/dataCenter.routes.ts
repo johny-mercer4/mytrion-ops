@@ -21,13 +21,7 @@ import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
 import { loyaltyOverrides } from '../../modules/manager/loyaltyOverrides.js';
 import { listClientCards, getClientBilling } from '../../integrations/dwhCards.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
-import { zohoCrm } from '../../integrations/zohoCrm.js';
-import {
-  createRecordNote,
-  fetchRecordCallHistory,
-  fetchRecordNotes,
-  type CrmModule,
-} from '../../modules/sales/recordActivity.js';
+import { fetchRecordCallHistory, type CrmModule } from '../../modules/sales/recordActivity.js';
 import {
   enrichLeadBlueprintTransitions,
   executeLeadBlueprintTransition,
@@ -47,6 +41,7 @@ export {
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { assertCarrierOwned, resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { registerDataCenterNoteRoutes } from './dataCenterNotes.routes.js';
 import { requireDepartment } from './helpers.js';
 
 /** Sales/admin gate (internal audience only, session-authoritative departments). */
@@ -130,40 +125,6 @@ function dwhError(err: unknown): AppError {
     cause: err,
     expose: true,
   });
-}
-
-/** 20 MB cap for a note attachment (matches the Desk attachment limit). */
-const MAX_NOTE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-
-/** Collect a note's multipart body — form fields + one optional file — into a plain shape. */
-async function readNoteUpload(
-  request: FastifyRequest,
-): Promise<{ fields: Record<string, string>; file: { name: string; mime: string; buffer: Buffer } | null }> {
-  const fields: Record<string, string> = {};
-  let file: { name: string; mime: string; buffer: Buffer } | null = null;
-  try {
-    for await (const part of request.parts({ limits: { fileSize: MAX_NOTE_ATTACHMENT_BYTES, files: 1 } })) {
-      if (part.type === 'file') {
-        file = {
-          name: part.filename || 'attachment',
-          mime: part.mimetype || 'application/octet-stream',
-          buffer: await part.toBuffer(),
-        };
-      } else {
-        fields[part.fieldname] = typeof part.value === 'string' ? part.value : String(part.value ?? '');
-      }
-    }
-  } catch (err) {
-    if (err instanceof Error && /file too large|FST_REQ_FILE_TOO_LARGE|request file too large/i.test(err.message)) {
-      throw new AppError('Attachment exceeds the 20MB limit.', {
-        statusCode: 413,
-        code: 'ATTACHMENT_TOO_LARGE',
-        expose: true,
-      });
-    }
-    throw err;
-  }
-  return { fields, file };
 }
 
 /**
@@ -530,68 +491,5 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     return { calls: await fetchRecordCallHistory(ctx, 'Deals', id) };
   });
 
-  /** The record's existing Zoho Notes (newest first from Zoho). */
-  app.get('/data-center/leads/:id/notes', guard, async (request) => {
-    const { id } = await assertOwnedRecord(request, 'Leads', fetchLeadOwnerId);
-    try {
-      return { notes: await fetchRecordNotes('Leads', id) };
-    } catch (err) {
-      throw crmError(err);
-    }
-  });
-  app.get('/data-center/deals/:id/notes', guard, async (request) => {
-    const { id } = await assertOwnedRecord(request, 'Deals', fetchDealOwnerId);
-    try {
-      return { notes: await fetchRecordNotes('Deals', id) };
-    } catch (err) {
-      throw crmError(err);
-    }
-  });
-
-  /** Log a Zoho Note on the record (multipart: `content`, optional `title`, optional `file`). */
-  async function logRecordNote(
-    request: FastifyRequest,
-    module: CrmModule,
-    fetchOwner: (id: string) => Promise<string | null>,
-  ): Promise<{ id: string; hasAttachment: boolean }> {
-    const { ctx, id } = await assertOwnedRecord(request, module, fetchOwner);
-    const { fields, file } = await readNoteUpload(request);
-    const content = (fields.content ?? '').trim();
-    if (!content) {
-      throw new AppError('A note requires content.', { statusCode: 400, code: 'NO_CONTENT', expose: true });
-    }
-    let noteId: string;
-    try {
-      noteId = await createRecordNote(
-        module,
-        id,
-        {
-          content,
-          ...(fields.title?.trim() ? { title: fields.title.trim() } : {}),
-        },
-        ctx,
-      );
-    } catch (err) {
-      throw crmError(err);
-    }
-    // A note is saved even if its attachment fails — surface the note, warn on the file.
-    if (file) {
-      try {
-        await zohoCrm.attachFileToRecord('Notes', noteId, file.name, file.buffer, file.mime);
-      } catch (err) {
-        request.log.warn({ err }, 'note attachment upload failed (note saved)');
-      }
-    }
-    await auditFromContext(ctx, {
-      action: 'sales.datacenter.note_create',
-      status: 'ok',
-      resourceType: module === 'Leads' ? 'crm_lead' : 'crm_deal',
-      resourceId: id,
-      detail: { noteId, hasAttachment: Boolean(file) },
-    });
-    return { id: noteId, hasAttachment: Boolean(file) };
-  }
-
-  app.post('/data-center/leads/:id/notes', guard, (request) => logRecordNote(request, 'Leads', fetchLeadOwnerId));
-  app.post('/data-center/deals/:id/notes', guard, (request) => logRecordNote(request, 'Deals', fetchDealOwnerId));
+  await registerDataCenterNoteRoutes(app, assertOwnedRecord);
 }

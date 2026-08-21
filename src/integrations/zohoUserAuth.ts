@@ -60,7 +60,10 @@ async function refreshViaStoredToken(
       error?: string;
     };
     if (!res.ok || !json.access_token) {
-      logger.warn({ zohoUserId, status: res.status, error: json.error }, 'zoho user token refresh failed');
+      logger.warn(
+        { zohoUserId, status: res.status, error: json.error },
+        'zoho user token refresh failed',
+      );
       return null;
     }
     const expiresInMs = (typeof json.expires_in === 'number' ? json.expires_in : 3600) * 1000;
@@ -137,12 +140,78 @@ export async function insertNoteAsUser(
     const json = (await res.json().catch(() => ({}))) as { data?: MutationRow[] };
     const row = json.data?.[0];
     if (!row || row.status !== 'success' || !row.details?.id) {
-      logger.warn({ zohoUserId, code: row?.code, message: row?.message }, 'zoho user note insert non-success');
+      logger.warn(
+        { zohoUserId, code: row?.code, message: row?.message },
+        'zoho user note insert non-success',
+      );
       return null;
     }
     return row.details.id;
   } catch (err) {
     logger.warn({ err, zohoUserId }, 'zoho user note insert error');
     return null;
+  }
+}
+
+/**
+ * Update a Zoho Note with the acting worker's token. False means the caller should retry with the
+ * service account; note content is deliberately never included in logs.
+ */
+export async function updateNoteAsUser(
+  tenantId: string,
+  zohoUserId: string,
+  noteId: string,
+  noteData: Record<string, unknown>,
+): Promise<boolean> {
+  return mutateNoteAsUser(tenantId, zohoUserId, noteId, 'PATCH', noteData);
+}
+
+/** Delete a Zoho Note with the acting worker's token; false enables service-account fallback. */
+export async function deleteNoteAsUser(
+  tenantId: string,
+  zohoUserId: string,
+  noteId: string,
+): Promise<boolean> {
+  return mutateNoteAsUser(tenantId, zohoUserId, noteId, 'DELETE');
+}
+
+async function mutateNoteAsUser(
+  tenantId: string,
+  zohoUserId: string,
+  noteId: string,
+  method: 'PATCH' | 'DELETE',
+  noteData?: Record<string, unknown>,
+): Promise<boolean> {
+  const accessToken = await getUserAccessToken(tenantId, zohoUserId);
+  if (!accessToken) return false;
+
+  const base = env.ZOHO_CRM_API_DOMAIN.replace(/\/+$/, '');
+  try {
+    const res = await fetchWithTimeout(`${base}/Notes/${encodeURIComponent(noteId)}`, {
+      method,
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        ...(method === 'PATCH' ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(method === 'PATCH' ? { body: JSON.stringify({ data: [noteData ?? {}] }) } : {}),
+    });
+    if (res.status === 401) {
+      invalidateUserToken(tenantId, zohoUserId);
+      return false;
+    }
+    if (res.status === 204) return true;
+    const json = (await res.json().catch(() => ({}))) as { data?: MutationRow[] };
+    const row = json.data?.[0];
+    if (!res.ok || !row || row.status !== 'success') {
+      logger.warn(
+        { zohoUserId, noteId, method, status: res.status, code: row?.code, message: row?.message },
+        'zoho user note mutation non-success',
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn({ err, zohoUserId, noteId, method }, 'zoho user note mutation error');
+    return false;
   }
 }

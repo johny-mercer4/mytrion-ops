@@ -6,13 +6,19 @@
  *  - `zoho`    — the Zoho CRM Calls related to the record (the native RingCentral→Zoho call log).
  * Each source is best-effort: if one read fails the other still returns.
  *
- * Notes read/create go straight to the Zoho CRM Notes module (related to the Lead/Deal). Attachments
- * are added by the route after create via `zohoCrm.attachFileToRecord('Notes', noteId, …)`.
+ * Notes read/create/edit/delete go straight to the Zoho CRM Notes module (related to the Lead/Deal).
+ * Attachments are added by the route after create via
+ * `zohoCrm.attachFileToRecord('Notes', noteId, …)`.
  */
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
-import { insertNoteAsUser } from '../../integrations/zohoUserAuth.js';
+import {
+  deleteNoteAsUser,
+  insertNoteAsUser,
+  updateNoteAsUser,
+} from '../../integrations/zohoUserAuth.js';
+import { AppError, RBACError } from '../../lib/errors.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 export type CrmModule = 'Leads' | 'Deals';
@@ -36,6 +42,8 @@ export interface NoteItem {
   content: string;
   createdAt: string;
   owner: string;
+  /** Server-authoritative: the caller is the note owner or has manager/admin authority. */
+  canManage: boolean;
 }
 
 const sourceTypeFor = (m: CrmModule): 'lead' | 'deal' => (m === 'Leads' ? 'lead' : 'deal');
@@ -114,24 +122,57 @@ export async function fetchRecordCallHistory(
   return out.sort((a, b) => b.whenTs - a.whenTs);
 }
 
+function zohoUserIdFromContext(ctx?: TenantContext): string | undefined {
+  return ctx?.userId?.startsWith('zoho:') && !ctx.userId.startsWith('zoho:zuid:')
+    ? ctx.userId.slice('zoho:'.length)
+    : undefined;
+}
+
+/** Manager/admin authority is derived from the verified server context, never browser claims. */
+export function canManageRecordNote(ctx: TenantContext, ownerId: string): boolean {
+  const managerIdentity = [...(ctx.profiles ?? []), ctx.callerRole ?? '']
+    .map((value) => value.trim().toLowerCase())
+    .some((value) => value === 'manager' || value === 'management' || value === 'sales manager');
+  return (
+    ctx.bypassRbac === true ||
+    ctx.role === 'admin' ||
+    ctx.allDepartmentAccess ||
+    ctx.departments.includes('management') ||
+    managerIdentity ||
+    (Boolean(ownerId) && zohoUserIdFromContext(ctx) === ownerId)
+  );
+}
+
+function lookupId(value: unknown): string {
+  return value && typeof value === 'object' ? String((value as { id?: unknown }).id ?? '') : '';
+}
+
 /** Existing Zoho Notes on a Lead/Deal (newest returned by Zoho first). */
-export async function fetchRecordNotes(module: CrmModule, id: string): Promise<NoteItem[]> {
+export async function fetchRecordNotes(
+  module: CrmModule,
+  id: string,
+  ctx: TenantContext,
+): Promise<NoteItem[]> {
   const rows = await zohoCrmRecords.getRelatedRecords(module, id, 'Notes', [
     'Note_Title',
     'Note_Content',
     'Created_Time',
     'Owner',
   ]);
-  return rows.map((r) => ({
-    id: String(r.id ?? ''),
-    title: typeof r.Note_Title === 'string' ? r.Note_Title : '',
-    content: typeof r.Note_Content === 'string' ? r.Note_Content : '',
-    createdAt: typeof r.Created_Time === 'string' ? r.Created_Time : '',
-    owner:
-      r.Owner && typeof r.Owner === 'object'
-        ? String((r.Owner as { name?: unknown }).name ?? '')
-        : '',
-  }));
+  return rows.map((r) => {
+    const ownerId = lookupId(r.Owner);
+    return {
+      id: String(r.id ?? ''),
+      title: typeof r.Note_Title === 'string' ? r.Note_Title : '',
+      content: typeof r.Note_Content === 'string' ? r.Note_Content : '',
+      createdAt: typeof r.Created_Time === 'string' ? r.Created_Time : '',
+      owner:
+        r.Owner && typeof r.Owner === 'object'
+          ? String((r.Owner as { name?: unknown }).name ?? '')
+          : '',
+      canManage: canManageRecordNote(ctx, ownerId),
+    };
+  });
 }
 
 /**
@@ -148,10 +189,7 @@ export async function createRecordNote(
   input: { title?: string; content: string },
   ctx?: TenantContext,
 ): Promise<string> {
-  const zohoUserId =
-    ctx?.userId?.startsWith('zoho:') && !ctx.userId.startsWith('zoho:zuid:')
-      ? ctx.userId.slice('zoho:'.length)
-      : undefined;
+  const zohoUserId = zohoUserIdFromContext(ctx);
 
   const noteData: Record<string, unknown> = {
     Note_Title: input.title?.trim() || 'Note',
@@ -168,4 +206,48 @@ export async function createRecordNote(
   }
 
   return zohoCrmRecords.insertRecord('Notes', noteData);
+}
+
+async function assertManageableNote(
+  ctx: TenantContext,
+  module: CrmModule,
+  parentId: string,
+  noteId: string,
+): Promise<void> {
+  const note = await zohoCrmRecords.getRecord('Notes', noteId);
+  const parentModule = typeof note?.$se_module === 'string' ? note.$se_module : '';
+  if (!note || lookupId(note.Parent_Id) !== parentId || (parentModule && parentModule !== module)) {
+    throw new AppError('Note not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+  }
+  if (!canManageRecordNote(ctx, lookupId(note.Owner))) {
+    throw new RBACError('You can only edit or delete notes you created');
+  }
+}
+
+/** Update a note after verifying it belongs to this record and is manageable by the caller. */
+export async function updateRecordNote(
+  ctx: TenantContext,
+  module: CrmModule,
+  parentId: string,
+  noteId: string,
+  input: { title: string; content: string },
+): Promise<void> {
+  await assertManageableNote(ctx, module, parentId, noteId);
+  const noteData = { Note_Title: input.title.trim(), Note_Content: input.content };
+  const zohoUserId = zohoUserIdFromContext(ctx);
+  if (zohoUserId && (await updateNoteAsUser(ctx.tenantId, zohoUserId, noteId, noteData))) return;
+  await zohoCrmRecords.patchRecord('Notes', noteId, noteData);
+}
+
+/** Delete a note after verifying it belongs to this record and is manageable by the caller. */
+export async function deleteRecordNote(
+  ctx: TenantContext,
+  module: CrmModule,
+  parentId: string,
+  noteId: string,
+): Promise<void> {
+  await assertManageableNote(ctx, module, parentId, noteId);
+  const zohoUserId = zohoUserIdFromContext(ctx);
+  if (zohoUserId && (await deleteNoteAsUser(ctx.tenantId, zohoUserId, noteId))) return;
+  await zohoCrmRecords.deleteRecordById('Notes', noteId);
 }

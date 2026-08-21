@@ -153,6 +153,18 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     return this.assertRowSuccess('update', module, json);
   }
 
+  /** PATCH one record. Notes use this endpoint so only the supplied title/content are changed. */
+  async patchRecord(module: string, id: string, data: Record<string, unknown>): Promise<string> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}`;
+    const res = await this.requestRaw('PATCH', path, {
+      body: { data: [data] },
+    });
+    const text = await res.text();
+    if (!res.ok) throw this.httpError('PATCH', path, res.status, text);
+    const json = text ? (JSON.parse(text) as MutationResponse) : {};
+    return this.assertRowSuccess('patch', module, json);
+  }
+
   /** Insert one record. `trigger` mirrors the widget's workflow-triggering inserts. */
   async insertRecord(
     module: string,
@@ -226,6 +238,17 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     const json = await this.request<MutationResponse>('DELETE', path, {
       query: { ids: id, wf_trigger: 'true' },
     });
+    this.assertRowSuccess('delete', module, json);
+  }
+
+  /** DELETE one record through Zoho's single-record endpoint. */
+  async deleteRecordById(module: string, id: string): Promise<void> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}`;
+    const res = await this.requestRaw('DELETE', path);
+    if (res.status === 204) return;
+    const text = await res.text();
+    if (!res.ok) throw this.httpError('DELETE', path, res.status, text);
+    const json = text ? (JSON.parse(text) as MutationResponse) : {};
     this.assertRowSuccess('delete', module, json);
   }
 

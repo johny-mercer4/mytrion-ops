@@ -11,8 +11,10 @@ import { useSales } from './ctx';
 import { getImpersonation } from '@/api/impersonation';
 import {
   createRecordNote,
+  deleteRecordNote as deleteRecordNoteApi,
   listRecordCalls,
   listRecordNotes,
+  updateRecordNote as updateRecordNoteApi,
   type CallHistoryItem,
   type NoteItem,
 } from '@/api/dataCenter';
@@ -29,6 +31,10 @@ const SAVE_BTN =
   'height:34px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px';
 const NOTE_AREA =
   'width:100%;padding:9px 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit;resize:vertical;min-height:70px';
+const NOTE_INPUT =
+  'width:100%;height:38px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit';
+const NOTE_ACTION =
+  'width:44px;height:44px;border-radius:var(--radius-md);border:1px solid transparent;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer';
 
 type Kind = 'leads' | 'deals';
 
@@ -98,7 +104,7 @@ function CallsPanel({ kind, id }: { kind: Kind; id: string }) {
   );
 }
 
-function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
+export function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
   const { pushToast } = useSales();
   const [notes, setNotes] = useState<NoteItem[] | null>(null);
   const [err, setErr] = useState(false);
@@ -106,6 +112,10 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
   const [content, setContent] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [busyNoteId, setBusyNoteId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setErr(false);
@@ -133,6 +143,63 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
       pushToast('Note failed', e instanceof Error ? e.message : 'Could not save the note.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const beginEdit = (note: NoteItem): void => {
+    setEditingId(note.id);
+    setEditTitle(note.title);
+    setEditContent(note.content);
+  };
+
+  const cancelEdit = (): void => {
+    setEditingId(null);
+    setEditTitle('');
+    setEditContent('');
+  };
+
+  const saveEdit = async (noteId: string): Promise<void> => {
+    const body = editContent.trim();
+    if (!body) {
+      pushToast('Note is empty', 'Write something first.');
+      return;
+    }
+    setBusyNoteId(noteId);
+    try {
+      await updateRecordNoteApi(
+        kind,
+        id,
+        noteId,
+        { title: editTitle.trim(), content: body },
+        getImpersonation()?.zohoUserId,
+      );
+      setNotes(
+        (current) =>
+          current?.map((note) =>
+            note.id === noteId ? { ...note, title: editTitle.trim(), content: body } : note,
+          ) ?? null,
+      );
+      cancelEdit();
+      pushToast('Note updated', 'Changes saved to Zoho.');
+    } catch (e) {
+      pushToast('Update failed', e instanceof Error ? e.message : 'Could not update the note.');
+    } finally {
+      setBusyNoteId(null);
+    }
+  };
+
+  const removeNote = async (noteId: string): Promise<void> => {
+    if (!window.confirm('Delete this note? This cannot be undone.')) return;
+    setBusyNoteId(noteId);
+    try {
+      await deleteRecordNoteApi(kind, id, noteId, getImpersonation()?.zohoUserId);
+      setNotes((current) => current?.filter((note) => note.id !== noteId) ?? null);
+      if (editingId === noteId) cancelEdit();
+      pushToast('Note deleted', 'Removed from Zoho.');
+    } catch (e) {
+      pushToast('Delete failed', e instanceof Error ? e.message : 'Could not delete the note.');
+    } finally {
+      setBusyNoteId(null);
     }
   };
 
@@ -173,13 +240,93 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
         <div style={s('display:flex;flex-direction:column')}>
           {notes.map((nt) => (
             <div key={nt.id} style={s(ROW)}>
-              <div style={s('font-size:14px;line-height:1.5;color:var(--text2);white-space:pre-wrap')}>
-                {nt.content || nt.title || '—'}
-              </div>
-              <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>
-                {nt.owner || '—'}
-                {nt.createdAt ? ` · ${fmtWhen(nt.createdAt)}` : ''}
-              </div>
+              {editingId === nt.id ? (
+                <div style={s('display:flex;flex-direction:column;gap:8px')}>
+                  <input
+                    aria-label="Note title"
+                    className="ss-in"
+                    maxLength={255}
+                    value={editTitle}
+                    onChange={(event) => setEditTitle(event.currentTarget.value)}
+                    placeholder="Note title"
+                    style={s(NOTE_INPUT)}
+                  />
+                  <textarea
+                    aria-label="Note content"
+                    className="ss-in"
+                    value={editContent}
+                    onChange={(event) => setEditContent(event.currentTarget.value)}
+                    style={s(NOTE_AREA)}
+                  />
+                  <div style={s('display:flex;align-items:center;gap:8px')}>
+                    <button
+                      type="button"
+                      disabled={busyNoteId === nt.id}
+                      onClick={() => void saveEdit(nt.id)}
+                      style={s(`${SAVE_BTN};margin-top:0`)}
+                    >
+                      {busyNoteId === nt.id ? 'Saving…' : 'Save changes'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyNoteId === nt.id}
+                      onClick={cancelEdit}
+                      style={s(SMALL_BTN)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={s('display:flex;align-items:flex-start;gap:8px')}>
+                  <div style={s('flex:1;min-width:0')}>
+                    {nt.title && nt.title !== 'Note' && (
+                      <div
+                        style={s(
+                          'font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px',
+                        )}
+                      >
+                        {nt.title}
+                      </div>
+                    )}
+                    <div
+                      style={s(
+                        'font-size:14px;line-height:1.5;color:var(--text2);white-space:pre-wrap',
+                      )}
+                    >
+                      {nt.content || nt.title || '—'}
+                    </div>
+                    <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>
+                      {nt.owner || '—'}
+                      {nt.createdAt ? ` · ${fmtWhen(nt.createdAt)}` : ''}
+                    </div>
+                  </div>
+                  {nt.canManage && (
+                    <div style={s('display:flex;align-items:center;gap:2px;flex-shrink:0')}>
+                      <button
+                        type="button"
+                        aria-label="Edit note"
+                        title="Edit note"
+                        disabled={busyNoteId === nt.id}
+                        onClick={() => beginEdit(nt)}
+                        style={s(`${NOTE_ACTION};color:var(--accent)`)}
+                      >
+                        <Icon name="edit" size={17} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Delete note"
+                        title="Delete note"
+                        disabled={busyNoteId === nt.id}
+                        onClick={() => void removeNote(nt.id)}
+                        style={s(`${NOTE_ACTION};color:var(--danger)`)}
+                      >
+                        <Icon name="delete" size={17} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
