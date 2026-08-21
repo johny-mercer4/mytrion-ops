@@ -21,7 +21,7 @@ import { searchVerificationDebtors } from '../../repos/dwhVerificationDebtorRepo
 import { verificationScreeningRepo } from '../../repos/verificationScreeningRepo.js';
 import type { VerificationIdentifierType } from '../../db/schema/verification_flow.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { buildIdentifier, normalizeIdentifier } from './screening.js';
+import { buildIdentifier } from './screening.js';
 
 export type BlacklistSearchBy = 'dot' | 'mc' | 'email' | 'phone' | 'name';
 
@@ -126,7 +126,10 @@ function debtorNeedle(by: BlacklistSearchBy, q: string): string | null {
     return email === '' ? null : email;
   }
   if (by === 'name') {
-    const name = normalizeIdentifier('name', q);
+    // SQL is `lower(btrim(company_name)) = $1` — punctuation stays. Phase 3's
+    // normalizeIdentifier strips ",.#" for hash matching; using it here misses
+    // "Foo Trucking, LLC" against the warehouse row.
+    const name = q.trim().toLowerCase();
     return name === '' ? null : name;
   }
   const digits = q.replace(/\D+/g, '');

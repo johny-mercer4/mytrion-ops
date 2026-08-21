@@ -159,6 +159,13 @@ describe('duplicate shape', () => {
   });
 });
 
+describe('debtor needle', () => {
+  it('folds a legal name without stripping the comma the warehouse still stores', async () => {
+    await searchBlacklist(ctx, { by: 'name', q: 'Kaiser Freight, LLC' });
+    expect(searchVerificationDebtors).toHaveBeenCalledWith('name', 'kaiser freight, llc');
+  });
+});
+
 describe('unavailable probes', () => {
   it('marks a down Credit Platform list as available: false and still returns own hits', async () => {
     matchBlacklist.mockResolvedValue([
