@@ -570,6 +570,7 @@ export type TxnExportFormat = 'csv' | 'xlsx' | 'pdf';
 export interface TxnExportSent {
   sent?: boolean;
   fileName?: string;
+  fileNames?: string[];
   rows?: number;
 }
 
@@ -578,10 +579,10 @@ export interface TxnExportSent {
  * chat. Nothing downloads here: a Telegram WebApp can't reliably save a file, so the document lands
  * in the bot chat instead — where it persists and can be forwarded.
  */
-export async function sendTransactionsReport(
+export async function sendTransactionsReports(
   initData: string,
   range: { range?: string; from?: string; to?: string; cardId?: string },
-  format: TxnExportFormat,
+  formats: TxnExportFormat[],
   /** 'retail' = the "without discount" variant (EFS Retail Price Only). Ignored for drivers —
    * the backend forces retail for them regardless of what is sent. */
   priceMode: 'discount' | 'retail' = 'discount',
@@ -591,7 +592,7 @@ export async function sendTransactionsReport(
   return (await request('POST', '/carrier/mini-app/transactions/export', {
     initData,
     ...range,
-    format,
+    formats,
     priceMode,
     detailed,
   })) as TxnExportSent;

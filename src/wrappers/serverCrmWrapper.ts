@@ -19,6 +19,9 @@ export interface InvoicesRangeOpts {
   status?: string | undefined;
   from?: string | undefined;
   to?: string | undefined;
+  /** Maximum rows returned by servercrm. Use its 5000-row cap so invoice ownership checks and the
+   *  all-time Mini App list are not silently limited to the upstream default page. */
+  limit?: number | undefined;
 }
 
 /** A `{ count, data[] }` row list from the DWH marts (cards, last-used). servercrm selects whole
@@ -106,8 +109,7 @@ export const serverCrmWrapper = {
     return crmGet(`/api/agent/dwh/payment-info/${encodeURIComponent(carrierId)}`, { days: 90 });
   },
 
-  /** Invoice list from DWH `public.cmp_invoice` (range/status filters). For live CMP
-   * prefer GET `/api/clients/:carrierId/invoices` (Sales C-20 / clients.invoices). */
+  /** Invoice list from servercrm's CMP-first endpoint (DWH fallback), with range/status filters. */
   getInvoices(carrierId: string, opts: InvoicesRangeOpts = {}) {
     return crmGet<CarrierInvoices>('/api/salesMytrion/fetchInvoices', {
       carrierId,
@@ -115,6 +117,7 @@ export const serverCrmWrapper = {
       ...(opts.status ? { status: opts.status } : {}),
       ...(opts.from ? { from: opts.from } : {}),
       ...(opts.to ? { to: opts.to } : {}),
+      limit: opts.limit ?? 5000,
     });
   },
 
