@@ -1,6 +1,7 @@
 /**
- * THE single source of notification routing truth (see Analitika/notification_system_ultraplan.md
- * §1.1): type → allowed roles → template → dedupe window. Callers never hand-roll "who gets
+ * THE single source of notification routing truth (see
+ * `docs/archive/handoffs/NOTIFICATIONS_PHASE2_HANDOFF.md`; the ultraplan path is gone):
+ * type → allowed roles → template → dedupe window. Callers never hand-roll "who gets
  * this"; the dispatcher enforces it — the same rule as the mini-app's server-side gates ("a
  * missing button is not the gate").
  *
