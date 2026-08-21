@@ -58,8 +58,9 @@ const LOG_TYPE_ALIASES: Record<string, string> = {
 };
 
 /**
- * Widget-parity usage log. New Horizon calls send one started row and one terminal row with the
- * same run id; legacy callers may omit lifecycle fields and remain a single succeeded row.
+ * Widget-parity usage log. ONE row per submit click, written when the run settles — never a
+ * second row for the click itself. Legacy callers may omit lifecycle fields and remain a single
+ * succeeded row.
  * Fire-and-forget — a logging blip must never change the automation result shown to the worker.
  *
  * Matches zoho-octane `_logOpsAutomation`: hyphen→underscore type, local triggerDate /
@@ -69,7 +70,7 @@ export function logAutomation(
   automationType: string,
   lifecycle?: {
     runId: string;
-    phase: 'started' | 'succeeded' | 'failed';
+    phase: 'succeeded' | 'failed';
     durationMs?: number;
     errorCode?: string;
   },

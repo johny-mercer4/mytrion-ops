@@ -76,7 +76,6 @@ export function AutoWexPanel() {
     setWexSearching(true);
     const lifecycleRunId = crypto.randomUUID();
     const lifecycleStartedAt = performance.now();
-    logAutomation('wex-apps-application', { runId: lifecycleRunId, phase: 'started' });
     const seq = ++seqRef.current;
     const onlyAppId = q.appId && !q.firstName && !q.lastName && !q.company && !q.email && !q.phone && !q.mc && !q.dot;
     const search = onlyAppId

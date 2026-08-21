@@ -78,7 +78,8 @@ describe('automation log lifecycle identity', () => {
       automationType: 'balance_check',
       actorUserId: ctx.userId,
       runId,
-      phase: 'started',
+      phase: 'succeeded',
+      durationMs: 50,
     });
 
     const values = calls.find((call) => call.method === 'values')?.args[0] as {
@@ -89,13 +90,13 @@ describe('automation log lifecycle identity', () => {
     expect(values.id).not.toBe(runId);
   });
 
-  it('returns the stored phase when the same lifecycle request is replayed', async () => {
+  it('returns the stored phase when the same outcome request is replayed', async () => {
     const runId = '4f86cf44-1daa-4fd3-8df5-999cb27430c9';
     existingRows = [{
       id: 'stored-phase',
       tenantId: ctx.tenantId,
       runId,
-      phase: 'started',
+      phase: 'succeeded',
       actorUserId: ctx.userId,
       impersonatorUserId: null,
       automationType: 'balance_check',
@@ -107,7 +108,8 @@ describe('automation log lifecycle identity', () => {
       actorUserId: ctx.userId,
       originSource: 'Mytrion Horizon',
       runId,
-      phase: 'started',
+      phase: 'succeeded',
+      durationMs: 50,
     });
 
     expect(result).toMatchObject({ inserted: false, log: { id: 'stored-phase' } });

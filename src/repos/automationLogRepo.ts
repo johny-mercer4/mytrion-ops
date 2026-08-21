@@ -1,5 +1,7 @@
 import { createId } from '@paralleldrive/cuid2';
-import { and, asc, desc, eq, gte, ilike, isNotNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and, asc, desc, eq, gte, ilike, isNotNull, lte, ne, notLike, or, sql, type SQL,
+} from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db } from '../db/client.js';
 import {
@@ -45,13 +47,23 @@ export interface AutomationLogFilter {
   offset?: number;
 }
 
+/**
+ * Scheduled department jobs are not Sales-tab automations.
+ *
+ * They stopped writing here (see jobs/workers/automations.ts), but the 38 rows they already wrote
+ * cannot be taken back out of an append-only table. Their dot-namespaced
+ * `automation.<dept>.<job>` types match no catalog block, so the admin tab excludes them instead
+ * of offering a filter value for an automation nobody can submit.
+ */
+const submittedFromTheSalesTab = notLike(automationLogs.automationType, 'automation.%');
+
 function whereFor(ctx: TenantContext, filter?: AutomationLogFilter): SQL | undefined {
-  const clauses: SQL[] = [eq(automationLogs.tenantId, ctx.tenantId)];
+  const clauses: SQL[] = [eq(automationLogs.tenantId, ctx.tenantId), submittedFromTheSalesTab];
   if (filter?.automationType) clauses.push(eq(automationLogs.automationType, filter.automationType));
   if (filter?.agentName) clauses.push(eq(automationLogs.agentName, filter.agentName));
   if (filter?.originSource) clauses.push(eq(automationLogs.originSource, filter.originSource));
-  // Admin list/count is a run feed: started + terminal lifecycle rows must not count as two runs.
-  // An explicit phase is still available to callers that need lifecycle diagnostics.
+  // One submit is one row now, but the 24 `started` rows written on 2026-08-20 are still in the
+  // table and would double-count those runs. An explicit phase still reaches them.
   clauses.push(
     filter?.phase
       ? eq(automationLogs.phase, filter.phase)
@@ -74,7 +86,11 @@ async function distinct(ctx: TenantContext, column: AnyPgColumn, cap = 500): Pro
   const rows = await db
     .selectDistinct({ value: column })
     .from(automationLogs)
-    .where(and(eq(automationLogs.tenantId, ctx.tenantId), isNotNull(column)))
+    .where(and(
+      eq(automationLogs.tenantId, ctx.tenantId),
+      submittedFromTheSalesTab,
+      isNotNull(column),
+    ))
     .orderBy(asc(column))
     .limit(cap);
   // `AnyPgColumn` erases the column's data type, so Drizzle infers `value: never` for the generic
@@ -116,7 +132,7 @@ function assertSameRunIdentity(
 }
 
 export const automationLogRepo = {
-  /** Insert one lifecycle phase. A retry of the same tenant/run/phase returns the winner. */
+  /** Insert one run outcome. A retry of the same tenant/run/phase returns the winner. */
   async insert(
     ctx: TenantContext,
     input: NewAutomationLogInput,
