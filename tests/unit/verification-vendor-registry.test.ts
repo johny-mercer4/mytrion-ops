@@ -385,6 +385,28 @@ describe('metered hook (types + runtime belt, no registered vendors)', () => {
     ]);
   });
 
+  it('rejects a spend token issued for a different vendor', async () => {
+    const spend = await authoriseSpend({
+      ctx: ctx(),
+      caseId: 'case-1',
+      vendorId: 'vendor-a',
+      reason: 'unit test',
+    });
+    expect(spend).not.toBeNull();
+    const result = await runVendor(metered({ id: 'vendor-b' }), {
+      ctx: ctx(),
+      args: { q: 'x' },
+      spend: spend as SpendAuthorisation,
+    });
+    expect(result).toEqual({
+      available: false,
+      error: 'spend token is bound to a different vendor',
+      reason: 'unauthorised_spend',
+      data: null,
+    });
+    expect(listSpendAttempts()).toEqual([]);
+  });
+
   it('rejects a forged spend token at runtime', async () => {
     const forged = { vendorId: 'paid', caseId: 'case-1' } as SpendAuthorisation;
     expect(isIssuedSpend(forged)).toBe(false);

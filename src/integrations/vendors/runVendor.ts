@@ -79,8 +79,14 @@ export async function runVendor<TArgs, TData>(
   }
 
   const spend = 'spend' in input ? input.spend : undefined;
-  if (descriptor.cost === 'metered' && !isIssuedSpend(spend)) {
-    return unavailable(descriptor, 'unauthorised_spend', 'metered vendor requires SpendAuthorisation');
+  if (descriptor.cost === 'metered') {
+    if (!isIssuedSpend(spend)) {
+      return unavailable(descriptor, 'unauthorised_spend', 'metered vendor requires SpendAuthorisation');
+    }
+    // Issued is not enough — a grant for vendor A must not authorise a pull on vendor B.
+    if (spend.vendorId !== descriptor.id) {
+      return unavailable(descriptor, 'unauthorised_spend', 'spend token is bound to a different vendor');
+    }
   }
 
   let attemptId: string | null = null;
